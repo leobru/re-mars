@@ -357,7 +357,6 @@ const char * msg[] = {
         if (!acc) jump(a00172);
       label(a00166):
         acc = m5[m16-2].d;
-      std::cerr << "Value to compare " << std::oct << acc << '\n';
         acc += negkey.d;
         acc = (acc + (acc >> 48)) & BITS(48);
         if (!(acc & ONEBIT(48))) jump(a00172);
@@ -399,6 +398,8 @@ const char * msg[] = {
         m16 = &loc120;
         jump(a00164);
         // ...
+      label(a00267):
+          call(totlen,m5);
       label(a00270):
         acc = negkey.d;
         ati(m16);
@@ -410,9 +411,32 @@ const char * msg[] = {
         jump(*((char*)&&frombase+jmpoff.d));
       label(frombase):
         abort();
+      label(done):
+          abort();
       label(a00317):
-        abort();
-        // ...
+        if (!m5.d) goto a00325;
+        acc = aitem.d;
+        acc += negkey.d;
+        aitem = acc;
+        acc = curpos.d;
+        acc -= negkey.d;
+        curpos = acc;
+        acc = (*aitem).d;
+        desc1 = acc;
+        goto *m6.p;
+      label(a00325):
+        acc = loc220.d;
+        acc >>= 20;
+        acc &= 01777777;
+        if (acc) goto a00267;
+        acc = jmpoff.d;
+        acc ^= (char*)&&done-(char*)&&frombase;
+        if (!acc) goto a00332;  // impossible?
+        acc = negkey.d;
+        if (!acc) goto *m6.p;
+      label(a00332):
+        m16 = 7;
+        goto skip;
       label(cmd7):
         jmpoff = acc;
         acc = desc2.d;
@@ -585,11 +609,8 @@ const char * msg[] = {
         acc = adescr.d;
         jump(cpyout);
       label(setctl):
-        acc &= 0777777;
-        e70msk = acc;
-        acc = dbdesc.d;
-        acc >>= 18;
-        dblen = acc;
+        e70msk = acc & 0777777;
+        dblen = dbdesc.d >> 18;
         ise70 = bdtab.d << 20 | e70msk.d | ONEBIT(40);
         e70(ise70);
         m16 = curbuf = bdtab;
@@ -642,8 +663,20 @@ const char * msg[] = {
         abort();
         // ...
       label(free):
-        abort();
-        // ...
+        call(totlen,m5);
+      label(a00737):
+        acc = m16[1].d;
+        acc = (acc >> 10) & 077777;
+        temp = acc;
+        acc = loc116.d;
+        m5 = acc;
+      label(a00742):
+        acc ^= temp.d;
+        if (!acc) goto a00747;
+        m5[m16+1] = m5[m16+2].d;
+        ++m5;
+        acc = m5.d;
+        goto a00742;
       label(a00747):
         acc = loc220.d & 01777;
         d00031 = acc;
@@ -1124,26 +1157,42 @@ void newd(const char * k, int lnuzzzz) {
     trace_stores = false;
 }
 
-int main() {    
+void ins(const char * k) {
+    key = *reinterpret_cast<const uint64_t*>(k);
+    mylen = 2;
+    myloc = 0;
+    orgcmd = 026211511;
+    d00033 = 0;
+    abdv = BDVECT;
+    eval();
+}
+
+void del(const char * k) {
+    key = *reinterpret_cast<const uint64_t*>(k);
+    orgcmd = 027231411;
+    d00033 = 0;
+    abdv = BDVECT;
+    eval();
+}
+
+void root() {
+    orgcmd = 031;
+    eval();
+}
+
+int main() {
 //    pasacd(01520000);   return 0;
     int j = 01520001;
     passetar(01520000);
-/*
-    newd("QQQQQQ\0\0", j);
-    newd("WWWWWW\0\0", j);
-    newd("EEEEEE\0\0", j);
-    newd("RRRRRR\0\0", j);
-    newd("TTTTTT\0\0", j);
-    newd("YYYYYY\0\0", j);
-    newd("UUUUUU\0\0", j);
-    newd("IIIIII\0\0", j);
-    newd("OOOOOO\0\0", j);
-    newd("PPPPPP\0\0", j);
-    newd("AAAAAA\0\0", j);
-    newd("SSSSSS\0\0", j);
-    newd("DDDDDD\0\0", j);
-    newd("FFFFFF\0\0", j);
-    newd("GGGGGG\0\0", j);
-*/
-    newd("HHHHHH\0\0", j);
+    root();
+    for (int i = 100000; i < 100100; ++i) {
+        std::string fname = std::to_string(i);
+        std::cerr << "Inserting " << fname << '\n';
+        ins(fname.c_str());
+    }
+    for (int i = 100000; i < 100100; ++i) {
+        std::string fname = std::to_string(i);
+        std::cerr << "Deleting " << fname << '\n';
+        del(fname.c_str());
+    }
 }
