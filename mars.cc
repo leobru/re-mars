@@ -287,9 +287,15 @@ const char * msg[] = {
         case 021:
             acc = myloc.d;
             jump(flush);
+        case 023:
+            acc = adescr.d;
+            jump(free);
         case 026:
           acc = key.d;
           jump(cmd26);
+        case 027:
+            limit = 0;
+            jump(cmd27);
         case 031:
             acc = 04000;
             jump(root);
