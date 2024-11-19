@@ -108,9 +108,10 @@ uint64_t word::operator&() { return this-data; }
     word & outadr = data[BDVECT+1];
     word & orgcmd = data[BDVECT+3];
     word & curcmd = data[BDVECT+5];
-    word & loc6 = data[BDVECT+6];
+    word & sync = data[BDVECT+6];
     uint64_t & givenp = data[BDVECT+7].d;
     word & key = data[BDVECT+010];
+    word & erhndl = data[BDVECT+011];
     word & loc12 = data[BDVECT+012];
     word & myloc = data[BDVECT+013];
     word & loc14 = data[BDVECT+014];
@@ -120,7 +121,6 @@ uint64_t word::operator&() { return this-data; }
     word & loc20 = data[BDVECT+020];
     word & array = data[BDVECT+021];
     word & dbdesc = data[BDVECT+030];
-#define DBDESC 030
     word & rootfl = data[BDVECT+031];
     word & savedp = data[BDVECT+032];
     word & frebas = data[BDVECT+034];
@@ -186,12 +186,12 @@ uint64_t acc;
     word & savrk = data[BDSYS+041];
 
 const char * msg[] = {
-    "НУЛ.УКЛЮЧ", "ЗАТЕРТ ЛИСТ", "НЕТ ЗАПИСИ", "НЕДОП. ИМЯ.",
-    "ЗАТЕРТ 1 Л.", "ПЕРЕПОЛНЕНА", "ШАГЗ. ВЕЛИК", "НЕТ ИМЕНИ",
-    "ИМ.УЖЕ ЕСТЬ", "НЕТ С.КОНЦА", "СИСТ.ОШИБКА", "ДЛ.ЗАП>ДЛИН",
-    "ОДНОВР.РАБ.", "НЕТ ТЕКУЩЕЙ", "НЕТ ПРЕД.З.", "НЕТ СЛЕД.З.",
-    "НЕПР.ПАРОЛЬ" };
-
+    "Zero key", "Page corrupted", "No such record", "Invalid name",
+    "1st page corrupted", "Overflow", "Step too big", "No such name",
+    "Name already exists", "No end symbol", "Internal error", "Record too long",
+    "DB is locked", "No current record", "No prev. record", "No next record",
+    "Wrong password" };
+    
     void e70(word is) {
         int page = (is.d >> 30) & BITS(5);
         char nuzzzz[7];
@@ -243,28 +243,29 @@ const char * msg[] = {
         jump(enter);
       label(switch_):
         std::cerr << "Executing microcode " << std::oct << m5.d << '\n';
+        acc = 0;
         switch (m5.d) {
         case 0:
             jump(cmd0);
-#if 0
         case 1:
-            temp = 0;
-            // TODO goto cmd1;
+            negkey = 0;
+            jump(cmd1);
         case 2:
-            find(BITS(47));
-            goto cmd0;
+            acc = BITS(47);
+            jump(find);
         case 3:
-            m16 = 1;
-            // TODO goto cmd4;
+            acc = 1;
+            // FALL THROUGH
         case 4:
-            m16 = 0;
-            // TODO goto cmd4;
+            ati(m16);
+            jump(cmd4);
+#if 0            
         case 5:
-            data[011] = 0;
-            // TODO goto cmd5;
+            d00011 = 0;
+            jump(cmd5);
         case 6:
             idx = 0;
-            // TODO goto cmd6;
+            jump(cmd6);
 #endif
         case 7: label(k07):
             acc = (char*)&&a00317-(char*)&&frombase;
@@ -277,28 +278,123 @@ const char * msg[] = {
             jump(find);
         case 012:
             acc = m13.d;
-            goto cmd12;
+            jump(cmd12);
+        case 013:
+            itmlen = 0;
+            jump(pr425);
         case 014:
-          acc = curkey.d;
-          jump(ckexst);
+            acc = curkey.d;
+            jump(ckexst);
         case 015:
-          acc = curkey.d;
-          jump(ckdnex);
+            acc = curkey.d;
+            jump(ckdnex);
+#if 0
+        case 016:
+            acc = mylen.d ? (mylen.d ^ BITS(41)) + 1 : 0;
+            jump(cmd16);
+        case 017:
+            acc = mylen.d ? (mylen.d ^ BITS(41)) + 1 : 0;
+            jump(cmd17);
+#endif
+        case 020:
+            acc = myloc.d;
+            jump(cmd20);
         case 021:
             acc = myloc.d;
-            jump(flush);
+            jump(alloc);
+        case 022:
+            acc = adescr.d;
+            jump(cpyout);
         case 023:
             acc = adescr.d;
             jump(free);
+#if 0            
+        case 024:
+            acc = givenp;
+            jump(chkpsw);
+#endif
+        case 025:
+            acc = dbdesc.d;
+            jump(setctl);
         case 026:
-          acc = key.d;
-          jump(cmd26);
+            acc = key.d;
+            jump(inskey);
         case 027:
             limit = 0;
-            jump(cmd27);
+            jump(delkey);
+        case 030:
+            acc = orgcmd.d;
+            jump(next);
         case 031:
             acc = 04000;
             jump(root);
+        case 032:
+            acc = loc12.d;
+            jump(cmd32);
+        case 033:
+            acc = adescr.d;
+            jump(pr342);
+        case 034:
+            acc = desc1.d;
+            jump(cmd34);
+        case 035:
+            acc = dirty.d;
+            jump(save);
+#if 0
+        case 036:
+            acc = loc12.d;
+            jump(cmd36);
+#endif
+        case 037:
+            acc = curcmd.d;
+            acc >>= 12;
+            // FALL THROUGH
+        case 040:
+            jump(next);
+#if 0
+        case 041:
+            acc = (char*)&&compar-(char*)&&frombase;
+            jump(k43);
+        case 042:
+            acc = (char*)&&tobase-(char*)&&frombase;
+            // FALL THROUGH
+#endif
+        case 043: label(k43):
+            jmpoff = acc;
+            jump(cmd43);
+#if 0            
+        case 044:
+            acc = desc1.d;
+            jump(cmd44);
+        case 045:
+            acc = bdtab.d;
+            jump(lock);
+        case 046:
+            acc = myloc.d;
+            jump(cmd46);
+#endif
+        case 047:
+            acc = desc1.d;
+            jump(*outadr.p);
+#if 0
+        case 050:
+            acc = 3;
+            jump(cmd50);
+        case 051:
+            acc = &myloc-BDVECT;
+            jump(cmd51);
+        case 052:
+            acc = curcmd.d;
+            jump(cmd52);
+        case 053:
+            acc = curcmd.d;
+            jump(move);
+        case 054:
+            acc = curcmd.d;
+            jump(cmd54);
+#endif
+        case 055:
+            jump(*savm16.p);
         default:
             std::cerr << std::oct << m5.d << " NYI\n";
             abort();
@@ -358,7 +454,7 @@ const char * msg[] = {
         }
       label(a00164):
         acc = m16[-1].d & 01777;
-        m5 = acc;
+        ati(m5);
         std::cerr << "Comparing " << std::dec << acc/2 << " elements\n";
         if (!acc) jump(a00172);
       label(a00166):
@@ -382,7 +478,7 @@ const char * msg[] = {
       label(pr202):
         m16 = &loc116;
       label(a00203):
-        idx[&loc20] = acc;
+        idx[&array-1] = acc;
         acc &= 01777777;
         loc116 = acc;
         acc = m16.d;
@@ -482,24 +578,61 @@ const char * msg[] = {
         if (!acc) jump(cmd0);
         m16 = 8;
         jump(skip);
-        // ...
+      label(a00355):
+        acc += 2;
+        ati(m5);
+        acc ^= loc50[-1].d & 01777;
+        if (acc) jump(a00367);
+        acc = loc50[-1].d;
+        acc &= 01777777LL << 10;
+        if (!acc) jump(nonext);
+        acc >>= 10;
+        call(pr202,m6);
+        idx[&array-2] = idx[&array-2].d + (1<<15);
+        m5 = 0;
+      label(a00367):
+        acc = m5.d | 1 << 30;
+        idx[&array] = acc;
       label(a00371):
         acc = loc50[m5].d;
         curkey = acc;
         acc = loc50[m5+1].d;
         adescr = acc;
         jump(rtnext);
+      label(cmd5):
+          m6.p = &&alloc;
       label(pr376):
         d00012 = loc20;
         mylen = 041;
         d00010 = 2;
-        usrloc = &d00010;
+        usrloc = m16 = &d00010;
         jump(*m6.p);
-        // ...
+      label(cmd6):
+        itmlen = 041;
+        m16 = loc54;
+        acc = adescr.d;
+        jump(a00203);
       label(step):
         goto_ = m6;
       label(cmd4):
-        abort();
+        acc = idx[&array].d;
+        if (!acc) jump(empty);
+        ati(m5);
+        if (!m16.d) jump(a00355);
+        if (!m5.d) jump(a00415);
+      label(a00414):
+        ----m5;
+        jump(a00367);
+      label(a00415):
+        acc = loc50[-1].d >> 29;
+        if (!acc) jump(nopred);
+        call(pr202,m6);
+        acc = idx[&array-2].d;
+        acc -= 1<<15;
+        idx[&array-2] = acc;
+        acc = loc117.d & 01777;
+        ati(m5);
+        jump(a00414);
       label(pr425):
         m16 = dblen;
         itmlen = 0;
@@ -609,7 +742,7 @@ const char * msg[] = {
         dbdesc = acc = arch;
         jump(setctl);
       label(cmd12):
-        acc += DBDESC;
+        acc += &dbdesc-BDVECT;
         myloc = acc;
         mylen = 3;
         acc = adescr.d;
@@ -630,14 +763,19 @@ const char * msg[] = {
         frebas = acc;
         jump(a00213);
       label(err):
-          std::cerr << "Error " << std::dec << m16.d
-                    << " (" << msg[m16.d-1] << ")\n";
-        abort();
+        acc = erhndl.d;
+        if (!acc) jump(err1);
+        savm16 = acc;
       label(err1):
+        m7 = m16;
+        std::cerr << "ERROR " << std::dec << m16.d
+                  << " (" << msg[m16.d-1] << ")\n";
+        d00010 = *(uint64_t*)msg[m16.d-1];
+        acc = *((uint64_t*)msg[m16.d-1]+1);
       label(err2):
         d00011 = acc;
-        if (loc6 != 0) {
-            if (loc6 != 1) jump(exit1);
+        if (sync != 0) {
+            if (sync != 1) jump(exit1);
             m16 = bdtab;
             if (m16[1].d & (1 << 31)) {
                 m16[1].d &= ~(1 << 31);
@@ -663,11 +801,69 @@ const char * msg[] = {
         dirty(1);
         jump(*m6.p);
       label(a00667):
-        abort();
-        // ...
+        acc = idx.d;
+        if (!acc) jump(a01160);
+        acc = loc246.d;
+        call(free,m6);
+        desc2 = 1;
+        acc = loc117.d;
+        d00025 = acc;
+        acc &= 01777777LL << 29;
+        d00032 = acc;
+        acc >>= 29;
+        if (!acc) jump(a00703);
+        call(a00340,m6);
+        acc &= ~(01777777LL << 10);
+        loc117 = acc;
+        acc = d00025.d;
+        acc &= 01777777LL << 10;
+        acc |= loc117.d;
+        call(pr662,m6);
       label(a00703):
-        abort();
-        // ...
+        call(pr1232,m5);
+      label(delkey):
+        acc = loc50.d;
+        ati(m16);
+        acc += idx[&array].d;
+        ati(m5);
+        acc ^= loc50.d;
+        loc116 = acc;
+        acc = m16[-1].d;
+        acc &= 01777;
+        temp = acc;
+        acc += loc50.d;
+        work = acc;
+      label(a00712):
+        acc = m5[2].d;
+        *m5 = acc;
+        ++m5;
+        acc = m5.d;
+        acc ^= work.d;
+        if (acc) goto a00712;
+        acc = temp.d - 2;
+        acc ^= temp.d;
+        acc ^= m16[-1].d;
+        m16[-1] = acc;
+        acc &= 01777;
+        if (!acc) goto a00667;
+        acc = loc116.d;
+      label(a00721):
+        acc &= 077777;
+        if (acc) goto a01160;
+        d00011 = m16[0];
+        m5.p = &&a00730;
+        acc = m5.d;
+        goto_ = acc;
+        d00033 = size_t(&&a00731);
+        jump(a01160);
+      label(a00730):
+        jump(a01242);
+      label(a00731):
+        acc = d00011.d;
+        m16 = loc50;
+        m16[idx[&array]] = acc;
+        acc = idx[&array].d;
+        jump(a00721);
       label(free):
         call(totlen,m5);
       label(a00737):
@@ -675,7 +871,7 @@ const char * msg[] = {
         acc = (acc >> 10) & 077777;
         temp = acc;
         acc = loc116.d;
-        m5 = acc;
+        ati(m5);
       label(a00742):
         acc ^= temp.d;
         if (!acc) goto a00747;
@@ -733,7 +929,7 @@ const char * msg[] = {
             datlen = acc = work.d | mylen.d | (stamp << 33);
         }
         jump(*m7.p);
-      label(flush):
+      label(alloc):
         usrloc = acc;
         call(pr1022,m6);
         loc12 = d00024;
@@ -824,7 +1020,7 @@ const char * msg[] = {
         acc = loc12.d;
         m6.p = &&overfl;
         jump(free);
-      label(cmd26):
+      label(inskey):
         d00011 = acc;
         acc = loc12.d;
         adescr = acc;
@@ -834,8 +1030,9 @@ const char * msg[] = {
         acc >>= 15;
       label(a01125):
         d00012 = acc;
-        m16 = acc >> 15;
-        if (!(acc & 077777)) jump(*d00033.p);
+        acc >>= 15;
+        ati(m16);
+        if (!(d00012.d & 077777)) jump(*d00033.p);
         acc = d00012.d;
         utm(m16, -1);
         if (!m16.d) jump(a01133);
@@ -951,7 +1148,7 @@ const char * msg[] = {
         idx = acc;
         if (!acc) jump(a01123);
         m6.p = &&a01123;
-        acc = idx[&loc20].d;
+        acc = idx[&array-1].d;
         jump(pr202);
       label(a01252):
         call(pr425,m6);
@@ -970,13 +1167,30 @@ const char * msg[] = {
         usrloc = acc;
         m5 = dblen;
       label(a01264):
-        // ...
-        /* ** */
+        if (frebas[m5-1].d < 2) jump(a01105);
+        acc = frebas[m5-1].d - 2 + 1;
+        work = acc;
+        --m5;
+        if (acc < mylen.d) jump(a01274);
+        acc = usrloc.d;
+        acc -= mylen.d;
+        acc += 1;
+        usrloc = acc;
+        acc = m5.d;
+        m5 = 0;
+        jump(chunk);
+      label(a01274):
+        remlen = mylen.d - work.d;
+        mylen = work.d;
+        usrloc = usrloc.d - work.d;
+        acc = m5.d;
+        ++m5;
+        jump(chunk);
       label(nospac):
         if (mylen.d >= 01775) jump(long_);
         m7 = 077777;
       label(a01303):
-        m7.d++;
+        ++m7;
         if (m7.d == dblen.d) jump(long_);
         if (mylen.d >= frebas[m7].d) jump(a01303);
         acc = m7.d;
@@ -1042,7 +1256,27 @@ const char * msg[] = {
         if (acc < mylen.d) jump(overfl);
         m16 = curbuf;
         mylen = work.d;
-        // ...
+        call(a01346,m6);
+        usrloc = usrloc.d + mylen.d;
+        mylen = (datlen.d & 077777) - mylen.d;
+        datlen = usrloc[-1];
+        call(a01023,m6);
+        acc = d00012.d;
+        call(totlen,m5);
+        acc = (d00024.d << 20) & BITS(48);
+        acc |= loc220.d;
+        loc116[m16+1] = acc;
+        dirty(2);
+        jump(rtnext);
+      label(cmd34):
+          // The meaning of this value is unclear
+        sprintf((char*)&endmrk.d, " %05o", int(acc & 077777));
+        acc = desc1.d;
+        // Timestamp; OK to spill to desc2
+        sprintf((char*)&desc1.d, " %d%d.%d%d.X%d", int((acc >> 46) & 3),
+                int((acc >> 42) & 15), int((acc >> 41) & 1),
+                int((acc >> 37) & 15), int((acc >> 33) & 15));
+        jump(cmd0);
       label(cpyout):
         call(pr342,m6);
       label(a01415):
@@ -1142,7 +1376,7 @@ void newd(const char * k, int lnuzzzz) {
     key = *reinterpret_cast<const uint64_t*>(k);
     data[02121] = lnuzzzz;
     data[02122] = (key.d << 10) & BITS(48);
-    trace_stores = true;
+//    trace_stores = true;
     key = *reinterpret_cast<const uint64_t*>(k);
     mylen = 1;
     myloc = 01654;
@@ -1150,34 +1384,74 @@ void newd(const char * k, int lnuzzzz) {
     myloc = 02121;
     mylen = 2;
     orgcmd = 02621151131LL;
-    d00033 = 0;
-    abdv = BDVECT;
     trace_stores = false;
     sav = bdvect;
-    trace_stores = true;
+//    trace_stores = true;
     eval();
     orgcmd = 010121411;
-    d00033 = 0;
-    abdv = BDVECT;
     eval();
     trace_stores = false;
 }
 
-void ins(const char * k) {
+void opend(const char * k) {
+    std::cerr << "Running opend('" << k << "')\n";
     key = *reinterpret_cast<const uint64_t*>(k);
-    mylen = 2;
-    myloc = 0;
+    orgcmd = 0342512141131;
+    trace_stores = true;
+    eval();
+    trace_stores = false;
+    std::cerr << "Got " << (char*)&endmrk.d << (char*)&desc1.d << '\n';
+}
+
+void putd(const char * k, int loc, int len) {
+    std::cerr << "Running putd('" << k << "', '"
+              << reinterpret_cast<char*>(data+loc) << "':" << len << ")\n";
+    key = *reinterpret_cast<const uint64_t*>(k);
+    mylen = len;
+    myloc = loc;
     orgcmd = 026211511;
-    d00033 = 0;
-    abdv = BDVECT;
     eval();
 }
 
-void del(const char * k) {
+void putd(const char * k, const char * v) {
+    size_t len = (strlen(v)+7)/8;
+    std::cerr << "Running putd('" << k << "', '"
+              << v << "':" << len << ")\n";
+    key = *reinterpret_cast<const uint64_t*>(k);
+    strcpy((char*)(data+02000), v);
+    mylen = len;
+    myloc = 02000;
+    orgcmd = 026211511;
+    eval();
+}
+
+void modd(const char * k, int loc, int len) {
+    key = *reinterpret_cast<const uint64_t*>(k);
+    mylen = len;
+    myloc = loc;
+    orgcmd = 020402621001511;
+    eval();
+}
+
+void getd(const char * k, int loc, int len) {
+    key = *reinterpret_cast<const uint64_t*>(k);
+    mylen = len;
+    myloc = loc;
+    orgcmd = 0221411;
+    eval();
+}
+
+void getd(uint64_t k, int loc, int len) {
+    key = k;
+    mylen = len;
+    myloc = loc;
+    orgcmd = 0221411;
+    eval();
+}
+
+void deld(const char * k) {
     key = *reinterpret_cast<const uint64_t*>(k);
     orgcmd = 027231411;
-    d00033 = 0;
-    abdv = BDVECT;
     eval();
 }
 
@@ -1186,19 +1460,88 @@ void root() {
     eval();
 }
 
+void init() {
+    for (int i = 04000; i < 06000; ++i) {
+        std::string s = "wrd" + std::to_string(i);
+        data[i] = *reinterpret_cast<const uint64_t*>(s.c_str());
+    }    
+}
+
+void compare() {
+    for (int i = 0; i < 1024; ++i) {
+        if (data[02000+i] != data[04000+i]) {
+            std::cerr << "Element " << i << "does not match\n";
+        }
+    }
+}
+
+uint64_t first() {
+    orgcmd = 01;
+    eval();
+    return curkey.d;
+}
+
+uint64_t last() {
+    orgcmd = 02;
+    eval();
+    return curkey.d;
+}
+
+uint64_t prev() {
+    orgcmd = 03;
+    eval();
+    return curkey.d;
+}
+
+uint64_t next() {
+    orgcmd = 0400004;
+    eval();
+    return curkey.d;
+}
+
+uint64_t find(const char * k) {
+    key = *reinterpret_cast<const uint64_t*>(k);
+    orgcmd = 011;
+    eval();
+    return curkey.d;
+}
+
+void printn(const char * k, const char * v) {
+    size_t len = itmlen.d;
+    std::cout << k << " (" << len << "): ";
+    for (size_t i = 0; i < len*8; ++i) 
+        if (!v[i]) break;
+        else std::cout << v[i];
+    std::cout << '\n';
+}
+
 int main() {
-//    pasacd(01520000);   return 0;
-    int j = 01520001;
+    pasacd(01520000);
     passetar(01520000);
-    root();
-    for (int i = 100000; i < 100100; ++i) {
-        std::string fname = std::to_string(i);
-        std::cerr << "Inserting " << fname << '\n';
-        ins(fname.c_str());
+    newd("test\0\0\0", 01520001);
+    opend("test\0\0\0");
+    putd("3\0\0\0\0\0\0", "он уважать себя заставил");
+    putd("1\0\0\0\0\0\0", "мой дядя самых честных правил");
+    putd("4\0\0\0\0\0\0", "и лучше выдумать не мог");
+    putd("2\0\0\0\0\0\0", "когда не в шутку занемог");
+#if 1
+    uint64_t key = last();
+    while (key) {
+        getd(key, 02000, 100);
+        printn((char*)&key, (char*)(data + 02000));
+        key = prev();
     }
-    for (int i = 100000; i < 100100; ++i) {
-        std::string fname = std::to_string(i);
-        std::cerr << "Deleting " << fname << '\n';
-        del(fname.c_str());
+    std::cout << "At rend, itemlen = " << itmlen.d << ", addr = " << aitem.d << '\n';
+#else
+    uint64_t prevkey = 0;
+    first();
+    uint64_t key = next();
+    while (key && key != prevkey) {
+        std::cout << "Getting " << (char*)&key <<  " itemlen = " << itmlen.d << ", addr = " << aitem.d << '\n';
+        getd(key, 02000, 100);
+        printn((char*)&key, (char*)(data + 02000));
+        prevkey = key;
+        key = next();
     }
+#endif    
 }
