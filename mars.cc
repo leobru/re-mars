@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <cstring>
 #include <iostream>
+#include <iomanip>
 #include <error.h>
 #include <cstdlib>
 #include <cassert>
@@ -66,6 +67,7 @@ bdvect_t sav;
 #define BDTAB 010000
 #define BDBUF 012000
 #define BDVECT 01001
+#define FAKEBLK 020
 
 #define bdvect (*reinterpret_cast<bdvect_t*>(data+BDVECT))
 
@@ -250,7 +252,6 @@ void e70(word is) {
             exit(1);
         }
         int zone = is.d & 07777;
-        fprintf(t, " Zone %d:\n", zone);
         for (int i = 0; i < 1024; ++i) {
             fprintf(t, "%04o.%04o:  %04o %04o %04o %04o\n",
                     zone, i, int(data[page*1024+i].d >> 36),
@@ -652,11 +653,15 @@ void eval() {
     d00012 = loc20;
     mylen = 041;
     d00010 = 2;
-    usrloc = m16 = &d00010;
+    usrloc = &d00010;
+    data[FAKEBLK].d = 2;
+    data[FAKEBLK+1].d = d00011.d;
+    data[FAKEBLK+2].d = loc20.d;
+    m16 = usrloc.d = FAKEBLK;
     jump(*m6.p);
   cmd6:
     itmlen = 041;
-    m16 = loc54;
+    m16 = &loc54;
     acc = adescr.d;
     jump(a00203);
   step:
@@ -693,7 +698,7 @@ void eval() {
         jump(a00431);
     --acc;
   a00431:
-    itmlen = itmlen.d + acc;
+    itmlen = acc += itmlen.d;
     cycle(a00427, m16);
     jump(*m6.p);
     // ...
@@ -1441,6 +1446,8 @@ void pasbdi() {
     data[BDSYS+0047] = 02000'0011'2300'0375;
     data[BDSYS+0050] = 05400'0242'2300'0404;
     abdv = BDVECT;
+    for (int i = 0; i < 041; ++i)
+      data[FAKEBLK+i].d = 01234567007654321LL;
 }
 
 void SetDB(int lnuzzzz) {
@@ -1480,10 +1487,8 @@ void opend(const char * k) {
     if (verbose)
         std::cerr << "Running opend('" << k << "')\n";
     key = *reinterpret_cast<const uint64_t*>(k);
-    orgcmd = 0342512141131;
+    orgcmd = 02512141131;
     eval();
-    if (verbose)
-        std::cerr << "Got " << (char*)&endmrk.d << (char*)&desc1.d << '\n';
 }
 
 void putd(const char * k, int loc, int len) {
@@ -1491,6 +1496,19 @@ void putd(const char * k, int loc, int len) {
         std::cerr << "Running putd('" << k << "', '"
                   << reinterpret_cast<char*>(data+loc) << "':" << len << ")\n";
     key = *reinterpret_cast<const uint64_t*>(k);
+    mylen = len;
+    myloc = loc;
+    orgcmd = 026211511;
+    eval();
+}
+
+void putd(uint64_t k, int loc, int len) {
+    if (verbose) {
+        std::cerr << "Running putd(" << std::oct << std::setw(16) << std::setfill('0') << k << ", ";
+        std::cerr << std::setw(5) << loc << ":" << std::setw(0) << std::dec << len << ")\n";
+        std::cerr.copyfmt(std::ios(nullptr));
+    }      
+    key = k;
     mylen = len;
     myloc = loc;
     orgcmd = 026211511;
@@ -1546,9 +1564,8 @@ void root() {
 }
 
 void init(int start, int len) {
-    for (int i = start; i < start+len; ++i) {
-        std::string s = "wrd" + std::to_string(i);
-        data[i] = *reinterpret_cast<const uint64_t*>(s.c_str());
+    for (int i = 0; i < len; ++i) {
+      data[start+i] = (064LL << 42) + i;
     }
 }
 
@@ -1611,8 +1628,10 @@ void usage() {
 
 int main(int argc, char ** argv) {
     int c;
+    bool do_init = false, newfile = false;
+    int len = 2;
     for (;;) {
-        c = getopt (argc, argv, "hVt");
+        c = getopt (argc, argv, "inhVtil:");
         if (c < 0)
             break;
         switch (c) {
@@ -1623,46 +1642,57 @@ int main(int argc, char ** argv) {
         case 'V':
             verbose = true;
             break;
+        case 'i':
+            do_init = true;
+            break;
+        case 'n':
+            newfile = true;
+            break;
         case 't':
             trace_stores = true;
+            break;
+        case 'l':
+            len = atoi(optarg);
             break;
         }
     }
 
     // Initializing the database catalog: 1 zone, starting from zone 0 on LUN 52 (arbitrary)
-    InitDB(01520000);
+    if (do_init) {
+        InitDB(01520000);
+    }
     // Setting the root location
     SetDB(01520000);
-    // Making a new array of 3 zones, starting from zone 1
-    newd("test\0\0\0", 03520001);
+    // Making a new array of 'len' zones, starting from zone 1
+    if (newfile) {
+      newd("  TSET\0", 0520001 + (len << 18));
+    }
     // Opening it
-    opend("test\0\0\0");
+    opend("  TSET\0\0");
     // Initializing an array of 1024 words
     init(04000, 1024);
-#if 0
     // Putting one half of it to the DB
-    modd("array\0\0", 04000, 512);
+    modd("     A\0\0", 04000, 512);
     // Putting all of it (will be split: max usable words in a zone = 01775)
-    modd("array\0\0", 04000, 1024);
+    modd("     A\0\0", 04000, 1024);
     // Again (exact match of length)
-    modd("array\0\0", 04000, 1024);
+    modd("     A\0\0", 04000, 1024);
     // With smaller length (reusing the block)
-    modd("array\0\0", 04001, 1023);
+    modd("     A\0\0", 04001, 1023);
     // Getting back
-    getd("array\0\0", 02000, 1023);
+    getd("     A\0\0", 02000, 1023);
     compare(02000, 04001, 1023);
     // Done with it
-    deld("array\0\0");
-#endif
+    deld("     A\0\0");
     // Putting 100 elements of varying sizes
-    for (int i = 0; i < 77; ++i) {
-        std::string k = std::to_string(i);
-        std::cerr << "Putting " << k << '\n';
-        putd(k.c_str(), 04000+i, i);
+    for (int i = 0; i <= 60; ++i) {
+        std::cerr << "Putting " << i << '\n';
+        putd(i+1, 04000, i);
         if (d00011.d) {
             std::cerr << "\twhile putting " << std::dec << i << '\n';
         }
     }
+    exit(0);
     uint64_t key = last();
     while (key) {
         getd(key, 02000, 100);
