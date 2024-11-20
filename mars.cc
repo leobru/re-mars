@@ -7,6 +7,7 @@
 #include <cassert>
 #include <string>
 #include <ctime>
+#include <getopt.h>
 
 union word {
     uint64_t d;
@@ -27,6 +28,7 @@ union word {
 };
 
 bool trace_stores = false;
+bool verbose = false;
 
 word data[1024*6];
 
@@ -150,7 +152,28 @@ word & which = data[BDVECT+0244];
 word & loc246 = data[BDVECT+0246];
 word & dirty = data[BDVECT+0247];
 
-uint64_t acc;
+union Accumulator {    
+    uint64_t d;
+    struct {
+        unsigned offset : 10;
+        unsigned dummy  : 23;
+        unsigned stamp  : 15;
+    };
+    struct {
+        unsigned addr   : 15;
+    };
+    operator uint64_t() { return d; }
+    uint64_t& operator=(uint64_t x) { d = x; return d; }
+    uint64_t& operator&=(uint64_t x) { d &= x; return d; }
+    uint64_t& operator|=(uint64_t x) { d |= x; return d; }
+    uint64_t& operator^=(uint64_t x) { d ^= x; return d; }
+    uint64_t& operator+=(uint64_t x) { d += x; return d; }
+    uint64_t& operator-=(uint64_t x) { d -= x; return d; }
+    uint64_t& operator<<=(int x) { d <<= x; return d; }
+    uint64_t& operator>>=(int x) { d >>= x; return d; }
+    uint64_t& operator++() { ++d; return d; }
+    uint64_t& operator--() { --d; return d; }
+} acc;
 
 // struct Mars
 word & abdv = data[BDSYS+3];
@@ -201,8 +224,9 @@ void e70(word is) {
             std::cerr << "Reading zone " << nuzzzz << " which does not exist yet\n";
             return;
         }
-        std::cerr << "Reading " << nuzzzz
-                  << " to address " << std::oct << page*1024 << '\n';
+        if (verbose)
+            std::cerr << "Reading " << nuzzzz
+                      << " to address " << std::oct << page*1024 << '\n';
         fread(data+page*1024, 1024, sizeof(uint64_t), f);
         fclose(f);
     } else {
@@ -212,8 +236,9 @@ void e70(word is) {
             std::cerr << "Could not open " << nuzzzz << '(' << strerror(errno) << ")\n";
             exit(1);
         }
-        std::cerr << "Writing " << nuzzzz
-                  << " from address " << std::oct << page*1024 << '\n';
+        if (verbose)
+            std::cerr << "Writing " << nuzzzz
+                      << " from address " << std::oct << page*1024 << '\n';
         fwrite(data+page*1024, 1024, sizeof(uint64_t), f);
         fclose(f);
 
@@ -252,7 +277,8 @@ void eval() {
     acc = m16.d;
     jump(enter);
   switch_:
-    std::cerr << "Executing microcode " << std::oct << m5.d << '\n';
+    if (verbose)
+        std::cerr << "Executing microcode " << std::oct << m5.d << '\n';
     acc = 0;
     switch (m5.d) {
     case 0:
@@ -458,13 +484,15 @@ void eval() {
     m16 = &loc56;
     acc = loc20.d;
     if (!acc) {
-        std::cerr << "Loc20 == 0, nothing to compare\n";
+        if (verbose)
+            std::cerr << "Loc20 == 0, nothing to compare\n";
         jump(a00212);
     }
   a00164:
     acc = m16[-1].d & 01777;
     ati(m5);
-    std::cerr << "Comparing " << std::dec << acc/2 << " elements\n";
+    if (verbose)
+        std::cerr << "Comparing " << std::dec << acc/2 << " elements\n";
     if (!acc)
         jump(a00172);
   a00166:
@@ -966,7 +994,8 @@ void eval() {
     work = which[m16];
     ++mylen;
     if (mylen.d >= work.d) {
-        std::cerr << "mylen = " << mylen.d << " work = " << work.d << '\n';
+        if (verbose)
+            std::cerr << "mylen = " << mylen.d << " work = " << work.d << '\n';
         jump(nospac);
     }
     acc = which.d;
@@ -1014,8 +1043,9 @@ void eval() {
     }
   a01062:
     if (m16.d) {
-        std::cerr << "To DB: "  << std::oct << m16.d << "(8) words from "
-                  << usrloc.d << " to " << temp.d << '\n';
+        if (verbose)
+            std::cerr << "To DB: "  << std::oct << m16.d << "(8) words from "
+                      << usrloc.d << " to " << temp.d << '\n';
       a01063:
         temp[m16-1] = usrloc[m16-1];
         cycle(a01063, m16);
@@ -1023,9 +1053,12 @@ void eval() {
   a01067:
     loc116[m7+1] = (mylen.d << 10) | work.d | d00030.d;
     m16 = frebas;
-    std::cerr << "Reducing free " << std::oct << which[m16].d << " by len " << mylen.d << " + 1\n";
+    if (verbose)
+        std::cerr << "Reducing free " << std::oct << which[m16].d
+                  << " by len " << mylen.d << " + 1\n";
     which[m16] = which[m16].d - (mylen.d+1);
-    std::cerr << "Got " << which[m16].d << '\n';
+    if (verbose)
+        std::cerr << "Got " << which[m16].d << '\n';
     if (!m5.d)
         jump(a01111);
     dirty(1);
@@ -1089,7 +1122,8 @@ void eval() {
     acc &= 01777;
     m6 = acc;
     utm(m6, m16.d);
-    std::cerr << "Expanding " << std::dec << m6.d-limit.d << " elements\n";
+    if (verbose)
+        std::cerr << "Expanding " << std::dec << m6.d-limit.d << " elements\n";
   expand:
     if (m6 == limit)
         jump(expand2);
@@ -1124,9 +1158,7 @@ void eval() {
     acc = loc246.d;
     jump(a01311);
   a01174:
-    acc = idx.d << 1;
-    acc += 041;
-    work = acc;
+    work = (idx.d * 2) + 041;
     acc = loc55.d ^ 036;
     if (acc)
         jump(a01201);
@@ -1247,7 +1279,7 @@ void eval() {
     d00012 = acc;
     m6.p = &&drtnxt;
     call(totlen,m5);
-    acc--;
+    --acc;
     ati(m5);
     acc ^= mylen.d;
     if (acc)
@@ -1342,8 +1374,9 @@ void eval() {
     acc &= 077777;
     if (!acc)
         jump(a01431);
-    std::cerr << "From DB: " << std::oct << m16.d << "(8) words from "
-              << aitem.d << " to " << usrloc.d << '\n';
+    if (verbose)
+        std::cerr << "From DB: " << std::oct << m16.d << "(8) words from "
+                  << aitem.d << " to " << usrloc.d << '\n';
   coloop:
     acc = aitem[m16-1].d;
     usrloc[m16-1] = acc;
@@ -1425,11 +1458,11 @@ void InitDB(int lnuzzzz) {
 
 // Replicating what the NEWD option does in the PAIB Pascal API function
 void newd(const char * k, int lnuzzzz) {
-    std::cerr << "Running newd('" << k << "', " << std::oct << lnuzzzz << ")\n";
+    if (verbose)
+        std::cerr << "Running newd('" << k << "', " << std::oct << lnuzzzz << ")\n";
     key = *reinterpret_cast<const uint64_t*>(k);
     data[02121] = lnuzzzz;
     data[02122] = (key.d << 10) & BITS(48);
-//    trace_stores = true;
     key = *reinterpret_cast<const uint64_t*>(k);
     mylen = 1;
     myloc = 01654;
@@ -1437,28 +1470,26 @@ void newd(const char * k, int lnuzzzz) {
     myloc = 02121;
     mylen = 2;
     orgcmd = 02621151131LL;
-    trace_stores = false;
     sav = bdvect;
-//    trace_stores = true;
     eval();
     orgcmd = 010121411;
     eval();
-    trace_stores = false;
 }
 
 void opend(const char * k) {
-    std::cerr << "Running opend('" << k << "')\n";
+    if (verbose)
+        std::cerr << "Running opend('" << k << "')\n";
     key = *reinterpret_cast<const uint64_t*>(k);
     orgcmd = 0342512141131;
-    trace_stores = true;
     eval();
-    trace_stores = false;
-    std::cerr << "Got " << (char*)&endmrk.d << (char*)&desc1.d << '\n';
+    if (verbose)
+        std::cerr << "Got " << (char*)&endmrk.d << (char*)&desc1.d << '\n';
 }
 
 void putd(const char * k, int loc, int len) {
-    std::cerr << "Running putd('" << k << "', '"
-              << reinterpret_cast<char*>(data+loc) << "':" << len << ")\n";
+    if (verbose)
+        std::cerr << "Running putd('" << k << "', '"
+                  << reinterpret_cast<char*>(data+loc) << "':" << len << ")\n";
     key = *reinterpret_cast<const uint64_t*>(k);
     mylen = len;
     myloc = loc;
@@ -1468,8 +1499,9 @@ void putd(const char * k, int loc, int len) {
 
 void putd(const char * k, const char * v) {
     size_t len = (strlen(v)+7)/8;
-    std::cerr << "Running putd('" << k << "', '"
-              << v << "':" << len << ")\n";
+    if (verbose)
+        std::cerr << "Running putd('" << k << "', '"
+                  << v << "':" << len << ")\n";
     key = *reinterpret_cast<const uint64_t*>(k);
     strcpy((char*)(data+02000), v);
     mylen = len;
@@ -1521,11 +1553,16 @@ void init(int start, int len) {
 }
 
 void compare(int start1, int start2, int len) {
-    for (int i = start1; i < start1+len; ++i) {
+    bool match = true;
+    for (int i = 0; i < len; ++i) {
         if (data[start1+i] != data[start2+i]) {
-            std::cerr << "Element " << i << "does not match\n";
+            match = false;
+            std::cerr << "Element " << std::dec << i << " does not match\n";
         }
     }
+    if (match)
+        std::cerr << std::dec << len << " elements match between "
+                  << std::oct << start1 << " and " << start2 << '\n';
 }
 
 uint64_t first() {
@@ -1568,8 +1605,30 @@ void printn(const char * k, const char * v) {
     std::cout << '\n';
 }
 
+void usage() {
+    std::cerr << "Usage: mars [-hV]\n\t-V\tverbose\n\t-h\thelp\n";
+}
 
-int main() {
+int main(int argc, char ** argv) {
+    int c;
+    for (;;) {
+        c = getopt (argc, argv, "hVt");
+        if (c < 0)
+            break;
+        switch (c) {
+        default:
+        case 'h':
+            usage ();
+            return 0;
+        case 'V':
+            verbose = true;
+            break;
+        case 't':
+            trace_stores = true;
+            break;
+        }
+    }
+
     // Initializing the database catalog: 1 zone, starting from zone 0 on LUN 52 (arbitrary)
     InitDB(01520000);
     // Setting the root location
@@ -1580,6 +1639,7 @@ int main() {
     opend("test\0\0\0");
     // Initializing an array of 1024 words
     init(04000, 1024);
+#if 0
     // Putting one half of it to the DB
     modd("array\0\0", 04000, 512);
     // Putting all of it (will be split: max usable words in a zone = 01775)
@@ -1593,15 +1653,21 @@ int main() {
     compare(02000, 04001, 1023);
     // Done with it
     deld("array\0\0");
+#endif
     // Putting 100 elements of varying sizes
-    for (int i = 0; i < 100; ++i) {
+    for (int i = 0; i < 77; ++i) {
         std::string k = std::to_string(i);
-        putd(k.c_str(), 04000, i);
+        std::cerr << "Putting " << k << '\n';
+        putd(k.c_str(), 04000+i, i);
+        if (d00011.d) {
+            std::cerr << "\twhile putting " << std::dec << i << '\n';
+        }
     }
     uint64_t key = last();
     while (key) {
         getd(key, 02000, 100);
         std::cout << (char*)&key << ' ' << itmlen.d << '\n';
+        compare(02000, 04000+itmlen.d, itmlen.d);
         key = prev();
     }
 #if 0
