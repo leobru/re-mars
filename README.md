@@ -36,19 +36,19 @@ The semantics of micro-instructions (with the range of possible valid codes 00-5
 | 16 | Compute character string length | 
 | 17 | Compute data length in words using bdvec[32] as delimiter | 
 | 20 | Copy from the user area to the value part of the current entry |
-| 21 | Copy data to the disk (???) | 
+| 21 | Allocate a memory block for data or metadata | 
 | 22 | Copy the value part of the current entry to the user area |
-| 23 | Free the memory for the value part of the current entry (???) |
-| 24 | ??? Password check |
+| 23 | Free the memory for the value part of the current entry |
+| 24 | Password check (the 3rd word of the current file descriptor), if created with 3 words instead of default 2 in NEWD |
 | 25 | Switch to the catalog pointed to by the descriptor |
-| 26 | Add a key (???) wants to write to the disk |
-| 27 | Delete a key (???) wants to write to the disk |
+| 26 | Add a key |
+| 27 | Delete a key |
 | 30 | Restart executing the instruction word |
 | 31 | Switch to the root catalog |
 | 32 | [aitem] = 0; flush |
 | 33 | ??? Non-writing |
-| 34 | Converts a file descriptor to a text format |
-| 35 | Save dirty duffers and exit |
+| 34 | Converts a block descriptor to a text format (length, date) |
+| 35 | Save dirty buffers and exit |
 | 36 | ??? Wants to write to the disk |
 | 37 | Skip next 2 instructions |
 | 40 | Stop |
