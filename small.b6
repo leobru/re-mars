@@ -4,7 +4,7 @@ dis 41(2148)^
 dis 52(1234-wr)^
 ОЗУ 32^
 еев1а3
-*name 
+*name
 *call ficmemory
 *     в паспорте 40(2048-630) - для настройки на код МАРСа
 *     52(1234-wr) - рабочая лента для экспериментов
@@ -32,7 +32,7 @@ dis 52(1234-wr)^
  wr:,log,0
  is:,bss,1
  ,end,
-*call /copy/
+*     call /copy/
  start:,name,
  *bdvect*:,lc,168
  *erstop*:,lc,1
@@ -44,23 +44,25 @@ dis 52(1234-wr)^
  ,end,
 *no list
 *pascal
-(*=p-,t-*)PROGRAM main (OUTPUT,BDVECT);
+(*=p-,t-*)PROGRAM main (OUTPUT,BDVECT,bderrn);
 % BDVECT - массив с параметрами задания к МАРСу
 % нужно указывать и объявлять, если нужен прямой доступ к нему
 type word = record case integer of 0:(i:integer); 1:(a:alfa) end;
-var i,j:integer;
-a:array [1..1234b] _of integer;
+var i,j:integer;bderrn:integer;
+a:array [1..1024] _of integer;
 bdvect, sav: array[0..167] of word;
+name:alfa;
 % sav - массив того же типа что bdvect для определения изменившихся слов
 % процедуры работы с МАРСом согласно инструкции Пирина
-PROCEDURE PASSETAR(I: INTEGER); EXTERNAL; 
+PROCEDURE PASSETAR(I: INTEGER); EXTERNAL;
 PROCEDURE PASACD(VAR I: INTEGER); FORTRAN;
 procedure pasbd; external;
-% процедура печати изменившихся слов 
+procedure pasbdi; external;
+% процедура печати изменившихся слов
 procedure dump;
 _var j:integer;
-_( 
-    for j := 0 to 167 do 
+_(
+    for j := 0 to 167 do
         if bdvect[j] <> sav[j] then
             writeln(' word ', j : 3 oct,
                 ' changed from ', sav[j] oct,
@@ -76,70 +78,60 @@ _);
 % проверка значений в массиве
 procedure check;
 _(
-	for j := 1 to 1234b do 
+	for j := 1 to 1234b do
 	if (a[j] <> j*j) then writeln(' elt ', j, ' is ', a[j],
 	' instead of ', j*j);
 _);
 BEGIN
-	sav := bdvect;
+%	sav := bdvect;
 % создаем каталог баз данных длиной 1 зону с нулевой зоны
-% НУ 52, константа должна быть типа С (без порядка), а не В 
+% НУ 52, константа должна быть типа С (без порядка), а не В
 	j := 1520000C;
 % процедура PASACD описана как FORTRAN, поэтому параметр передается
-% через переменную 
+% через переменную
 % при работе с существующей базой PASACD нужно убрать
-%       PASACD(j); writeln(' after pasacd'); exit;
+        pasbdi;
+       PASACD(j);
+writeln(' after pasacd');
 % настраиваемся на каталог, здесь уже можно константу
-        PASSETAR(1520000c); writeln(' after passetar'); 
+        PASSETAR(1520000c); writeln(' after passetar');
 % создаем файл данных YYY на НУ 52 с зоны 4 длиной 3 зоны
 % здесь тоже константа обязательно типа С
-	j := 1520001C;
+	j := 2520001C;
 % для работы с существующим файлом newd нужно убрать
-        besm(0770002C);
-(*
-    newd('QQQQQQ', j);
-    newd('WWWWWW', j);
-    newd('EEEEEE', j);
-    newd('RRRRRR', j);
-    newd('TTTTTT', j);
-    newd('YYYYYY', j);
-    newd('UUUUUU', j);
-    newd('IIIIII', j);
-    newd('OOOOOO', j);
-    newd('PPPPPP', j);
-    newd('AAAAAA', j);
-    newd('SSSSSS', j);
-    newd('DDDDDD', j);
-    newd('FFFFFF', j);
-    newd('GGGGGG', j);
-*)
-    newd('HHHHHH', j);
-        besm(0770000C);
-        exit;
-        writeln(' after newd'); dump;
-% открываем его
-        opend('yyy'); writeln(' after opend'); dump;
+    newd('test', j);
+        opend('test');
 % инициализируем массив а
-	for j := 1 to 1234b do a[j] := j*j;
-% пишем массив в текущий файл
-	putd('val', a); writeln(' after putd'); dump;
-% обнуляем массив
-        zero;
-% читаем в массив из файла
-	getd('val', a);	writeln(' after getd'); dump;
-% проверяем, что значения равны ожидаемым
-        check;
-% изменяем какое-нибудь слово массива
-        a[125] := 999999;
-% и записываем в файл        
-        modd('val', a); 
-% обнуляем, читаем, сравниваем - отличие в одном слове
-        zero; getd('val', a); check;
-% ещё можно указывать длину записываемого элемента
-        modd('val', a:1232b);
-% обнуляем, читаем, сравниваем - отличие в трех словах
-        zero; getd('val', a); check; dump;
-% прочтенная длина 1232 видна в 3 разных словах
+	for j := 1 to 1024 do a[j] := j-1;
+%    // Putting one half of it to the DB
+    modd('A', a:512);
+%    // Putting all of it (will be split: max usable words in a zone = 01775)
+    modd('A', a:1024);
+%    // Again (exact match of length)
+    modd('A', a:1024);
+%    // With smaller length (reusing the block)
+    modd('A', a[2]:1023);
+%    // Getting back
+    getd('A', a:1023);
+    for j := 1 to 1023 do if a[j] <> j then
+      writeln('Mismatch at ', j, ' see ', a[j],
+      ' must be ', j);
+%    // Done with it
+    writeln(' Deleting');
+    deld('A');
+    writeln(' Done');
+        name := '_000_000_000_000_000_000';
+        for j := 0 to -1 do begin
+            writeln(' Putting ', j:2);
+            name[6] := chr(j+1);
+%             besm(0770002b);
+            putd(name, a:j);
+              besm(0770000b);
+        end;
+            bderrn := 0c;
+        bdvect[3].i := 3027230002c;
+        bdvect[8].i := 0c;
+        pasbd;
 END.
 *     no load list
 *main start

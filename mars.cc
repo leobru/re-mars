@@ -7,12 +7,19 @@
 #include <cstdlib>
 #include <cassert>
 #include <string>
+#include <algorithm>
 #include <ctime>
 #include <getopt.h>
 
 union word {
     uint64_t d;
     void*    p;
+    struct {
+        unsigned off1 : 10;
+        unsigned off2 : 10;
+        unsigned extent  : 19;
+        unsigned upper9  : 9;
+    };
     word(uint64_t x = 0) : d(x) { }
     uint64_t& operator=(uint64_t x);
     word& operator=(word x);
@@ -67,6 +74,7 @@ struct bdvect_t {
 
 bdvect_t sav;
 
+// Page locations of P/BDSYS, P/BDTAB and P/BDBUF in a mid-sized test program
 #define BDSYS 06000
 #define BDTAB 010000
 #define BDBUF 012000
@@ -156,7 +164,7 @@ word & curkey = data[BDVECT+037];
 word & endmrk = data[BDVECT+040];
 word & desc1 = data[BDVECT+041];
 word & desc2 = data[BDVECT+042];
-word & e70msk = data[BDVECT+044];
+word & IOpat = data[BDVECT+044];
 word & curpos = data[BDVECT+045];
 word & aitem = data[BDVECT+046];
 word & itmlen = data[BDVECT+047];
@@ -181,12 +189,15 @@ word & dirty = data[BDVECT+0247];
 union Accumulator {    
     uint64_t d;
     struct {
-        unsigned offset : 10;
-        unsigned dummy  : 23;
-        unsigned stamp  : 15;
+        unsigned off1 : 10;
+        unsigned off2 : 10;
+        unsigned extent  : 19;
+        unsigned upper9  : 9;
     };
     struct {
         unsigned addr   : 15;
+        unsigned dummy  : 18;
+        unsigned stamp  : 15;
     };
     operator uint64_t() { return d; }
     uint64_t& operator=(uint64_t x) { d = x; return d; }
@@ -228,7 +239,7 @@ word & d00033 = data[BDSYS+033];
 word & remlen = data[BDSYS+034];
 word & work = data[BDSYS+035];
 word & temp = data[BDSYS+036];
-word & ise70 = data[BDSYS+037];
+word & IOword = data[BDSYS+037];
 word & d00040 = data[BDSYS+040];
 word & savrk = data[BDSYS+041];
 
@@ -239,7 +250,7 @@ const char * msg[] = {
     "DB is locked", "No current record", "No prev. record", "No next record",
     "Wrong password" };
 
-void e70(word is) {
+void IOcall(word is) {
     int page = (is >> 30) & BITS(5);
     char nuzzzz[7];
     sprintf(nuzzzz, "%06o", int(is.d & BITS(18)));
@@ -298,11 +309,11 @@ void getzon() {
         return;
     if (which.d && (dirty.d & 2)) {
         dirty = dirty.d & ~2;
-        ise70 = (e70msk.d | bdbuf.d << 20) + m16[0].d;
-        e70(ise70);
+        IOword = (IOpat.d | bdbuf.d << 20) + m16[0].d;
+        IOcall(IOword);
     }
-    ise70 = (curbuf.d << 20 | which.d | ONEBIT(40)) + e70msk.d;
-    e70(ise70);
+    IOword = (curbuf.d << 20 | which.d | ONEBIT(40)) + IOpat.d;
+    IOcall(IOword);
     m16 = curbuf;
     if (m16[0] == zonkey)
         return;
@@ -313,12 +324,12 @@ void getzon() {
 
 void save(bool force_tab = false) {
     if (force_tab || (dirty.d & 1)) {
-        ise70 = e70msk.d | bdtab.d << 20;
-        e70(ise70);
+        IOword = IOpat.d | bdtab.d << 20;
+        IOcall(IOword);
     }
     if (dirty.d & 2) {
-        ise70 = (e70msk.d | bdbuf.d << 20) + (bdbuf[0].d & 01777);
-        e70(ise70);
+        IOword = (IOpat.d | bdbuf.d << 20) + (bdbuf[0].d & 01777);
+        IOcall(IOword);
     }
     dirty = 0;
 }
@@ -469,10 +480,8 @@ void eval() try {
         acc = curkey.d;
         jump(ckdnex);
     case 016:
-        acc = -mylen.d;
         jump(cmd16);
     case 017:
-        acc = -mylen.d;
         jump(cmd17);
     case 020:
         acc = myloc.d;
@@ -502,8 +511,9 @@ void eval() try {
         acc = orgcmd.d;
         jump(next);
     case 031:
-        acc = 04000;
-        jump(root);
+        rootfl = 04000;
+        dbdesc = acc = arch;
+        jump(setctl);
     case 032:
         acc = loc12.d;
         jump(cmd32);
@@ -578,9 +588,9 @@ void eval() try {
     m13 = abdv;
     savm7 = m7;
     savm5 = m5;
-    if (bdtab[0] != rootfl && e70msk.d) {
-        ise70 = bdtab.d << 20 | ONEBIT(40) | e70msk.d;
-        e70(ise70);
+    if (bdtab[0] != rootfl && IOpat.d) {
+        IOword = bdtab.d << 20 | ONEBIT(40) | IOpat.d;
+        IOcall(IOword);
     }
     savm6 = m6;
   enter2:
@@ -717,14 +727,14 @@ void eval() try {
     jump(*m6.p);
   lock:
     acc <<= 20;
-    work = acc |= e70msk.d;
-    ise70 = acc |= 1LL << 39;
-    e70(ise70);
+    work = acc |= IOpat.d;
+    IOword = acc |= ONEBIT(40);
+    IOcall(IOword);
     bdtab[1] = acc = bdtab[1].d ^ (1 << 31);
     if (!(acc & (1 << 31)))
         throw ERR_LOCKED;
     bdbuf[0] = acc;
-    e70(work);
+    IOcall(work);
     jump(*m6.p);
   cmd44:
     adescr = acc;
@@ -776,7 +786,7 @@ void eval() try {
   a00325:
     acc = loc220.d;
     acc >>= 20;
-    acc &= 01777777;
+    acc &= BITS(19);
     if (acc)
         jump(a00267);
     acc = jmpoff.d;
@@ -787,7 +797,7 @@ void eval() try {
     if (!acc)
         jump(*m6.p);
   a00332:
-    m16 = 7;
+    m16 = ERR_STEP;
     jump(skip);
   cmd7:
     jmpoff = acc;
@@ -832,9 +842,11 @@ void eval() try {
     if (acc)
         jump(a00367);
     acc = loc50[-1].d;
-    acc &= 01777777LL << 10;
-    if (!acc)
-        jump(nonext);
+    acc &= BITS(19) << 10;
+    if (!acc) {
+        m16 = ERR_NO_NEXT;
+        jump(skip);
+    }
     acc >>= 10;
     call(pr202,m6);
     array[idx.d-2] = array[idx.d-2].d + (1<<15);
@@ -870,8 +882,10 @@ void eval() try {
     jump(a00367);
   a00415:
     acc = loc50[-1] >> 29;
-    if (!acc)
-        jump(nopred);
+    if (!acc) {
+        m16 = ERR_NO_PREV;
+        jump(skip);
+    }
     call(pr202,m6);
     acc = array[idx.d-2].d;
     acc -= 1<<15;
@@ -881,7 +895,7 @@ void eval() try {
     jump(a00414);
   cmd16: {
     // Searching for the end mark (originally 1 or 2 bytes)
-    m16 = acc;
+    m16 = -mylen.d;
     temp = myloc.d + mylen.d;
     // Handling only single byte mark, contemporary style
     char * start = (char*)&(temp[m16].d);
@@ -894,7 +908,7 @@ void eval() try {
     }
   cmd17:    
     // Searching for the end word
-    m16 = acc;
+    m16 = -mylen.d;
     temp = myloc.d + mylen.d;
   loop_here:
     acc = temp[m16].d ^ endmrk.d;
@@ -909,21 +923,13 @@ void eval() try {
     }
     throw ERR_INTERNAL;         // Originally "no end word"
   skip:
-    acc = curcmd.d;
-    acc >>= 6;
+    acc = curcmd.d >> 6;
     if (!acc || (acc & 077))
-        throw m16.d;
+        throw Error(m16.d);
   skip5:
-    acc = curcmd.d;
-    acc >>= 30;
+    acc = curcmd.d >> 30;
     jump(next);
   overfl: throw ERR_OVERFLOW;
-  nopred: m16 = 15; jump(skip);
-  nonext: m16 = 16; jump(skip);
-  root:
-    rootfl = acc;
-    dbdesc = acc = arch;
-    jump(setctl);
   cmd12:
     acc += &dbdesc-BDVECT;
     myloc = acc;
@@ -931,10 +937,10 @@ void eval() try {
     acc = adescr.d;
     jump(cpyout);
   setctl:
-    e70msk = acc & 0777777;
+    IOpat = acc & 0777777;
     dblen = dbdesc >> 18;
-    ise70 = bdtab.d << 20 | e70msk.d | ONEBIT(40);
-    e70(ise70);
+    IOword = bdtab.d << 20 | IOpat.d | ONEBIT(40);
+    IOcall(IOword);
     m16 = curbuf = bdtab;
     acc = (*m16).d;
     if (acc != rootfl.d)
@@ -955,15 +961,15 @@ void eval() try {
     desc2 = 1;
     acc = loc117.d;
     d00025 = acc;
-    acc &= 01777777LL << 29;
+    acc &= BITS(19) << 29;
     d00032 = acc;
     acc >>= 29;
     if (acc) {
         call(a00340,m6);
-        acc &= ~(01777777LL << 10);
+        acc &= ~(BITS(19) << 10);
         loc117 = acc;
         acc = d00025.d;
-        acc &= 01777777LL << 10;
+        acc &= BITS(19) << 10;
         acc |= loc117.d;
         set_header();
     }
@@ -981,8 +987,7 @@ void eval() try {
     acc += loc50.d;
     work = acc;
     do {
-        acc = m5[2].d;
-        *m5 = acc;
+        *m5 = m5[2].d;
         ++m5;
         acc = m5.d;
         acc ^= work.d;
@@ -1062,8 +1067,7 @@ void eval() try {
     dirty(1);
     acc = loc220.d;
   a01005:
-    acc >>= 20;
-    acc &= 01777777;
+    acc = (acc >> 20) & BITS(19);
     if (acc)
         jump(free);
     dirty = dirty.d | 1;
@@ -1257,7 +1261,7 @@ void eval() try {
     d00025 = loc157;
     loc157 = (loc246.d << 29) & BITS(48);
     acc = loc117.d;
-    acc &= 01777777LL << 10;
+    acc &= BITS(19) << 10;
     acc |= loc157.d | 040;
     loc157 = acc;
     usrloc.d += 040;
@@ -1273,10 +1277,8 @@ void eval() try {
     acc &= BITS(48);
     acc |= 040;
     loc117 = acc;
-    acc &= 01777777LL << 10;
-    acc <<= 19;
-    acc &= BITS(48);
-    d00032 = acc;
+    acc &= BITS(19) << 10;
+    d00032 = (acc << 19) & BITS(48);
     m16 = &loc120;
     m5.p = &&a01231;
     goto_ = m5;
@@ -1382,7 +1384,7 @@ void eval() try {
     *aitem = acc;
     dirty(1);
     acc = loc220.d;
-    acc &= 01777777LL << 20;
+    acc &= BITS(19) << 20;
     if (!acc)
         jump(rtnext);
     acc ^= loc220.d;
@@ -1449,52 +1451,42 @@ void eval() try {
   a01415:
     m6.p = &&cmd0;
     usrloc = myloc;
-    acc = mylen.d;
-    if (acc) jump(chklen);
-  enough:
+    if (mylen.d && mylen.d < itmlen.d)
+        throw ERR_TOO_LONG;
     ++aitem;
     --curpos;
     acc = curpos.d;
   a01423:
     m16 = acc;
-    acc &= 077777;
-    if (!acc)
-        jump(a01431);
-    if (verbose)
-        std::cerr << "From DB: " << std::oct << m16.d << "(8) words from "
-                  << aitem.d << " to " << usrloc.d << '\n';
-  coloop:
-    acc = aitem[m16-1].d;
-    usrloc[m16-1] = acc;
-    cycle(coloop, m16);
+    if (m16.d) {
+        if (verbose)
+            std::cerr << "From DB: " << std::oct << m16.d << "(8) words from "
+                      << aitem.d << " to " << usrloc.d << '\n';
+        do {
+            usrloc[m16-1] = aitem[m16-1];
+        } while (--m16.d);
+    }
   a01431:
-    acc = usrloc.d;
-    acc += curpos.d;
-    usrloc = acc;
-    acc = loc220.d;
-    acc &= 01777777LL << 20;
+    usrloc = usrloc.d + curpos.d;
+    acc = loc220.d & (BITS(19) << 20);
     if (!acc)
         jump(*m6.p);
     acc >>= 20;
     find_item();
     jump(a01423);
-  chklen:
-    if (acc >= itmlen.d)
-        jump(enough);
-    throw ERR_TOO_LONG;
   mkctl: {
         m5 = dblen = dbdesc >> 18;
-        e70msk = dbdesc.d & 0777777;
+        IOpat = dbdesc.d & 0777777;
         m6 = bdtab;
         curbuf = m6;
-        temp = e70msk.d | bdtab.d << 20;
+        temp = IOpat.d | bdtab.d << 20;
         bdtab[1] = 01777;
       a01447:
         utm(m5, -1);
         bdbuf[m5] = 01776;
         bdtab[0] = rootfl.d | m5.d;
-        ise70 = temp.d + m5.d;
-        e70(ise70);
+        IOword = temp.d + m5.d;
+        IOcall(IOword);
         if (m5.d)
             jump(a01447);
         myloc = frebas = bdbuf;
@@ -1527,9 +1519,8 @@ void pasbdi() {
     m7 = 01603;
     m5 = 077770;
     m6 = 022731;
-    // Page locations of P/BDTAB and P/BDBUF in a mid-sized test program
-    bdtab = 010000;
-    bdbuf = 012000;
+    bdtab = BDTAB;
+    bdbuf = BDBUF;
     data[BDSYS+0042] = 02300'0150'0000'0000;
     data[BDSYS+0043] = 02000'0027'2300'0160;
     data[BDSYS+0044] = 02010'1532'2300'0156;
@@ -1705,6 +1696,17 @@ uint64_t find(const char * k) {
     return curkey.d;
 }
 
+void cleard() {
+    key = 0;
+    orgcmd = 03027230002;       // find last; if good then (delete, loop)
+    eval();
+}
+
+int avail() {
+    orgcmd = 013;
+    eval();
+    return itmlen.d;
+}
 void printn(const char * k, const char * v) {
     size_t len = itmlen.d;
     std::cout << k << " (" << len << "): ";
@@ -1715,15 +1717,36 @@ void printn(const char * k, const char * v) {
 }
 
 void usage() {
-    std::cerr << "Usage: mars [-hV]\n\t-V\tverbose\n\t-h\thelp\n";
+    std::cerr <<
+      "Usage: mars [-h] [-V] [-i] [-L <n>] [-n] [-l <n>] [-t]\n"
+      "\t-V\tVerbose\n"
+      "\t-i\tInitialize the main catalog\n"
+      "\t-L <n>\tCatalog length (default 1)\n"
+      "\t\t- must be always specified if created with a non-default value\n"
+      "\t-f <n>\tOperate on a file with the given name (default TEST)\n"
+      "\t-n\tCreate the file before operating\n"
+      "\t-l <n>\tFile length (default 2)\n"
+      "\t-t\tTrace store operations\n"
+      ;
+}
+
+std::string tobesm(std::string s) {
+    // Convert to the BESM-6 compatible format for ease of comparison
+    s += "     ";
+    s.resize(6);
+    std::reverse(s.begin(), s.end());
+    s.resize(8);
+    return s;
 }
 
 int main(int argc, char ** argv) {
     int c;
     bool do_init = false, newfile = false;
-    int len = 2;
+    int catalog_len = 1;
+    int file_len = 2;
+    std::string fname;
     for (;;) {
-        c = getopt (argc, argv, "inhVtil:");
+        c = getopt (argc, argv, "inhVtiL:l:f:");
         if (c < 0)
             break;
         switch (c) {
@@ -1743,47 +1766,78 @@ int main(int argc, char ** argv) {
         case 't':
             trace_stores = true;
             break;
+        case 'L':
+            catalog_len = atoi(optarg);
+            break;
         case 'l':
-            len = atoi(optarg);
+            file_len = atoi(optarg);
+            break;
+        case 'f':
+            fname = optarg;
             break;
         }
     }
 
+    if (fname.empty())
+        fname = "TEST";
+    fname = tobesm(fname);
     // Initializing the database catalog: 1 zone, starting from zone 0 on LUN 52 (arbitrary)
     if (do_init) {
-        InitDB(01520000);
+        InitDB(0520000 + (catalog_len << 18));
     }
     // Setting the root location
-    SetDB(01520000);
+    SetDB(0520000 + (catalog_len << 18));
+    std::cerr << "Usable space in root catalog: " << std::oct << avail() << '\n';
     // Making a new array of 'len' zones, starting from zone 1
     if (newfile) {
-      newd("  TSET\0", 0520001 + (len << 18));
+        newd(fname.c_str(), 0520000 + catalog_len + (file_len << 18));
     }
     // Opening it
-    opend("  TSET\0\0");
+    opend(fname.c_str());
+#if 0    
+    int max = avail();
+    std::cerr << "Claiming available " << std::dec << max << " words\n";
+    do {
+        std::cerr << "Attempting " << std::dec << max << '\n';
+        putd("FILLUP", 0, max--);        
+    } while (d00011.d);
+    std::cerr << "Supposed success with " << std::dec << max << " avail = " << avail() << '\n';
+    deld("FILLUP");
+    if (avail() != max)
+        std::cerr << "Bad deletion\n";
+    putd("FILLUP", 0, max+1);     // Must fail
+    exit(0);
+#endif
     // Initializing an array of 1024 words
     init(04000, 1024);
+
+    std::string elt = tobesm("A");
     // Putting one half of it to the DB
-    modd("     A\0\0", 04000, 512);
+    modd(elt.c_str(), 04000, 512);
     // Putting all of it (will be split: max usable words in a zone = 01775)
-    modd("     A\0\0", 04000, 1024);
+    modd(elt.c_str(), 04000, 1024);
     // Again (exact match of length)
-    modd("     A\0\0", 04000, 1024);
+    modd(elt.c_str(), 04000, 1024);
     // With smaller length (reusing the block)
-    modd("     A\0\0", 04001, 1023);
+    modd(elt.c_str(), 04001, 1023);
     // Getting back
-    getd("     A\0\0", 02000, 1023);
+    getd(elt.c_str(), 02000, 1023);
     compare(02000, 04001, 1023);
     // Done with it
-    deld("     A\0\0");
-    // Putting 100 elements of varying sizes
-    for (int i = 0; i <= 60; ++i) {
+    deld(elt.c_str());
+
+    // Putting 100 elements of varying sizes with numerical keys (key 0 is invalid)
+    for (int i = 1; i <= 60; ++i) {
         std::cerr << "Putting " << i << '\n';
-        putd(i+1, 04000, i);
+        putd(i, 04000, i-1);
         if (d00011.d) {
             std::cerr << "\twhile putting " << std::dec << i << '\n';
         }
     }
+
+    // Erasing everything
+    cleard();
+
     exit(0);
     uint64_t key = last();
     while (key) {
