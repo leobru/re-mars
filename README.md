@@ -19,23 +19,23 @@ The semantics of micro-instructions (with the range of possible valid codes 00-5
 
 | Code | Meaning |
 | --- | --- |
-| 00 | NOP |
+| 00 | NOP (conditional mark) |
 | 01 | Position the iterator at the beginning |
 | 02 | Position the iterator at the end |
-| 03 | Step back | 
-| 04 | Step forward |
+| 03 | Step back (with conditionality, see 14) | 
+| 04 | Step forward (with conditionality, see 14) |
 | 05 | ??? Wants to write to the disk |
 | 06 | ??? Wants to write to the disk |
 | 07 | ??? Non-writing |
 | 10 | Initialize a container/catalog |
 | 11 | Find an entry by key |
 | 12 | Copy the value to the catalog descriptor |
-| 13 | Compute total size of the DB ??? |
+| 13 | Compute remaining usable space |
 | 14 | If the current entry does not match the given key:<br>if the 14 op is the last in the instruction word or is followed by a non-00 instruction, error out,<br>otherwise skip the 00 insn and 3 following insns |
 | 15 | The converse of 14 (if the current entry does match  the given key ....) |
 | 16 | Compute character string length | 
-| 17 | Compute data length in words using bdvec[32] as delimiter | 
-| 20 | Copy from the user area to the value part of the current entry |
+| 17 | Compute data length in words using bdvec[32] as delimiter, buggy | 
+| 20 | Update the value part of the current entry, reallocating if the size changes |
 | 21 | Allocate a memory block for data or metadata | 
 | 22 | Copy the value part of the current entry to the user area |
 | 23 | Free the memory for the value part of the current entry |
@@ -45,20 +45,23 @@ The semantics of micro-instructions (with the range of possible valid codes 00-5
 | 27 | Delete a key |
 | 30 | Restart executing the instruction word |
 | 31 | Switch to the root catalog |
-| 32 | [aitem] = 0; flush |
-| 33 | ??? Non-writing |
+| 32 | [aitem] = bdvec[10]; ??? mark buffer modified |
+| 33 | Compute length of the object pointed to by the descriptor |
 | 34 | Converts a block descriptor to a text format (length, date) |
 | 35 | Save dirty buffers and exit |
 | 36 | ??? Wants to write to the disk |
 | 37 | Skip next 2 instructions |
-| 40 | Stop |
+| 40 | NOP |
 | 41 | Compare the user data to the current entry and skip next 2 instructions if no match |
-| 42 | ??? Wants to write to the disk |
-| 43-44 | ??? Non-writing |
+| 42 | Update the value of the current entry in place |
+| 43 | Copy a single extent of data to the user area ??? |
+| 44 | bdvec[035] (address of descriptor) = bdvec[041] (first word of the copy of the descriptor) ??? |
 | 45 | Setting the flag "database is busy" |
 | 46 | ??? Non-writing |
-| 47 | СЧ BDVECT+41B, ПБ BDVECT+1 ??? |
-| 50-52 | bdvec manipulations with index increment  |
+| 47 | Execute a callback ??? |
+| 50 | orgcmd := bdvec[bdvec[next_insn]++] (chaining; unclear which locations are available) |
+| 51 | myloc := bdvec[bdvec[next_insn]++] |
+| 52 | bdvec[next_insn] := bdvec[bdvec[next_next_insn]++] ??? |
 | 53 | bdvec[next_insn] := bdvec[next_next_insn] ??? |
-| 54 | mem[bdvec[next_insn]] := bdvec[10] ??? |
-| 55 | ПБ (M16) ??? |
+| 54 | mem[bdvec[next_insn]] := bdvec[012] ??? |
+| 55 | Immediate exit |
