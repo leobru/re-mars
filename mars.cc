@@ -80,6 +80,8 @@ bdvect_t sav;
 #define BDBUF 012000
 #define BDVECT 01001
 #define FAKEBLK 020
+#define ARBITRARY_NONZERO 01234567007654321LL
+#define ROOTKEY 04000
 
 enum Error {
     ERR_ZEROKEY = 1,            // unclear if user-induced or internal
@@ -143,7 +145,7 @@ word & outadr = data[BDVECT+1];
 word & orgcmd = data[BDVECT+3];
 word & curcmd = data[BDVECT+5];
 word & sync = data[BDVECT+6];
-uint64_t & givenp = data[BDVECT+7].d;
+word & givenp = data[BDVECT+7];
 word & key = data[BDVECT+010];
 word & erhndl = data[BDVECT+011];
 word & loc12 = data[BDVECT+012];
@@ -155,7 +157,7 @@ word & bdtab = data[BDVECT+017];
 word & loc20 = data[BDVECT+020];
 word * array = data+BDVECT+021;
 word & dbdesc = data[BDVECT+030];
-word & rootfl = data[BDVECT+031];
+word & DBkey = data[BDVECT+031];
 word & savedp = data[BDVECT+032];
 word & frebas = data[BDVECT+034];
 word & adescr = data[BDVECT+035];
@@ -300,7 +302,7 @@ void IOcall(word is) {
 
 void getzon() {
     which = acc;
-    acc |= rootfl.d;
+    acc |= DBkey.d;
     zonkey = acc;
     acc &= 01777;
     acc = acc ? bdbuf.d : bdtab.d;
@@ -420,6 +422,25 @@ void find_item() {
     acc = loc220.d & 03776000;
     acc >>= 10;
     curpos = acc;
+    m5 = ARBITRARY_NONZERO;
+}
+
+void info() {
+    find_item();
+    acc = (*aitem).d;
+    desc1 = acc;
+    acc &= 077777;
+    itmlen = acc;
+    loc53 = 0;
+}
+
+void totext() {
+    sprintf((char*)&endmrk.d, " %05o", int(acc & 077777));
+    acc = desc1.d;
+    // Timestamp; OK to spill to desc2
+    sprintf((char*)&desc1.d, " %d%d.%d%d.X%d", int((acc >> 46) & 3),
+            int((acc >> 42) & 15), int((acc >> 41) & 1),
+            int((acc >> 37) & 15), int((acc >> 33) & 15));
 }
 
 void set_header() {
@@ -496,8 +517,9 @@ void eval() try {
         acc = adescr.d;
         jump(free);
     case 024:
-        acc = givenp;
-        jump(chkpsw);
+        if (givenp != savedp)
+            throw ERR_WRONG_PASSWORD;
+        jump(cmd0);
     case 025:
         acc = dbdesc.d;
         jump(setctl);
@@ -511,7 +533,7 @@ void eval() try {
         acc = orgcmd.d;
         jump(next);
     case 031:
-        rootfl = 04000;
+        DBkey = ROOTKEY;
         dbdesc = acc = arch;
         jump(setctl);
     case 032:
@@ -519,10 +541,12 @@ void eval() try {
         jump(cmd32);
     case 033:
         acc = adescr.d;
-        jump(pr342);
+        info();
+        jump(*m6.p);
     case 034:
         acc = desc1.d;
-        jump(cmd34);
+        totext();
+        jump(cmd0);
     case 035:
         acc = dirty.d;
         save();
@@ -588,7 +612,7 @@ void eval() try {
     m13 = abdv;
     savm7 = m7;
     savm5 = m5;
-    if (bdtab[0] != rootfl && IOpat.d) {
+    if (bdtab[0] != DBkey && IOpat.d) {
         IOword = bdtab.d << 20 | ONEBIT(40) | IOpat.d;
         IOcall(IOword);
     }
@@ -748,9 +772,10 @@ void eval() try {
   a00270:
     acc = negkey.d;
     m16 = acc;
-    if (acc < curpos.d)
+    acc = (acc - curpos.d) & BITS(41);
+    if (acc & ONEBIT(41))
         jump(a00274);
-    negkey = acc-curpos.d;
+    negkey = acc;
     m16 = curpos;
     m5 = 0;
   a00274:
@@ -804,7 +829,7 @@ void eval() try {
     acc = desc2.d;
   a00334:
     negkey = acc;
-    loc53.d += acc;
+    loc53 = loc53.d + acc;
     usrloc = myloc;
     jump(a00270);
   cmd43:
@@ -813,18 +838,6 @@ void eval() try {
   a00340:
     find_item();
     jump(k07);
-  pr342:
-    find_item();
-    acc = (*aitem).d;
-    desc1 = acc;
-    acc &= 077777;
-    itmlen = acc;
-    loc53 = 0;
-    jump(*m6.p);
-  chkpsw:
-    if (acc == savedp.d)
-        jump(cmd0);
-    throw ERR_WRONG_PASSWORD;
   ckdnex:
     if (acc != key.d)
         jump(cmd0);
@@ -838,7 +851,7 @@ void eval() try {
   a00355:
     acc += 2;
     m5 = acc;
-    acc ^= loc50[-1].d & 01777;
+    (acc ^= loc50[-1].d) &= 01777;
     if (acc)
         jump(a00367);
     acc = loc50[-1].d;
@@ -943,7 +956,7 @@ void eval() try {
     IOcall(IOword);
     m16 = curbuf = bdtab;
     acc = (*m16).d;
-    if (acc != rootfl.d)
+    if (acc != DBkey.d)
         throw ERR_BAD_CATALOG;
     idx = 0;
     loc246 = 0;
@@ -1438,16 +1451,8 @@ void eval() try {
     loc116[m16+1] = acc;
     dirty(2);
     jump(rtnext);
-  cmd34:
-    sprintf((char*)&endmrk.d, " %05o", int(acc & 077777));
-    acc = desc1.d;
-    // Timestamp; OK to spill to desc2
-    sprintf((char*)&desc1.d, " %d%d.%d%d.X%d", int((acc >> 46) & 3),
-            int((acc >> 42) & 15), int((acc >> 41) & 1),
-            int((acc >> 37) & 15), int((acc >> 33) & 15));
-    jump(cmd0);
   cpyout:
-    call(pr342,m6);
+    info();
   a01415:
     m6.p = &&cmd0;
     usrloc = myloc;
@@ -1484,7 +1489,7 @@ void eval() try {
       a01447:
         utm(m5, -1);
         bdbuf[m5] = 01776;
-        bdtab[0] = rootfl.d | m5.d;
+        bdtab[0] = DBkey.d | m5.d;
         IOword = temp.d + m5.d;
         IOcall(IOword);
         if (m5.d)
@@ -1530,7 +1535,7 @@ void pasbdi() {
     data[BDSYS+0050] = 05400'0242'2300'0404;
     abdv = BDVECT;
     for (int i = 0; i < 041; ++i)
-      data[FAKEBLK+i].d = 01234567007654321LL;
+        data[FAKEBLK+i].d = ARBITRARY_NONZERO;
 }
 
 void SetDB(int lnuzzzz) {
@@ -1541,7 +1546,7 @@ void SetDB(int lnuzzzz) {
 void InitDB(int lnuzzzz) {
     pasbdi();
     dbdesc = lnuzzzz;
-    rootfl = 04000;
+    DBkey = ROOTKEY;
     orgcmd = 010;
     eval();
 }
@@ -1657,7 +1662,8 @@ void compare(int start1, int start2, int len) {
     for (int i = 0; i < len; ++i) {
         if (data[start1+i] != data[start2+i]) {
             match = false;
-            std::cerr << "Element " << std::dec << i << " does not match\n";
+            std::cerr << "Element " << std::dec << i << " does not match ("
+                      << data[start1+i].d << " vs " << data[start2+i].d << ")\n";
         }
     }
     if (match)
@@ -1666,7 +1672,7 @@ void compare(int start1, int start2, int len) {
 }
 
 uint64_t first() {
-    orgcmd = 01;
+    orgcmd = 0401;
     eval();
     return curkey.d;
 }
@@ -1684,7 +1690,7 @@ uint64_t prev() {
 }
 
 uint64_t next() {
-    orgcmd = 0400004;
+    orgcmd = 04;
     eval();
     return curkey.d;
 }
@@ -1696,9 +1702,22 @@ uint64_t find(const char * k) {
     return curkey.d;
 }
 
+uint64_t find(uint64_t k) {
+    key = k;
+    orgcmd = 011;
+    eval();
+    return curkey.d;
+}
+
+void getlen() {
+    orgcmd = 033;
+    eval();
+    return;
+}
+
 void cleard() {
     key = 0;
-    orgcmd = 03027230002;       // find last; if good then (delete, loop)
+    orgcmd = 030272302;
     eval();
 }
 
@@ -1787,7 +1806,7 @@ int main(int argc, char ** argv) {
     }
     // Setting the root location
     SetDB(0520000 + (catalog_len << 18));
-    std::cerr << "Usable space in root catalog: " << std::oct << avail() << '\n';
+    //    std::cerr << "Usable space in root catalog: " << std::oct << avail() << '\n';
     // Making a new array of 'len' zones, starting from zone 1
     if (newfile) {
         newd(fname.c_str(), 0520000 + catalog_len + (file_len << 18));
@@ -1808,43 +1827,44 @@ int main(int argc, char ** argv) {
     putd("FILLUP", 0, max+1);     // Must fail
     exit(0);
 #endif
-    // Initializing an array of 1024 words
-    init(04000, 1024);
 
-    std::string elt = tobesm("A");
+//    init(04000, 1024);
+
+#if 0
+    // Initializing an array of 1024 words
+
+    std::string elt = "A";
     // Putting one half of it to the DB
     modd(elt.c_str(), 04000, 512);
     // Putting all of it (will be split: max usable words in a zone = 01775)
     modd(elt.c_str(), 04000, 1024);
     // Again (exact match of length)
-    modd(elt.c_str(), 04000, 1024);
+    modd(elt.c_str(), 04000, 1024); 
     // With smaller length (reusing the block)
-    modd(elt.c_str(), 04001, 1023);
+    modd(elt.c_str(), 04001, 1023); 
     // Getting back
     getd(elt.c_str(), 02000, 1023);
-    compare(02000, 04001, 1023);
+    compare(02000, 04001, 1023); 
     // Done with it
-    deld(elt.c_str());
+    deld(elt.c_str()); 
 
     // Putting 100 elements of varying sizes with numerical keys (key 0 is invalid)
-    for (int i = 1; i <= 60; ++i) {
+    for (int i = 0; i <= 59; ++i) {
         std::cerr << "Putting " << i << '\n';
-        putd(i, 04000, i-1);
+        putd(i+1, 04001, i);
         if (d00011.d) {
             std::cerr << "\twhile putting " << std::dec << i << '\n';
         }
     }
-
-    // Erasing everything
-    cleard();
-
-    exit(0);
-    uint64_t key = last();
-    while (key) {
-        getd(key, 02000, 100);
-        std::cout << (char*)&key << ' ' << itmlen.d << '\n';
-        compare(02000, 04000+itmlen.d, itmlen.d);
-        key = prev();
+#endif
+    
+    uint64_t k = last();
+    while (k) {
+        getlen();
+        std::cout << "Found " << std::oct << k << ' ' << itmlen.d << '\n';
+        getd(k, 02000, 100);
+        compare(02000, 04001, itmlen.d);
+        k = prev();
     }
 #if 0
     uint64_t prevkey = 0;
