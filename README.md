@@ -20,9 +20,9 @@ The semantics of micro-instructions (with the range of possible valid codes 00-5
 | Code | Meaning |
 | --- | --- |
 | 00 | NOP (conditional mark) |
-| 01 | Position the iterator at the beginning |
+| 01 | Position the iterator at the beginning (to the zero key entry;<br>needs 04 to get to the actual first element) |
 | 02 | Position the iterator at the end |
-| 03 | Step back (with conditionality, see 14) | 
+| 03 | Step back (with conditionality, see 14); reaches the zero key before failing | 
 | 04 | Step forward (with conditionality, see 14) |
 | 05 | ??? Wants to write to the disk |
 | 06 | ??? Wants to write to the disk |
@@ -39,7 +39,7 @@ The semantics of micro-instructions (with the range of possible valid codes 00-5
 | 21 | Allocate a memory block for data or metadata | 
 | 22 | Copy the value part of the current entry to the user area |
 | 23 | Free the memory for the value part of the current entry |
-| 24 | Password check (the 3rd word of the current file descriptor), if created with 3 words instead of default 2 in NEWD |
+| 24 | Password check (the 3rd word of the current file descriptor),<br>if created with 3 words instead of default 2 in NEWD |
 | 25 | Switch to the catalog pointed to by the descriptor |
 | 26 | Add a key |
 | 27 | Delete a key |
