@@ -14,19 +14,21 @@ They are:
 | MODD | 11-15-00-21-26-40-20 | Modify the value if a pair with the key already exists, add a pair otherwise |
 | OPEND | 31-11-14-12-25 | Open an existing container by name, error out if it does not exist in the root catalog |
 | NEWD | 31-11-15-21-26-11-14-12-10-21 | Create a container given a name and LUN/starting block/length |
-| --- | --- | --- |
-|     | 11-14-00-23-27-00-21-26 | Delete a pair if it exists, otherwise add (what could be the use?) | 
-|     | 31-11-14-12-25-13-01 | Open a container, compute available space, and position the iterator to the starting dummy entry |
-|     | 11-14-06 | If the key-value pair exists, then do what? otherwise error out |
-|     | 11-15-05-26 | If the key does not exist, then do what? and add the key, otherwise error out |
-|     | 01-06 | Do what? to the dummy entry |
-|     | 01-04 | Position the iterator to the first real entry |
-|     | 02-15-00-23-27-30-27 | (Deletion in the loop; the condition appears inverted?) |
-|     | 31-11-14 | Check that a file exists; do not open |
-|     | 02-00-23-27-20 | (Deletion in the loop; 00 is useless, as 02 is not conditional ) |
-|     | 11-23-27 | Unconditional deleteion |
 
-(Below the fold are micro-programs found in the binary code of a program which used the MARS-6 system.)
+Below are micro-programs found in the binary code of a program which used the MARS-6 system. Not all are fully understood.
+
+| Micro-program | Comment |
+| --- | --- |
+| 11-14-00-23-27-00-21-26 | Delete a pair if it exists, otherwise add (what could be the use?) | 
+| 31-11-14-12-25-13-01 | Open a container, compute available space, and position the iterator to the starting dummy entry |
+| 11-14-06 | If the key-value pair exists, then do what? otherwise error out |
+| 11-15-05-26 | If the key does not exist, then do what? and add the key, otherwise error out |
+| 01-06 | Do what? to the dummy entry |
+| 01-04 | Position the iterator to the first real entry |
+| 02-15-00-23-27-30-27 | (Deletion in the loop; the condition appears inverted?) |
+| 31-11-14 | Check that a file exists; do not open |
+| 02-00-23-27-30 | (Deletion in the loop; 00 is useless, as 02 is not conditional ) |
+| 11-23-27 | Unconditional deletion |
 
 The semantics of micro-instructions (with the range of possible valid codes 00-55 octal), deduced so far:
 
@@ -63,7 +65,7 @@ The semantics of micro-instructions (with the range of possible valid codes 00-5
 | 34 | Converts a block descriptor to a text format (length, date) |
 | 35 | Save dirty buffers and exit |
 | 36 | ??? Wants to write to the disk |
-| 37 | Skip next 2 instructions |
+| 37 | Skip the next instruction |
 | 40 | NOP |
 | 41 | Compare the user data to the current entry and skip next 2 instructions if no match |
 | 42 | Update the value of the current entry in place |
