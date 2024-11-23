@@ -12,27 +12,6 @@ dis 52(1234-wr)^
 *     на диске 2148 - там работа с БД правильная
 *perso:410440
 *assem
- /copy/:,name,
- buf:,pc,1024
- 14,vtm,buf
- ,ita,14
- ,asn,64-20
- ,aox,cmn
- ,atx,cmn
- ,aox,rd
- ,atx,is
- ,*70,is
- ,xta,cmn
- ,aox,wr
- ,atx,is
- ,*70,is
- 13,uj,
- cmn:,log,0000 0000 0052 0000
- rd:,log, 0010 0000 0000 1742
- wr:,log,0
- is:,bss,1
- ,end,
-*     call /copy/
  start:,name,
  *bdvect*:,lc,168
  *erstop*:,lc,1
@@ -125,7 +104,7 @@ writeln(' after pasacd');
     deld('A');
     writeln(' Done');
         name := '_000_000_000_000_000_000';
-        for j := 0 to -1 do begin
+        for j := 0 to 59 do begin
             writeln(' Putting ', j:2);
             name[6] := chr(j+1);
 %             besm(0770002b);
