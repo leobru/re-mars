@@ -1,4 +1,3 @@
-#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <iostream>
@@ -11,39 +10,12 @@
 #include <ctime>
 #include <getopt.h>
 
-union word {
-    uint64_t d;
-    void*    p;
-    struct {
-        unsigned off1 : 10;
-        unsigned off2 : 10;
-        unsigned extent  : 19;
-        unsigned upper9  : 9;
-    };
-    word(uint64_t x = 0) : d(x) { }
-    uint64_t& operator=(uint64_t x);
-    uint64_t& operator=(int x) { return this->operator=(uint64_t(x)); }
-    uint64_t& operator=(int64_t x) { return this->operator=(uint64_t(x)); }
-    uint64_t& operator=(long long int x) { return this->operator=(uint64_t(x)); }
-    uint64_t& operator=(long long unsigned int x) { return this->operator=(uint64_t(x)); }
-    word& operator=(word x);
-    word& operator=(word * x);
-    inline word& operator*();
-    inline uint64_t operator&();
-    inline word& operator[](word x);
-    word operator+(int x) const { return (d+x) & 077777; }
-    word operator-(int x) const { return (d-x) & 077777; }
-    uint64_t operator>>(int x) const { return d >> x; }
-    bool operator==(const word & x) { return d == x.d; }
-    bool operator!=(const word & x) { return d != x.d; }
-    word& operator++() { (*this) = d + 1; return *this; }
-    word& operator--() { (*this) = d - 1; return *this; }
-};
+#include "mars.h"
 
 bool trace_stores = false;
 bool verbose = false;
 
-word data[1024*6];
+word data[RAM_LENGTH];
 
 uint64_t rk = 7LL << 41;
 
@@ -57,7 +29,7 @@ word & m13 = data[13];
 uint64_t& word::operator=(uint64_t x) {
     size_t index = this-data;
     if (index < 16) x &= 077777;
-    if (trace_stores && index > 16 && index < 1024*6)
+    if (trace_stores && index > 16 && index < RAM_LENGTH)
         printf("       %05lo: store %016lo\n", index, x);
     d=x;
     return d;
@@ -65,7 +37,7 @@ uint64_t& word::operator=(uint64_t x) {
 word& word::operator=(word x) {
     size_t index = this-data;
     if (index < 16) x.d &= 077777;
-    if (trace_stores && index > 16 && index < 1024*6)
+    if (trace_stores && index > 16 && index < RAM_LENGTH)
         printf("       %05lo: store %016lo\n", index, x.d);
     d=x.d;
     return *this;
@@ -77,7 +49,7 @@ word& word::operator=(word * x) {
         abort();
     }
     size_t index = this-data;
-    if (trace_stores && index > 16 && index < 1024*6)
+    if (trace_stores && index > 16 && index < RAM_LENGTH)
         printf("       %05lo: store %016lo\n", index, offset);
     d=offset;
     return *this;
@@ -91,35 +63,10 @@ struct bdvect_t {
 
 bdvect_t sav;
 
-// Page locations of P/BDSYS, P/BDTAB and P/BDBUF in a mid-sized test program
-#define BDSYS 06000
-#define BDTAB 010000
-#define BDBUF 012000
-#define BDVECT 01001
 #define FAKEBLK 020
 #define ARBITRARY_NONZERO 01234567007654321LL
 #define ROOTKEY 04000
-#define MAXCHUNK 01775
-
-enum Error {
-    ERR_ZEROKEY = 1,            // unclear if user-induced or internal
-    ERR_BAD_PAGE = 2,
-    ERR_NO_RECORD = 3,
-    ERR_INV_NAME = 4,           // 0 or with high bit set
-    ERR_BAD_CATALOG = 5,
-    ERR_OVERFLOW = 6,
-    ERR_STEP = 7,               // unclear
-    ERR_NO_NAME = 8,
-    ERR_EXISTS = 9,
-    ERR_NO_END_MARK = 10,
-    ERR_INTERNAL = 11,          // formerly "no end word"
-    ERR_TOO_LONG = 12,
-    ERR_LOCKED = 13,
-    ERR_NO_CURRENT = 14,
-    ERR_NO_PREV = 15,
-    ERR_NO_NEXT = 16,
-    ERR_WRONG_PASSWORD = 17
-};
+#define LOCKKEY ONEBIT(32)
 
 #define bdvect (*reinterpret_cast<bdvect_t*>(data+BDVECT))
 
@@ -192,7 +139,7 @@ word & element = data[BDVECT+050];
 word & dblen = data[BDVECT+051];
 word & loc53 = data[BDVECT+053];
 word & loc54 = data[BDVECT+054];
-// Metadata[-1] (loc55) is also used 
+// Metadata[-1] (loc55) is also used
 word * const Metadata = data+BDVECT+056;
 word & loc116 = data[BDVECT+0116];
 word & loc117 = data[BDVECT+0117];
@@ -206,7 +153,7 @@ word & curZone = data[BDVECT+0244];
 word & loc246 = data[BDVECT+0246];
 word & dirty = data[BDVECT+0247];
 
-union Accumulator {    
+union Accumulator {
     uint64_t d;
     struct {
         unsigned off1 : 10;
@@ -361,8 +308,8 @@ void finalize() {
         if (sync != 1)
             return;
         m16 = bdtab;
-        if (m16[1].d & (1 << 31)) {
-            m16[1].d &= ~(1 << 31);
+        if (m16[1].d & LOCKKEY) {
+            m16[1].d &= ~LOCKKEY;
             force_tab = true;
         }
     }
@@ -594,7 +541,6 @@ void eval() try {
         acc = bdtab.d;
         jump(lock);
     case 046:
-        acc = myloc.d;
         jump(cmd46);
     case 047:
         acc = desc1.d;
@@ -609,8 +555,13 @@ void eval() try {
         acc = curcmd.d;
         jump(cmd52);
     case 053:
-        acc = curcmd.d;
-        jump(move);
+        // bdvect[next_insn] = bdvect[next_next_insn]
+        // curcmd is ..... src dst 53
+        m16 = (curcmd >> 6) & 077;
+        m5 = (curcmd >> 12) & 077;
+        curcmd = curcmd >> 12;
+        m13[m16] = m13[m5];
+        jump(*m6.p);
     case 054:
         acc = curcmd.d;
         jump(cmd54);
@@ -636,7 +587,7 @@ void eval() try {
         IOcall(IOword);
     }
     savm6 = m6;
-  enter2:
+  enter2:                       // continue execution after a callback?
     acc = orgcmd.d;
     jump(next);
   drtnxt:
@@ -733,15 +684,6 @@ void eval() try {
     m16 = acc;
     *m13[m16] = loc12;
     jump(*m6.p);
-  move:                         // bdvec[next_insn] = bdvec[next_next_insn]
-    curcmd = acc >>= 6;
-    acc &= 077;
-    m16 = acc;
-    curcmd = acc = curcmd >> 6;
-    acc &= 077;
-    m5 = acc;
-    acc = abdv[m5].d;
-    jump(stbdv);
   cmd50:                        // cmd := bdvec[bdvec[next_insn]++]
     m6.p = &&next;
   cmd51:                        // myloc := bdvec[bdvec[next_insn]++]
@@ -752,7 +694,6 @@ void eval() try {
     m5 = m5.d + m13.d;
     ++*m5;
     acc = (*m5)[-1].d;
-  stbdv:
     m13[m16] = acc;
     jump(*m6.p);
   cmd52:                        // bdvec[next_insn] := bdvec[bdvec[next_next_insn]++]
@@ -760,6 +701,7 @@ void eval() try {
     acc &= 077;
     jump(cmd51);
   cmd46:                        // Unpacking the descriptor (?) in myloc
+    acc = myloc.d;
     acc >>= 18;
     acc &= 077777;
     desc2 = acc -= loc53.d;
@@ -773,8 +715,8 @@ void eval() try {
     work = acc |= IOpat.d;
     IOword = acc |= ONEBIT(40);
     IOcall(IOword);
-    bdtab[1] = acc = bdtab[1].d ^ (1 << 31);
-    if (!(acc & (1 << 31)))
+    bdtab[1] = acc = bdtab[1].d ^ LOCKKEY;
+    if (!(acc & LOCKKEY))
         throw ERR_LOCKED;
     bdbuf[0] = acc;
     IOcall(work);
@@ -897,7 +839,7 @@ void eval() try {
   cmd4:
     acc = Array[idx.d].d;
     if (!acc)
-        throw ERR_NO_CURRENT;
+        throw ERR_NO_CURR;
     m5 = acc;
     if (!m16.d)
         jump(a00355);
@@ -932,7 +874,7 @@ void eval() try {
     mylen = (found - start) / 8 + 1;
     jump(cmd0);
     }
-  cmd17:    
+  cmd17:
     // Searching for the end word
     m16 = -mylen.d;
     work2 = myloc.d + mylen.d;
@@ -1087,9 +1029,9 @@ void eval() try {
     acc += curpos.d;
     m16[1] = acc;
     m16 = frebas;
-    acc = curZone[m16].d;
+    acc = frebas[curZone].d;
     acc += curpos.d + 1;
-    curZone[m16] = acc;
+    frebas[curZone] = acc;
     dirty(1);
     acc = loc220.d;
   a01005:
@@ -1110,7 +1052,7 @@ void eval() try {
     m5 = 0;
     d00030 = 0;
     m16 = frebas;
-    work = curZone[m16];
+    work = frebas[curZone];
     ++mylen;
     if (mylen.d >= work.d) {
         if (verbose)
@@ -1173,11 +1115,11 @@ void eval() try {
     loc116[m7+1] = (mylen.d << 10) | work.d | d00030.d;
     m16 = frebas;
     if (verbose)
-        std::cerr << "Reducing free " << std::oct << curZone[m16].d
+        std::cerr << "Reducing free " << std::oct << frebas[curZone].d
                   << " by len " << mylen.d << " + 1\n";
-    curZone[m16] = curZone[m16].d - (mylen.d+1);
+    frebas[curZone] = frebas[curZone].d - (mylen.d+1);
     if (verbose)
-        std::cerr << "Got " << curZone[m16].d << '\n';
+        std::cerr << "Got " << frebas[curZone].d << '\n';
     if (!m5.d)
         jump(a01111);
     dirty(1);
@@ -1607,7 +1549,7 @@ void putd(uint64_t k, int loc, int len) {
         std::cerr << "Running putd(" << std::oct << std::setw(16) << std::setfill('0') << k << ", ";
         std::cerr << std::setw(5) << loc << ":" << std::setw(0) << std::dec << len << ")\n";
         std::cerr.copyfmt(std::ios(nullptr));
-    }      
+    }
     key = k;
     mylen = len;
     myloc = loc;
@@ -1825,12 +1767,12 @@ int main(int argc, char ** argv) {
     }
     // Opening it
     opend(fname.c_str());
-#if 0    
+#if 0
     int max = avail();
     std::cerr << "Claiming available " << std::dec << max << " words\n";
     do {
         std::cerr << "Attempting " << std::dec << max << '\n';
-        putd("FILLUP", 0, max--);        
+        putd("FILLUP", 0, max--);
     } while (d00011.d);
     std::cerr << "Supposed success with " << std::dec << max << " avail = " << avail() << '\n';
     deld("FILLUP");
@@ -1840,51 +1782,56 @@ int main(int argc, char ** argv) {
     exit(0);
 #endif
 
-    init(04000, 1024);
+    const int PAGE1 = 010000;
+    const int PAGE2 = 012000;
 
-#if 0
+    init(PAGE1, 1024);
+
+#if 1
     // Initializing an array of 1024 words
 
     std::string elt = "A";
     // Putting one half of it to the DB
-    modd(elt.c_str(), 04000, 512);
+    modd(elt.c_str(), PAGE1, 512);
     // Putting all of it (will be split: max usable words in a zone = 01775)
-    modd(elt.c_str(), 04000, 1024);
+    modd(elt.c_str(), PAGE1, 1024);
     // Again (exact match of length)
-    modd(elt.c_str(), 04000, 1024); 
+    modd(elt.c_str(), PAGE1, 1024);
     // With smaller length (reusing the block)
-    modd(elt.c_str(), 04001, 1023); 
+    modd(elt.c_str(), PAGE1+1, 1023);
     // Getting back
-    getd(elt.c_str(), 02000, 1023);
-    compare(02000, 04001, 1023); 
+    getd(elt.c_str(), PAGE2, 1023);
+    compare(PAGE2, PAGE1+1, 1023);
     // Done with it
-    deld(elt.c_str()); 
+    deld(elt.c_str());
 
     // Putting 100 elements of varying sizes with numerical keys (key 0 is invalid)
     for (int i = 0; i <= 59; ++i) {
         std::cerr << "Putting " << i << '\n';
-        putd(i+1, 04001, i);
+        putd(i+1, PAGE1+1, i);
         if (d00011.d) {
             std::cerr << "\twhile putting " << std::dec << i << '\n';
         }
     }
 #endif
-    
+
     uint64_t k = last();
     while (k) {
         getlen();
         std::cout << "Found " << std::oct << k << ' ' << itmlen.d << '\n';
-        getd(k, 02000, 100);
-        compare(02000, 04001, itmlen.d);
+        getd(k, PAGE2, 100);
+        compare(PAGE2, PAGE1+1, itmlen.d);
         k = prev();
     }
+
+    cleard();
 #if 0
     uint64_t prevkey = 0;
     first();
     uint64_t key = next();
     while (key && key != prevkey) {
         std::cout << "Getting " << (char*)&key <<  " itemlen = " << itmlen.d << ", addr = " << aitem.d << '\n';
-        getd(key, 02000, 100);
+        getd(key, PAGE2, 100);
         printn((char*)&key, (char*)(data + 02000));
         prevkey = key;
         key = next();

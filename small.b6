@@ -39,8 +39,12 @@ dis 52(1234-wr)^
  *bdv*:,lc,1
  *bderrn*:,lc,1
  *bdc*:,lc,7
+ p/bdsys:,pc,1024
+ p/bdtab:,pc,1024
+ p/bdbuf:,pc,1024
  main:,subp,
  ,uj,main
+ ,bss,377b . to make bdvect start from 01400
  ,end,
 *no list
 *pascal
