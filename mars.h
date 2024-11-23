@@ -4,6 +4,7 @@
 #include <cstdint>
 
 enum Error {
+    ERR_SUCCESS = 0,
     ERR_ZEROKEY = 1,            // unclear if user-induced or internal
     ERR_BAD_PAGE = 2,
     ERR_NO_RECORD = 3,
@@ -54,6 +55,15 @@ union word {
     word& operator--() { (*this) = d - 1; return *this; }
 };
 
+typedef struct {
+    bool dump_txt_zones = false;
+    bool verbose = false;
+    bool trace_stores = false;
+    bool zero_date = false;
+} MarsFlags;
+
+extern MarsFlags mars_flags;
+
 const int RAM_LENGTH = 32768;
 
 // Locations of BDSYS, BDTAB and BDBUF match those in a mid-sized test program on the BESM-6.
@@ -67,15 +77,29 @@ const int MAXCHUNK = 01775;
 // Addresses above 010000 can be used for user data
 extern word data[RAM_LENGTH];
 
-void InitDB(int lun, int start_zone, int length);
+Error InitDB(int lun, int start_zone, int length);
 
 // The root catalog length must be given when opening the database
-void SetDB(int lun, int start_zone, int length);
+Error SetDB(int lun, int start_zone, int length);
 
-void newd(const char * k, int lun, int start_zone, int length);
+Error newd(const char * k, int lun, int start_zone, int len);
 
-void opend(const char * k);
+Error opend(const char * k);
 
-void putd(uint64_t k, int loc, int len);
+Error putd(uint64_t k, int loc, int len);
+
+Error modd(const char * k, int loc, int len);
+Error getd(const char * k, int loc, int len);
+Error getd(uint64_t k, int loc, int len);
+
+Error deld(const char * k);
+
+Error root(), cleard();
+
+uint64_t first(), last(), prev(), next();
+
+uint64_t find(const char * k), find(uint64_t k);
+
+int getlen(), avail();
 
 #endif

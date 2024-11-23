@@ -12,8 +12,10 @@
 
 #include "mars.h"
 
-bool trace_stores = false;
-bool verbose = false;
+MarsFlags mars_flags;
+
+bool & trace_stores = mars_flags.trace_stores;
+bool & verbose = mars_flags.verbose;
 
 word data[RAM_LENGTH];
 
@@ -54,7 +56,6 @@ word& word::operator=(word * x) {
     d=offset;
     return *this;
 }
-
 
 struct bdvect_t {
     static const size_t SIZE = 168;
@@ -246,22 +247,24 @@ void IOcall(word is) {
         fwrite(data+page*1024, 1024, sizeof(uint64_t), f);
         fclose(f);
 
-        std::string txt(nuzzzz);
-        txt += ".txt";
-        FILE * t = fopen(txt.c_str(), "w");
-        if (!t) {
-            std::cerr << "Could not open " << txt << '(' << strerror(errno) << ")\n";
-            exit(1);
+        if (mars_flags.dump_txt_zones) {
+            std::string txt(nuzzzz);
+            txt += ".txt";
+            FILE * t = fopen(txt.c_str(), "w");
+            if (!t) {
+                std::cerr << "Could not open " << txt << '(' << strerror(errno) << ")\n";
+                exit(1);
+            }
+            int zone = is.d & 07777;
+            for (int i = 0; i < 1024; ++i) {
+                fprintf(t, "%04o.%04o:  %04o %04o %04o %04o\n",
+                        zone, i, int(data[page*1024+i] >> 36),
+                        int((data[page*1024+i] >> 24) & 07777),
+                        int((data[page*1024+i] >> 12) & 07777),
+                        int((data[page*1024+i] >> 0) & 07777));
+            }
+            fclose(t);
         }
-        int zone = is.d & 07777;
-        for (int i = 0; i < 1024; ++i) {
-            fprintf(t, "%04o.%04o:  %04o %04o %04o %04o\n",
-                    zone, i, int(data[page*1024+i] >> 36),
-                    int((data[page*1024+i] >> 24) & 07777),
-                    int((data[page*1024+i] >> 12) & 07777),
-                    int((data[page*1024+i] >> 0) & 07777));
-        }
-        fclose(t);
     }
 }
 
@@ -320,7 +323,7 @@ void date() {
     time_t t = time(nullptr);
     struct tm & l = *localtime(&t);
     int d = l.tm_mday, m = l.tm_mon + 1, y = l.tm_year + 1900;
-    uint64_t stamp = (d/10*16+d%10) << 9 |
+    uint64_t stamp = mars_flags.zero_date ? 0 : (d/10*16+d%10) << 9 |
         (m/10*16+m%10) << 4 |
         y % 10;
     work = loc14.d & (0777777LL << 15);
@@ -413,7 +416,7 @@ void set_header() {
     dirty(1);
 }
 
-void eval() try {
+Error eval() try {
     acc = m16.d;
     jump(enter);
     // The switch is entered with m6 = cmd0 and acc = 0
@@ -513,7 +516,7 @@ void eval() try {
     case 035:
         acc = dirty.d;
         save();
-        return;
+        return ERR_SUCCESS;
     case 036:
         acc = loc12.d;
         jump(cmd36);
@@ -566,7 +569,7 @@ void eval() try {
         acc = curcmd.d;
         jump(cmd54);
     case 055:
-        return;
+        return ERR_SUCCESS;
     default:
         std::cerr << std::oct << m5.d << " NYI\n";
         abort();
@@ -604,7 +607,7 @@ void eval() try {
   next:
     if (!acc) {
         finalize();
-        return;
+        return ERR_SUCCESS;
     }
     curcmd = acc;
     m5 = acc & BITS(6);
@@ -1440,14 +1443,13 @@ void eval() try {
         curbuf = m6;
         work2 = IOpat.d | bdtab.d << 20;
         bdtab[1] = 01777;
-      a01447:
-        utm(m5, -1);
-        bdbuf[m5] = 01776;
-        bdtab[0] = DBkey.d | m5.d;
-        IOword = work2.d + m5.d;
-        IOcall(IOword);
-        if (m5.d)
-            jump(a01447);
+        do {
+            utm(m5, -1);
+            bdbuf[m5] = 01776;
+            bdtab[0] = DBkey.d | m5.d;
+            IOword = work2.d + m5.d;
+            IOcall(IOword);
+        } while (m5.d);
         myloc = frebas = bdbuf;
         loc20 = 02000;
         d00011 = 0;
@@ -1469,6 +1471,7 @@ void eval() try {
     d00010 = *(uint64_t*)msg[m16.d-1];
     acc = *((uint64_t*)msg[m16.d-1]+1);
     finalize();
+    return e;
 }
 
 void pasbdi() {
@@ -1492,48 +1495,57 @@ void pasbdi() {
         data[FAKEBLK+i].d = ARBITRARY_NONZERO;
 }
 
-void SetDB(int lnuzzzz) {
-    pasbdi();
-    arch = lnuzzzz;
+int to_lnuzzzz(int lun, int start, int len) {
+    if (lun > 077 || start > 01777 || len > 0777)
+        std::cerr << std::oct << lun << ' ' << start << ' ' << len 
+                  << "out of valid range, truncated\n";
+    return ((lun & 077) << 12) | (start & 01777) | ((len & 0777) << 18);
 }
 
-void InitDB(int lnuzzzz) {
+Error SetDB(int lun, int start, int len) {
     pasbdi();
-    dbdesc = lnuzzzz;
+    arch = to_lnuzzzz(lun, start, len);
+    return root();
+}
+
+Error InitDB(int lun, int start, int len) {
+    pasbdi();
+    dbdesc = to_lnuzzzz(lun, start, len);
     DBkey = ROOTKEY;
     orgcmd = 010;
-    eval();
+    return eval();
 }
 
 // Replicating what the NEWD option does in the PAIB Pascal API function
-void newd(const char * k, int lnuzzzz) {
+// to match the sequence of store ops as close as possible
+Error newd(const char * k, int lun, int start, int len) {
+    int lnuzzzz = to_lnuzzzz(lun, start, len);
     if (verbose)
         std::cerr << "Running newd('" << k << "', " << std::oct << lnuzzzz << ")\n";
     key = *reinterpret_cast<const uint64_t*>(k);
-    data[02121] = lnuzzzz;
-    data[02122] = (key.d << 10) & BITS(48);
+    data[077776] = lnuzzzz;
+    data[077777] = (key.d << 10) & BITS(48);
     key = *reinterpret_cast<const uint64_t*>(k);
     mylen = 1;
-    myloc = 01654;
+    myloc = ARBITRARY_NONZERO;
     orgcmd = 0;
-    myloc = 02121;
+    myloc = 077776;
     mylen = 2;
     orgcmd = 02621151131LL;
-    sav = bdvect;
     eval();
     orgcmd = 010121411;
-    eval();
+    return eval();
 }
 
-void opend(const char * k) {
+Error opend(const char * k) {
     if (verbose)
         std::cerr << "Running opend('" << k << "')\n";
     key = *reinterpret_cast<const uint64_t*>(k);
     orgcmd = 02512141131;
-    eval();
+    return eval();
 }
 
-void putd(const char * k, int loc, int len) {
+Error putd(const char * k, int loc, int len) {
     if (verbose)
         std::cerr << "Running putd('" << k << "', '"
                   << reinterpret_cast<char*>(data+loc) << "':" << len << ")\n";
@@ -1541,10 +1553,10 @@ void putd(const char * k, int loc, int len) {
     mylen = len;
     myloc = loc;
     orgcmd = 026211511;
-    eval();
+    return eval();
 }
 
-void putd(uint64_t k, int loc, int len) {
+Error putd(uint64_t k, int loc, int len) {
     if (verbose) {
         std::cerr << "Running putd(" << std::oct << std::setw(16) << std::setfill('0') << k << ", ";
         std::cerr << std::setw(5) << loc << ":" << std::setw(0) << std::dec << len << ")\n";
@@ -1554,10 +1566,10 @@ void putd(uint64_t k, int loc, int len) {
     mylen = len;
     myloc = loc;
     orgcmd = 026211511;
-    eval();
+    return eval();
 }
 
-void putd(const char * k, const char * v) {
+Error putd(const char * k, const char * v) {
     size_t len = (strlen(v)+7)/8;
     if (verbose)
         std::cerr << "Running putd('" << k << "', '"
@@ -1567,62 +1579,42 @@ void putd(const char * k, const char * v) {
     mylen = len;
     myloc = 02000;
     orgcmd = 026211511;
-    eval();
+    return eval();
 }
 
-void modd(const char * k, int loc, int len) {
+Error modd(const char * k, int loc, int len) {
     key = *reinterpret_cast<const uint64_t*>(k);
     mylen = len;
     myloc = loc;
     orgcmd = 020402621001511;
-    eval();
+    return eval();
 }
 
-void getd(const char * k, int loc, int len) {
+Error getd(const char * k, int loc, int len) {
     key = *reinterpret_cast<const uint64_t*>(k);
     mylen = len;
     myloc = loc;
     orgcmd = 0221411;
-    eval();
+    return eval();
 }
 
-void getd(uint64_t k, int loc, int len) {
+Error getd(uint64_t k, int loc, int len) {
     key = k;
     mylen = len;
     myloc = loc;
     orgcmd = 0221411;
-    eval();
+    return eval();
 }
 
-void deld(const char * k) {
+Error deld(const char * k) {
     key = *reinterpret_cast<const uint64_t*>(k);
     orgcmd = 027231411;
-    eval();
+    return eval();
 }
 
-void root() {
+Error root() {
     orgcmd = 031;
-    eval();
-}
-
-void init(int start, int len) {
-    for (int i = 0; i < len; ++i) {
-      data[start+i] = (064LL << 42) + i;
-    }
-}
-
-void compare(int start1, int start2, int len) {
-    bool match = true;
-    for (int i = 0; i < len; ++i) {
-        if (data[start1+i] != data[start2+i]) {
-            match = false;
-            std::cerr << "Element " << std::dec << i << " does not match ("
-                      << data[start1+i].d << " vs " << data[start2+i].d << ")\n";
-        }
-    }
-    if (match)
-        std::cerr << std::dec << len << " elements match between "
-                  << std::oct << start1 << " and " << start2 << '\n';
+    return eval();
 }
 
 uint64_t first() {
@@ -1663,178 +1655,20 @@ uint64_t find(uint64_t k) {
     return curkey.d;
 }
 
-void getlen() {
+int getlen() {
     orgcmd = 033;
     eval();
-    return;
+    return itmlen.d;
 }
 
-void cleard() {
+Error cleard() {
     key = 0;
     orgcmd = 030272302;
-    eval();
+    return eval();
 }
 
 int avail() {
     orgcmd = 013;
     eval();
     return itmlen.d;
-}
-void printn(const char * k, const char * v) {
-    size_t len = itmlen.d;
-    std::cout << k << " (" << len << "): ";
-    for (size_t i = 0; i < len*8; ++i)
-        if (!v[i]) break;
-        else std::cout << v[i];
-    std::cout << '\n';
-}
-
-void usage() {
-    std::cerr <<
-      "Usage: mars [-h] [-V] [-i] [-L <n>] [-n] [-l <n>] [-t]\n"
-      "\t-V\tVerbose\n"
-      "\t-i\tInitialize the main catalog\n"
-      "\t-L <n>\tCatalog length (default 1)\n"
-      "\t\t- must be always specified if created with a non-default value\n"
-      "\t-f <n>\tOperate on a file with the given name (default TEST)\n"
-      "\t-n\tCreate the file before operating\n"
-      "\t-l <n>\tFile length (default 2)\n"
-      "\t-t\tTrace store operations\n"
-      ;
-}
-
-std::string tobesm(std::string s) {
-    // Convert to the BESM-6 compatible format for ease of comparison
-    s += "     ";
-    s.resize(6);
-    std::reverse(s.begin(), s.end());
-    s.resize(8);
-    return s;
-}
-
-int main(int argc, char ** argv) {
-    int c;
-    bool do_init = false, newfile = false;
-    int catalog_len = 1;
-    int file_len = 2;
-    std::string fname;
-    for (;;) {
-        c = getopt (argc, argv, "inhVtiL:l:f:");
-        if (c < 0)
-            break;
-        switch (c) {
-        default:
-        case 'h':
-            usage ();
-            return 0;
-        case 'V':
-            verbose = true;
-            break;
-        case 'i':
-            do_init = true;
-            break;
-        case 'n':
-            newfile = true;
-            break;
-        case 't':
-            trace_stores = true;
-            break;
-        case 'L':
-            catalog_len = atoi(optarg);
-            break;
-        case 'l':
-            file_len = atoi(optarg);
-            break;
-        case 'f':
-            fname = optarg;
-            break;
-        }
-    }
-
-    if (fname.empty())
-        fname = "TEST";
-    fname = tobesm(fname);
-    // Initializing the database catalog: 1 zone, starting from zone 0 on LUN 52 (arbitrary)
-    if (do_init) {
-        InitDB(0520000 + (catalog_len << 18));
-    }
-    // Setting the root location
-    SetDB(0520000 + (catalog_len << 18));
-    //    std::cerr << "Usable space in root catalog: " << std::oct << avail() << '\n';
-    // Making a new array of 'len' zones, starting from zone 1
-    if (newfile) {
-        newd(fname.c_str(), 0520000 + catalog_len + (file_len << 18));
-    }
-    // Opening it
-    opend(fname.c_str());
-#if 0
-    int max = avail();
-    std::cerr << "Claiming available " << std::dec << max << " words\n";
-    do {
-        std::cerr << "Attempting " << std::dec << max << '\n';
-        putd("FILLUP", 0, max--);
-    } while (d00011.d);
-    std::cerr << "Supposed success with " << std::dec << max << " avail = " << avail() << '\n';
-    deld("FILLUP");
-    if (avail() != max)
-        std::cerr << "Bad deletion\n";
-    putd("FILLUP", 0, max+1);     // Must fail
-    exit(0);
-#endif
-
-    const int PAGE1 = 010000;
-    const int PAGE2 = 012000;
-
-    init(PAGE1, 1024);
-
-#if 1
-    // Initializing an array of 1024 words
-
-    std::string elt = "A";
-    // Putting one half of it to the DB
-    modd(elt.c_str(), PAGE1, 512);
-    // Putting all of it (will be split: max usable words in a zone = 01775)
-    modd(elt.c_str(), PAGE1, 1024);
-    // Again (exact match of length)
-    modd(elt.c_str(), PAGE1, 1024);
-    // With smaller length (reusing the block)
-    modd(elt.c_str(), PAGE1+1, 1023);
-    // Getting back
-    getd(elt.c_str(), PAGE2, 1023);
-    compare(PAGE2, PAGE1+1, 1023);
-    // Done with it
-    deld(elt.c_str());
-
-    // Putting 100 elements of varying sizes with numerical keys (key 0 is invalid)
-    for (int i = 0; i <= 59; ++i) {
-        std::cerr << "Putting " << i << '\n';
-        putd(i+1, PAGE1+1, i);
-        if (d00011.d) {
-            std::cerr << "\twhile putting " << std::dec << i << '\n';
-        }
-    }
-#endif
-
-    uint64_t k = last();
-    while (k) {
-        getlen();
-        std::cout << "Found " << std::oct << k << ' ' << itmlen.d << '\n';
-        getd(k, PAGE2, 100);
-        compare(PAGE2, PAGE1+1, itmlen.d);
-        k = prev();
-    }
-
-    cleard();
-#if 0
-    uint64_t prevkey = 0;
-    first();
-    uint64_t key = next();
-    while (key && key != prevkey) {
-        std::cout << "Getting " << (char*)&key <<  " itemlen = " << itmlen.d << ", addr = " << aitem.d << '\n';
-        getd(key, PAGE2, 100);
-        printn((char*)&key, (char*)(data + 02000));
-        prevkey = key;
-        key = next();
-    }
-#endif
 }
