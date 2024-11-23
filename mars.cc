@@ -22,7 +22,12 @@ union word {
     };
     word(uint64_t x = 0) : d(x) { }
     uint64_t& operator=(uint64_t x);
+    uint64_t& operator=(int x) { return this->operator=(uint64_t(x)); }
+    uint64_t& operator=(int64_t x) { return this->operator=(uint64_t(x)); }
+    uint64_t& operator=(long long int x) { return this->operator=(uint64_t(x)); }
+    uint64_t& operator=(long long unsigned int x) { return this->operator=(uint64_t(x)); }
     word& operator=(word x);
+    word& operator=(word * x);
     inline word& operator*();
     inline uint64_t operator&();
     inline word& operator[](word x);
@@ -65,6 +70,18 @@ word& word::operator=(word x) {
     d=x.d;
     return *this;
 }
+word& word::operator=(word * x) {
+    ptrdiff_t offset = x-data;
+    if (offset < 0 || offset >= 077777) {
+        std::cerr << "Cannot point to words outside of RAM, offset = " << std::oct << offset << '\n';
+        abort();
+    }
+    size_t index = this-data;
+    if (trace_stores && index > 16 && index < 1024*6)
+        printf("       %05lo: store %016lo\n", index, offset);
+    d=offset;
+    return *this;
+}
 
 
 struct bdvect_t {
@@ -82,6 +99,7 @@ bdvect_t sav;
 #define FAKEBLK 020
 #define ARBITRARY_NONZERO 01234567007654321LL
 #define ROOTKEY 04000
+#define MAXCHUNK 01775
 
 enum Error {
     ERR_ZEROKEY = 1,            // unclear if user-induced or internal
@@ -134,7 +152,7 @@ uint64_t word::operator&() { return this-data; }
 #define LABEL_(a) MERGE_(ret_, a)
 #define ret LABEL_(__LINE__)
 #define call(addr,link) do { link.p = &&ret; goto addr; ret:; } while (0)
-#define dirty(x) dirty = dirty.d | (which.d ? x : 0) + 1
+#define dirty(x) dirty = dirty.d | (curZone.d ? x : 0) + 1
 #define cycle(addr,reg) if (--reg.d) goto addr
 #define utm(x,v) x.d = (x.d + (v)) & 077777;
 // #define jump(x) do { std::cerr << "Jump to " #x "\n"; goto x; } while(0)
@@ -155,7 +173,7 @@ word & mylen = data[BDVECT+015];
 word & bdbuf = data[BDVECT+016];
 word & bdtab = data[BDVECT+017];
 word & loc20 = data[BDVECT+020];
-word * array = data+BDVECT+021;
+word * const Array = data+BDVECT+021;
 word & dbdesc = data[BDVECT+030];
 word & DBkey = data[BDVECT+031];
 word & savedp = data[BDVECT+032];
@@ -170,12 +188,12 @@ word & IOpat = data[BDVECT+044];
 word & curpos = data[BDVECT+045];
 word & aitem = data[BDVECT+046];
 word & itmlen = data[BDVECT+047];
-word & loc50 = data[BDVECT+050];
+word & element = data[BDVECT+050];
 word & dblen = data[BDVECT+051];
 word & loc53 = data[BDVECT+053];
 word & loc54 = data[BDVECT+054];
-word & loc55 = data[BDVECT+055];
-word & loc56 = data[BDVECT+056];
+// Metadata[-1] (loc55) is also used 
+word * const Metadata = data+BDVECT+056;
 word & loc116 = data[BDVECT+0116];
 word & loc117 = data[BDVECT+0117];
 word & loc120 = data[BDVECT+0120];
@@ -184,7 +202,7 @@ word & loc160 = data[BDVECT+0160];
 word & loc220 = data[BDVECT+0220];
 word & curbuf = data[BDVECT+0241];
 word & idx = data[BDVECT+0242];
-word & which = data[BDVECT+0244];
+word & curZone = data[BDVECT+0244];
 word & loc246 = data[BDVECT+0246];
 word & dirty = data[BDVECT+0247];
 
@@ -233,14 +251,14 @@ word & datlen = data[BDSYS+023];
 word & d00024 = data[BDSYS+024];
 word & d00025 = data[BDSYS+025];
 word & d00026 = data[BDSYS+026];
-word & negkey = data[BDSYS+027];
+word & temp = data[BDSYS+027];
 word & d00030 = data[BDSYS+030];
 word & d00031 = data[BDSYS+031];
 word & d00032 = data[BDSYS+032];
 word & d00033 = data[BDSYS+033];
 word & remlen = data[BDSYS+034];
 word & work = data[BDSYS+035];
-word & temp = data[BDSYS+036];
+word & work2 = data[BDSYS+036];
 word & IOword = data[BDSYS+037];
 word & d00040 = data[BDSYS+040];
 word & savrk = data[BDSYS+041];
@@ -301,7 +319,7 @@ void IOcall(word is) {
 }
 
 void getzon() {
-    which = acc;
+    curZone = acc;
     acc |= DBkey.d;
     zonkey = acc;
     acc &= 01777;
@@ -309,12 +327,12 @@ void getzon() {
     m16 = curbuf = acc;
     if (m16[0] == zonkey)
         return;
-    if (which.d && (dirty.d & 2)) {
+    if (curZone.d && (dirty.d & 2)) {
         dirty = dirty.d & ~2;
         IOword = (IOpat.d | bdbuf.d << 20) + m16[0].d;
         IOcall(IOword);
     }
-    IOword = (curbuf.d << 20 | which.d | ONEBIT(40)) + IOpat.d;
+    IOword = (curbuf.d << 20 | curZone.d | ONEBIT(40)) + IOpat.d;
     IOcall(IOword);
     m16 = curbuf;
     if (m16[0] == zonkey)
@@ -395,7 +413,7 @@ void find_item() {
     work = acc;
     acc <<= 29;
     acc &= BITS(48);
-    temp = acc;
+    work2 = acc;
     acc = m16[1].d;
     acc &= 03776000;
     if (!acc)
@@ -407,7 +425,7 @@ void find_item() {
     do {
         acc = loc116[m16+1].d;
         loc220 = acc;
-        acc ^= temp.d;
+        acc ^= work2.d;
         acc &= 0777LL << 39;
         if (acc) {
             if (--loc116.d)
@@ -460,16 +478,16 @@ void eval() try {
     case 0:
         jump(cmd0);
     case 1:
-        negkey = 0;
+        temp = 0;
         jump(cmd1);
     case 2:
         acc = BITS(47);
         jump(find);
     case 3:
-        acc = 1;
-        // FALL THROUGH
+        m16 = 1;
+        jump(cmd4);
     case 4:
-        m16 = acc;
+        m16 = 0;
         jump(cmd4);
     case 5:
         d00011 = 0;
@@ -478,11 +496,10 @@ void eval() try {
     case 6:
         idx = 0;
         jump(cmd6);
-    case 7: k07:
-        acc = (char*)&&a00317-(char*)&&frombase;
+    case 7:
         jump(cmd7);
     case 010:
-        which = 0;
+        curZone = 0;
         jump(mkctl);
     case 011:
         acc = key.d;
@@ -524,10 +541,9 @@ void eval() try {
         acc = dbdesc.d;
         jump(setctl);
     case 026:
-        acc = key.d;
         jump(inskey);
     case 027:
-        limit = 0;
+        limit = 0;              // looks dead
         jump(delkey);
     case 030:
         acc = orgcmd.d;
@@ -554,23 +570,26 @@ void eval() try {
     case 036:
         acc = loc12.d;
         jump(cmd36);
-    case 037: k37:
+    case 037:
         acc = curcmd >> 12;
-        // FALL THROUGH
+        jump(next);
     case 040:
         jump(next);
     case 041:
-        acc = (char*)&&compar-(char*)&&frombase;
-        jump(k43);
+        jmpoff = size_t(&&compar);
+        acc = mylen.d;
+        jump(a00334);
     case 042:
-        acc = (char*)&&tobase-(char*)&&frombase;
-        // FALL THROUGH
-    case 043: k43:
-        jmpoff = acc;
-        jump(cmd43);
+        jmpoff = size_t(&&tobase);
+        acc = mylen.d;
+        jump(a00334);
+    case 043:
+        jmpoff = size_t(&&frombase);
+        acc = mylen.d;
+        jump(a00334);
     case 044:
-        acc = desc1.d;
-        jump(cmd44);
+        adescr = desc1;
+        jump(*m6.p);
     case 045:
         acc = bdtab.d;
         jump(lock);
@@ -643,15 +662,15 @@ void eval() try {
     goto_ = 0;
     jump(switch_);
   find:
-    negkey = acc;
+    temp = acc;
     if (!acc || acc & ONEBIT(48))
         throw ERR_INV_NAME;
     acc = 0;
   cmd1:
     idx = acc;
-    negkey = negkey.d ^ BITS(47);
+    temp = temp.d ^ BITS(47);
   cmd1a:
-    m16 = &loc56;
+    m16 = Metadata;
     acc = loc20.d;
     if (!acc) {
         if (verbose)
@@ -665,7 +684,7 @@ void eval() try {
         std::cerr << "Comparing " << std::dec << acc/2 << " elements\n";
     while (m5.d) {
         acc = m5[m16-2].d;
-        acc += negkey.d;
+        acc += temp.d;
         acc = (acc + (acc >> 48)) & BITS(48);
         if (!(acc & ONEBIT(48)))
             break;
@@ -674,7 +693,7 @@ void eval() try {
     m5.d -= 2;
     acc = m5.d;
     acc |= ONEBIT(31);
-    array[idx.d] = acc;
+    Array[idx.d] = acc;
     acc = m16[1].d;
     acc &= ONEBIT(48);
     if (!acc)
@@ -685,13 +704,13 @@ void eval() try {
   pr202:
     m16 = &loc116;
   a00203:
-    array[idx.d-1] = acc;
-    acc &= 01777777;
+    Array[idx.d-1] = acc;
+    acc &= BITS(19);
     loc116 = acc;
     acc = m16.d;
     usrloc = acc;
     acc += 2;
-    loc50 = acc;
+    element = acc;
     acc = loc116.d ^ loc246.d;
     if (!acc)
         jump(*m6.p);
@@ -740,7 +759,7 @@ void eval() try {
     curcmd = acc >>= 6;
     acc &= 077;
     jump(cmd51);
-  cmd46:
+  cmd46:                        // Unpacking the descriptor (?) in myloc
     acc >>= 18;
     acc &= 077777;
     desc2 = acc -= loc53.d;
@@ -760,51 +779,52 @@ void eval() try {
     bdbuf[0] = acc;
     IOcall(work);
     jump(*m6.p);
-  cmd44:
-    adescr = acc;
-    jump(*m6.p);
   cmd36:
-    m16 = loc50;
-    m16[array[idx.d]+1] = acc;
+    m16 = element;
+    m16[Array[idx.d]+1] = acc;
     jump(a01160);
   a00267:
     find_item();
   a00270:
-    acc = negkey.d;
+    acc = temp.d;
     m16 = acc;
     acc = (acc - curpos.d) & BITS(41);
     if (acc & ONEBIT(41))
         jump(a00274);
-    negkey = acc;
+    temp = acc;
     m16 = curpos;
     m5 = 0;
   a00274:
-    jump(*((char*)&&frombase+jmpoff.d));
+    jump(*jmpoff.p);
   frombase:
-    if (!m16.d)
-        jump(done);
-    usrloc[m16-1] = aitem[m16-1];
-    --m16;
-    jump(frombase);
+    while (m16.d) {
+        usrloc[m16-1] = aitem[m16-1];
+        --m16;
+    }
+    jump(done);
   tobase:
     dirty(1);
-    if (!m16.d)
-        jump(done);
-    aitem[m16-1] = usrloc[m16-1];
-    --m16;
-    jump(tobase);
+    while (m16.d) {
+        aitem[m16-1] = usrloc[m16-1];
+        --m16;
+    }
+    jump(done);
   compar:
-    // Check for 0 length is missing?
-    if (aitem[m16-1] != usrloc[m16-1])
-        jump(k37);
-    cycle(compar,m16);
+    // Check for 0 length is not needed, perhaps because the key part of datum
+    // which is being compared, is never empty?
+    do {
+        if (aitem[m16-1] != usrloc[m16-1]) {
+            acc = curcmd >> 12;
+            jump(next);
+        }
+    } while (--m16.d);
   done:
     usrloc = usrloc.d + curpos.d;
   a00317:
     if (!m5.d)
         jump(a00325);
-    aitem = aitem.d + negkey.d;
-    curpos = curpos.d - negkey.d;
+    aitem = aitem.d + temp.d;
+    curpos = curpos.d - temp.d;
     acc = (*aitem).d;
     desc1 = acc;
     jump(*m6.p);
@@ -814,30 +834,25 @@ void eval() try {
     acc &= BITS(19);
     if (acc)
         jump(a00267);
-    acc = jmpoff.d;
-    acc ^= (char*)&&done-(char*)&&frombase;
-    if (!acc)
+    if (jmpoff.p == &&done)
         jump(a00332);  // impossible? should compare with &&a00317 ?
-    acc = negkey.d;
+    acc = temp.d;
     if (!acc)
         jump(*m6.p);
   a00332:
     m16 = ERR_STEP;
     jump(skip);
   cmd7:
-    jmpoff = acc;
+    jmpoff = size_t(&&a00317);
     acc = desc2.d;
   a00334:
-    negkey = acc;
+    temp = acc;
     loc53 = loc53.d + acc;
     usrloc = myloc;
     jump(a00270);
-  cmd43:
-    acc = mylen.d;
-    jump(a00334);
   a00340:
     find_item();
-    jump(k07);
+    jump(cmd7);
   ckdnex:
     if (acc != key.d)
         jump(cmd0);
@@ -851,10 +866,10 @@ void eval() try {
   a00355:
     acc += 2;
     m5 = acc;
-    (acc ^= loc50[-1].d) &= 01777;
+    (acc ^= element[-1].d) &= 01777;
     if (acc)
         jump(a00367);
-    acc = loc50[-1].d;
+    acc = element[-1].d;
     acc &= BITS(19) << 10;
     if (!acc) {
         m16 = ERR_NO_NEXT;
@@ -862,16 +877,14 @@ void eval() try {
     }
     acc >>= 10;
     call(pr202,m6);
-    array[idx.d-2] = array[idx.d-2].d + (1<<15);
+    Array[idx.d-2] = Array[idx.d-2].d + (1<<15);
     m5 = 0;
   a00367:
     acc = m5.d | 1 << 30;
-    array[idx.d] = acc;
+    Array[idx.d] = acc;
   a00371:
-    acc = loc50[m5].d;
-    curkey = acc;
-    acc = loc50[m5+1].d;
-    adescr = acc;
+    curkey = element[m5];
+    adescr = element[m5+1];
     jump(rtnext);
     // pr376 (make_metablock) was here
   cmd6:
@@ -882,7 +895,7 @@ void eval() try {
   step:
     goto_ = m6;
   cmd4:
-    acc = array[idx.d].d;
+    acc = Array[idx.d].d;
     if (!acc)
         throw ERR_NO_CURRENT;
     m5 = acc;
@@ -894,25 +907,25 @@ void eval() try {
     utm(m5,-2);
     jump(a00367);
   a00415:
-    acc = loc50[-1] >> 29;
+    acc = element[-1] >> 29;
     if (!acc) {
         m16 = ERR_NO_PREV;
         jump(skip);
     }
     call(pr202,m6);
-    acc = array[idx.d-2].d;
+    acc = Array[idx.d-2].d;
     acc -= 1<<15;
-    array[idx.d-2] = acc;
+    Array[idx.d-2] = acc;
     acc = loc117.d & 01777;
     m5 = acc;
     jump(a00414);
   cmd16: {
     // Searching for the end mark (originally 1 or 2 bytes)
     m16 = -mylen.d;
-    temp = myloc.d + mylen.d;
+    work2 = myloc.d + mylen.d;
     // Handling only single byte mark, contemporary style
-    char * start = (char*)&(temp[m16].d);
-    char * end = (char*)&(temp[0].d);
+    char * start = (char*)&(work2[m16].d);
+    char * end = (char*)&(work2[0].d);
     char * found = (char*)memchr(start, endmrk.d & 0xFF, end-start);
     if (!found)
         throw ERR_NO_END_MARK;
@@ -922,9 +935,9 @@ void eval() try {
   cmd17:    
     // Searching for the end word
     m16 = -mylen.d;
-    temp = myloc.d + mylen.d;
+    work2 = myloc.d + mylen.d;
   loop_here:
-    acc = temp[m16].d ^ endmrk.d;
+    acc = work2[m16].d ^ endmrk.d;
     if (!acc) {
         m16 = m16.d + mylen.d + 1;
         mylen = m16;
@@ -960,7 +973,7 @@ void eval() try {
         throw ERR_BAD_CATALOG;
     idx = 0;
     loc246 = 0;
-    which = 0;
+    curZone = 0;
     acc = m16[3].d & 01777;
     acc += bdtab.d + 2;
     frebas = acc;
@@ -988,16 +1001,16 @@ void eval() try {
     }
     call(pr1232,m5);
   delkey:
-    acc = loc50.d;
+    acc = element.d;
     m16 = acc;
-    acc += array[idx.d].d;
+    acc += Array[idx.d].d;
     m5 = acc;
-    acc ^= loc50.d;
+    acc ^= element.d;
     loc116 = acc;
     acc = m16[-1].d;
     acc &= 01777;
-    temp = acc;
-    acc += loc50.d;
+    work2 = acc;
+    acc += element.d;
     work = acc;
     do {
         *m5 = m5[2].d;
@@ -1005,8 +1018,8 @@ void eval() try {
         acc = m5.d;
         acc ^= work.d;
     } while (acc);
-    acc = temp.d - 2;
-    acc ^= temp.d;
+    acc = work2.d - 2;
+    acc ^= work2.d;
     acc ^= m16[-1].d;
     m16[-1] = acc;
     acc &= 01777;
@@ -1025,19 +1038,19 @@ void eval() try {
     jump(a01242);
   a00731:
     acc = d00011.d;
-    m16 = loc50;
-    m16[array[idx.d]] = acc;
-    acc = array[idx.d].d;
+    m16 = element;
+    m16[Array[idx.d]] = acc;
+    acc = Array[idx.d].d;
     jump(a00721);
   free:
     find_item();
     acc = m16[1].d;
     acc = (acc >> 10) & 077777;
-    temp = acc;
+    work2 = acc;
     acc = loc116.d;
     m5 = acc;
     do {
-        acc ^= temp.d;
+        acc ^= work2.d;
         if (!acc)
             break;
         m16[m5+1] = m16[m5+2].d;
@@ -1074,9 +1087,9 @@ void eval() try {
     acc += curpos.d;
     m16[1] = acc;
     m16 = frebas;
-    acc = which[m16].d;
+    acc = curZone[m16].d;
     acc += curpos.d + 1;
-    which[m16] = acc;
+    curZone[m16] = acc;
     dirty(1);
     acc = loc220.d;
   a01005:
@@ -1097,14 +1110,14 @@ void eval() try {
     m5 = 0;
     d00030 = 0;
     m16 = frebas;
-    work = which[m16];
+    work = curZone[m16];
     ++mylen;
     if (mylen.d >= work.d) {
         if (verbose)
             std::cerr << "mylen = " << mylen.d << " work = " << work.d << '\n';
         jump(nospac);
     }
-    acc = which.d;
+    acc = curZone.d;
   chunk:
     getzon();
     m7 = m16;
@@ -1133,7 +1146,7 @@ void eval() try {
     d00030 = acc;
     acc >>= 39;
     acc <<= 10;
-    acc |= which.d;
+    acc |= curZone.d;
     d00024 = acc;
     m16 = mylen;
     acc = m7[1].d - m16.d;
@@ -1142,29 +1155,29 @@ void eval() try {
     acc &= 01777;
     work = acc;
     acc += 1 + curbuf.d;
-    temp = acc;
+    work2 = acc;
     if (!m5.d) {
         utm(m16,-1);
-        ++temp;
+        ++work2;
     }
   a01062:
     if (m16.d) {
         if (verbose)
             std::cerr << "To DB: "  << std::oct << m16.d << "(8) words from "
-                      << usrloc.d << " to " << temp.d << '\n';
+                      << usrloc.d << " to " << work2.d << '\n';
       a01063:
-        temp[m16-1] = usrloc[m16-1];
+        work2[m16-1] = usrloc[m16-1];
         cycle(a01063, m16);
     }
   a01067:
     loc116[m7+1] = (mylen.d << 10) | work.d | d00030.d;
     m16 = frebas;
     if (verbose)
-        std::cerr << "Reducing free " << std::oct << which[m16].d
+        std::cerr << "Reducing free " << std::oct << curZone[m16].d
                   << " by len " << mylen.d << " + 1\n";
-    which[m16] = which[m16].d - (mylen.d+1);
+    curZone[m16] = curZone[m16].d - (mylen.d+1);
     if (verbose)
-        std::cerr << "Got " << which[m16].d << '\n';
+        std::cerr << "Got " << curZone[m16].d << '\n';
     if (!m5.d)
         jump(a01111);
     dirty(1);
@@ -1179,7 +1192,7 @@ void eval() try {
     acc = d00030.d;
     jump(a01005);
   a01111:
-    temp[-1] = datlen;
+    work2[-1] = datlen;
     dirty(2);
     jump(*m6.p);
   a01116:
@@ -1188,12 +1201,12 @@ void eval() try {
     m6.p = &&overfl;
     jump(free);
   inskey:
-    d00011 = acc;
+    d00011 = key;
     acc = loc12.d;
     adescr = acc;
     jump(a01140);
   a01123:
-    acc = array[idx.d].d;
+    acc = Array[idx.d].d;
     acc >>= 15;
   a01125:
     d00012 = acc;
@@ -1218,9 +1231,9 @@ void eval() try {
     acc |= ONEBIT(48);
   a01140:
     d00024 = acc;
-    acc = loc50.d;
+    acc = element.d;
     m16 = acc & 077777;
-    acc += array[idx.d].d + 2;
+    acc += Array[idx.d].d + 2;
     acc &= 077777;
     m5 = acc;
     limit = acc;
@@ -1262,7 +1275,7 @@ void eval() try {
     jump(a01311);
   a01174:
     work = (idx.d * 2) + 041;
-    acc = loc55.d ^ 036;
+    acc = Metadata[-1].d ^ 036;
     if (acc)
         jump(a01201);
     acc = work.d + 044;
@@ -1310,8 +1323,7 @@ void eval() try {
     acc |= d00032.d;
     set_header();
   a01242:
-    m16 = &loc56;
-    loc50 = m16;
+    element = Metadata;
     acc = idx.d;
     if (!acc)
         jump(drtnxt);
@@ -1320,7 +1332,7 @@ void eval() try {
     if (!acc)
         jump(a01123);
     m6.p = &&a01123;
-    acc = array[idx.d-1].d;
+    acc = Array[idx.d-1].d;
     jump(pr202);
   a01252:
     usable_space();
@@ -1328,21 +1340,19 @@ void eval() try {
         jump(a01116);
     acc -= 0101;
     call(pr1022,m6);
-    m16 = &loc56;
+    m16 = Metadata;
     acc = d00024.d;
     acc |= ONEBIT(48);
     m16[1] = acc;
     m16[-1] = 2;
     jump(a01163);
-  long_:
-    acc = usrloc.d;
-    acc += mylen.d - 1;
-    usrloc = acc;
+  split:
+    usrloc = usrloc.d + mylen.d - 1;
     m5 = dblen;
   a01264:
     if (frebas[m5-1].d < 2)
         jump(a01105);
-    acc = frebas[m5-1].d - 2 + 1;
+    acc = frebas[m5-1].d - 1;
     work = acc;
     --m5;
     if (acc < mylen.d)
@@ -1362,15 +1372,17 @@ void eval() try {
     ++m5;
     jump(chunk);
   nospac:
-    if (mylen.d >= 01775)
-        jump(long_);
+    // If the datum is larger than MAXCHUNK, it will have to be split
+    if (mylen.d >= MAXCHUNK)
+        jump(split);
     m7 = 077777;
-  a01303:
-    ++m7;
-    if (m7.d == dblen.d)
-        jump(long_);
-    if (mylen.d >= frebas[m7].d)
-        jump(a01303);
+    // Find a zone with enough free space
+    do {
+        ++m7;
+        if (m7.d == dblen.d)
+            // End reached, must split
+            jump(split);
+    } while (mylen.d >= frebas[m7].d);
     acc = m7.d;
     jump(chunk);
   cmd20:
@@ -1484,13 +1496,13 @@ void eval() try {
         IOpat = dbdesc.d & 0777777;
         m6 = bdtab;
         curbuf = m6;
-        temp = IOpat.d | bdtab.d << 20;
+        work2 = IOpat.d | bdtab.d << 20;
         bdtab[1] = 01777;
       a01447:
         utm(m5, -1);
         bdbuf[m5] = 01776;
         bdtab[0] = DBkey.d | m5.d;
-        IOword = temp.d + m5.d;
+        IOword = work2.d + m5.d;
         IOcall(IOword);
         if (m5.d)
             jump(a01447);
@@ -1828,7 +1840,7 @@ int main(int argc, char ** argv) {
     exit(0);
 #endif
 
-//    init(04000, 1024);
+    init(04000, 1024);
 
 #if 0
     // Initializing an array of 1024 words
