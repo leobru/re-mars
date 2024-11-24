@@ -484,6 +484,31 @@ void pr202() {
     a00203();
 }
 
+void skip(Error e) {
+    acc = curcmd.d >> 6;
+    if (!acc || (acc & 077))
+        throw e;
+    acc = curcmd.d >> 30;
+}
+
+void setctl(uint64_t location) {
+    IOpat = location & 0777777;
+    dblen = dbdesc >> 18;
+    IOword = bdtab.d << 20 | IOpat.d | ONEBIT(40);
+    IOcall(IOword);
+    m16 = curbuf = bdtab;
+    acc = (*m16).d;
+    if (acc != DBkey.d)
+        throw ERR_BAD_CATALOG;
+    idx = 0;
+    loc246 = 0;
+    curZone = 0;
+    acc = m16[3].d & 01777;
+    acc += bdtab.d + 2;
+    frebas = acc;
+    a00213();
+}
+
 Error eval() try {
     acc = m16.d;
     jump(enter);
@@ -494,7 +519,7 @@ Error eval() try {
     acc = 0;
     switch (m5.d) {
     case 0:
-        jump(cmd0);
+        break;
     case 1:
         temp = 0;
         jump(cmd1);
@@ -517,7 +542,7 @@ Error eval() try {
         m16 = &loc54;
         acc = adescr.d;
         a00203();
-        jump(*m6.p);
+        break;
     case 7:
         jump(cmd7);
     case 010:
@@ -530,20 +555,20 @@ Error eval() try {
         mylen = 3;
         acc = adescr.d;
         cpyout();
-        jump(cmd0);
+        break;
     case 013:
         usable_space();
-        jump(*m6.p);
+        break;
     case 014:
         if (curkey == key)
             jump(cmd0);
-        m16 = ERR_NO_NAME;
-        jump(skip);
+        skip(ERR_NO_NAME);
+        jump(next);
     case 015:
         if (curkey != key)
             jump(cmd0);
-        m16 = ERR_EXISTS;
-        jump(skip);
+        skip(ERR_EXISTS);
+        jump(next);
     case 016:
         jump(cmd16);
     case 017:
@@ -557,17 +582,17 @@ Error eval() try {
     case 022:
         acc = adescr.d;
         cpyout();
-        jump(cmd0);
+        break;
     case 023:
         acc = adescr.d;
         jump(free);
     case 024:
         if (givenp != savedp)
             throw ERR_WRONG_PASSWORD;
-        jump(cmd0);
+        break;
     case 025:
-        acc = dbdesc.d;
-        jump(setctl);
+        setctl(dbdesc.d);
+        break;
     case 026:
         jump(inskey);
     case 027:
@@ -578,18 +603,19 @@ Error eval() try {
         jump(next);
     case 031:
         DBkey = ROOTKEY;
-        dbdesc = acc = arch;
-        jump(setctl);
+        dbdesc = arch;
+        setctl(dbdesc.d);
+        break;
     case 032:
         acc = loc12.d;
         jump(cmd32);
     case 033:
         info(adescr.d);
-        jump(*m6.p);
+        break;
     case 034:
         acc = desc1.d;
         totext();
-        jump(cmd0);
+        break;
     case 035:
         acc = dirty.d;
         save();
@@ -616,10 +642,10 @@ Error eval() try {
         jump(a00334);
     case 044:
         adescr = desc1;
-        jump(*m6.p);
+        break;
     case 045:
         lock();
-        jump(*m6.p);
+        break;
     case 046:
         jump(cmd46);
     case 047:
@@ -641,7 +667,7 @@ Error eval() try {
         m5 = (curcmd >> 12) & 077;
         curcmd = curcmd >> 12;
         m13[m16] = m13[m5];
-        jump(*m6.p);
+        break;
     case 054:
         acc = curcmd.d;
         jump(cmd54);
@@ -651,6 +677,7 @@ Error eval() try {
         std::cerr << std::oct << m5.d << " NYI\n";
         abort();
     }
+    jump(cmd0);
   cmd32:
     *aitem = acc;
     dirty(2);
@@ -761,8 +788,10 @@ Error eval() try {
     acc &= 077777;
     desc2 = acc -= loc53.d;
     acc = (myloc >> 33) & 017777;
-    if (!acc)
-        jump(skip5);
+    if (!acc) {
+        acc = curcmd.d >> 30;
+        jump(next);
+    }
     mylen = acc;
     jump(*m6.p);
   cmd36:
@@ -823,8 +852,8 @@ Error eval() try {
     if (!temp.d)
         jump(*m6.p);
   a00332:
-    m16 = ERR_STEP;
-    jump(skip);
+    skip(ERR_STEP);
+    jump(next);
   cmd7:
     jmpoff = size_t(&&a00317);
     acc = desc2.d;
@@ -845,8 +874,8 @@ Error eval() try {
     acc = element[-1].d;
     acc &= BITS(19) << 10;
     if (!acc) {
-        m16 = ERR_NO_NEXT;
-        jump(skip);
+        skip(ERR_NO_NEXT);
+        jump(next);
     }
     acc >>= 10;
     pr202();
@@ -877,8 +906,8 @@ Error eval() try {
   a00415:
     acc = element[-1] >> 29;
     if (!acc) {
-        m16 = ERR_NO_PREV;
-        jump(skip);
+        skip(ERR_NO_PREV);
+        jump(next);
     }
     pr202();
     acc = Array[idx.d-2].d;
@@ -916,31 +945,7 @@ Error eval() try {
         jump(cmd17);            // Possibly a typo/oversight, ought to be loop_here
     }
     throw ERR_INTERNAL;         // Originally "no end word"
-  skip:
-    acc = curcmd.d >> 6;
-    if (!acc || (acc & 077))
-        throw Error(m16.d);
-  skip5:
-    acc = curcmd.d >> 30;
-    jump(next);
   overfl: throw ERR_OVERFLOW;
-  setctl:
-    IOpat = acc & 0777777;
-    dblen = dbdesc >> 18;
-    IOword = bdtab.d << 20 | IOpat.d | ONEBIT(40);
-    IOcall(IOword);
-    m16 = curbuf = bdtab;
-    acc = (*m16).d;
-    if (acc != DBkey.d)
-        throw ERR_BAD_CATALOG;
-    idx = 0;
-    loc246 = 0;
-    curZone = 0;
-    acc = m16[3].d & 01777;
-    acc += bdtab.d + 2;
-    frebas = acc;
-    a00213();
-    jump(*m6.p);
   a00667:
     acc = idx.d;
     if (!acc)
@@ -968,13 +973,10 @@ Error eval() try {
     m16 = acc;
     acc += Array[idx.d].d;
     m5 = acc;
-    acc ^= element.d;
-    loc116 = acc;
-    acc = m16[-1].d;
-    acc &= 01777;
+    loc116 = acc ^ element.d;
+    acc = m16[-1].d & 01777;
     work2 = acc;
-    acc += element.d;
-    work = acc;
+    work = acc + element.d;
     do {
         *m5 = m5[2].d;
         ++m5;
@@ -991,11 +993,11 @@ Error eval() try {
     acc = loc116.d;
   a00721:
     acc &= 077777;
-    if (acc)
-        jump(a01160);
-    d00011 = m16[0];
-    goto_ = size_t(&&a00730);
-    d00033 = size_t(&&a00731);
+    if (!acc) {
+        d00011 = m16[0];
+        goto_ = size_t(&&a00730);
+        d00033 = size_t(&&a00731);
+    }
     jump(a01160);
   a00730:
     jump(a01242);
@@ -1076,7 +1078,17 @@ Error eval() try {
     if (mylen.d >= work.d) {
         if (verbose)
             std::cerr << "mylen = " << mylen.d << " work = " << work.d << '\n';
-        jump(nospac);
+        // If the datum is larger than MAXCHUNK, it will have to be split
+        if (mylen.d >= MAXCHUNK)
+            jump(split);
+        // Find a zone with enough free space
+        for (int i = 0; i < dblen.d; ++i) {
+            if (mylen.d < frebas[i].d) {
+                acc = i;
+                jump(chunk);
+            }
+        }
+        jump(split); // End reached, must split
     }
     acc = curZone.d;
   chunk:
@@ -1137,8 +1149,11 @@ Error eval() try {
     frebas[curZone] = frebas[curZone].d - (mylen.d+1);
     if (verbose)
         std::cerr << "Got " << frebas[curZone].d << '\n';
-    if (!m5.d)
-        jump(a01111);
+    if (!m5.d) {
+        work2[-1] = datlen;
+        dirty(2);
+        jump(*m6.p);
+    }
     dirty(1);
     acc = d00024.d;
     acc <<= 20;
@@ -1151,10 +1166,6 @@ Error eval() try {
     m6.p = &&overfl;
     acc = d00030.d;
     jump(a01005);
-  a01111:
-    work2[-1] = datlen;
-    dirty(2);
-    jump(*m6.p);
   a01116:
     loc20 = 0;
     acc = loc12.d;
@@ -1312,35 +1323,20 @@ Error eval() try {
     acc = frebas[m5-1].d - 1;
     work = acc;
     --m5;
-    if (acc < mylen.d)
-        jump(a01274);
-    acc = usrloc.d;
-    acc -= mylen.d;
-    acc += 1;
-    usrloc = acc;
-    acc = m5.d;
-    m5 = 0;
-    jump(chunk);
-  a01274:
-    remlen = mylen.d - work.d;
-    mylen = work.d;
-    usrloc = usrloc.d - work.d;
-    acc = m5.d;
-    ++m5;
-    jump(chunk);
-  nospac:
-    // If the datum is larger than MAXCHUNK, it will have to be split
-    if (mylen.d >= MAXCHUNK)
-        jump(split);
-    m7 = 077777;
-    // Find a zone with enough free space
-    do {
-        ++m7;
-        if (m7.d == dblen.d)
-            // End reached, must split
-            jump(split);
-    } while (mylen.d >= frebas[m7].d);
-    acc = m7.d;
+    if (acc < mylen.d) {
+        remlen = mylen.d - work.d;
+        mylen = work.d;
+        usrloc = usrloc.d - work.d;
+        acc = m5.d;
+        ++m5;
+    } else {
+        acc = usrloc.d;
+        acc -= mylen.d;
+        acc += 1;
+        usrloc = acc;
+        acc = m5.d;
+        m5 = 0;
+    }
     jump(chunk);
   cmd20:
     usrloc = acc;
@@ -1352,35 +1348,31 @@ Error eval() try {
     --acc;
     m5 = acc;
     acc ^= mylen.d;
-    if (acc)
-        jump(a01336);
-    if (!m5.d)
-        jump(a01323);
-    do {
-        acc = usrloc[m5-1].d;
-        aitem[m5] = acc;
-    } while (--m5.d);
-  a01323:
-    m5 = m16;
-    date();
-    *aitem = acc;
-    dirty(1);
-    acc = loc220.d & (BITS(19) << 20);
-    if (!acc)
-        jump(rtnext);
-    acc ^= loc220.d;
-    loc116[m5+1] = acc;
-    acc = loc220.d;
-    jump(a01005);
-  a01336:
+    if (!acc) {
+        // The new length of data matches the first extent length
+        if (m5.d) {
+            do {
+                aitem[m5] = usrloc[m5-1].d;
+            } while (--m5.d);
+        }
+        m5 = m16;
+        date();
+        *aitem = acc;
+        dirty(1);
+        acc = loc220.d & (BITS(19) << 20);
+        if (!acc)
+            jump(rtnext);       // No extents to free: done
+        acc ^= loc220.d;
+        loc116[m5+1] = acc;
+        acc = loc220.d;
+        jump(a01005);           // Free other extents
+    }
     date();
     m16 = curbuf;
     acc = m16[1] >> 10;
     m5 = acc + 1;
-    acc = m16[1].d - acc;
-    acc &= 01777;
-    acc += curpos.d;
-    acc -= 2;
+    acc = (m16[1].d - acc) & 01777;
+    acc += curpos.d - 2;
     work = acc;
     if (acc < mylen.d)
         jump(a01361);
