@@ -15,7 +15,7 @@ void init(int start, int len) {
     }
 }
 
-void compare(int start1, int start2, int len) {
+bool compare(int start1, int start2, int len) {
     bool match = true;
     for (int i = 0; i < len; ++i) {
         if (data[start1+i] != data[start2+i]) {
@@ -24,9 +24,10 @@ void compare(int start1, int start2, int len) {
                       << data[start1+i].d << " vs " << data[start2+i].d << ")\n";
         }
     }
-    if (match)
+    if (match && mars_flags.verbose)
         std::cerr << std::dec << len << " elements match between "
                   << std::oct << start1 << " and " << start2 << '\n';
+    return match;
 }
 
 void usage() {
@@ -132,13 +133,15 @@ int main(int argc, char ** argv) {
     modd(elt.c_str(), PAGE1+1, 1023);
     // Getting back
     getd(elt.c_str(), PAGE2, 1023);
-    compare(PAGE2, PAGE1+1, 1023);
+    if (!compare(PAGE2, PAGE1+1, 1023))
+        exit(1);
     // Done with it
     deld(elt.c_str());
 
     // Putting 100 elements of varying sizes with numerical keys (key 0 is invalid)
     for (int i = 0; i <= 59; ++i) {
-        std::cerr << "Putting " << i << '\n';        
+        if (mars_flags.verbose)
+            std::cerr << "Putting " << i << '\n';
         if (putd(i+1, PAGE1+1, i)) {
             // An overflow error is expected at the last iteration
             std::cerr << "\twhile putting " << std::dec << i << '\n';
@@ -148,9 +151,11 @@ int main(int argc, char ** argv) {
     uint64_t k = last();
     while (k) {
         int len = getlen();
-        std::cout << "Found " << std::oct << k << ' ' << len << '\n';
+        if (mars_flags.verbose)
+            std::cout << "Found " << std::oct << k << ' ' << len << '\n';
         getd(k, PAGE2, 100);
-        compare(PAGE2, PAGE1+1, len);
+        if (!compare(PAGE2, PAGE1+1, len))
+            exit(1);
         k = prev();
     }
 

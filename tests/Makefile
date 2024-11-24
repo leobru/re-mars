@@ -19,4 +19,5 @@ tests: $(addsuffix .sha,$(TESTS))
 	$(CXX) -c -I.. -o $@ $<
 
 clean:
-	rm -rf *.run; rm -f $(addsuffix .exe,$(TESTS))
+	rm -rf *.run	;\
+	rm -f $(addsuffix .exe,$(TESTS)) $(addsuffix .sha,$(TESTS))

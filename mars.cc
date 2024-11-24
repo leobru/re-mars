@@ -101,8 +101,6 @@ uint64_t word::operator&() { return this-data; }
 #define ret LABEL_(__LINE__)
 #define call(addr,link) do { link.p = &&ret; goto addr; ret:; } while (0)
 #define dirty(x) dirty = dirty.d | (curZone.d ? x : 0) + 1
-#define cycle(addr,reg) if (--reg.d) goto addr
-#define utm(x,v) x.d = (x.d + (v)) & 077777;
 // #define jump(x) do { std::cerr << "Jump to " #x "\n"; goto x; } while(0)
 #define jump(x) goto x
 
@@ -335,7 +333,7 @@ void make_metablock() {
     d00012 = loc20;
     mylen = 041;
     d00010 = 2;
-    usrloc = &d00010;
+    usrloc = &d00010;           // to match traced stores with the original
     data[FAKEBLK].d = 2;
     data[FAKEBLK+1].d = d00011.d;
     data[FAKEBLK+2].d = loc20.d;
@@ -343,18 +341,17 @@ void make_metablock() {
 }
 
 // Returns result in itmlen and acc
-void usable_space() {
-    itmlen = 0;
+uint64_t usable_space() {
     for (int i = dblen.d - 1; i >= 0; --i) {
         if (frebas[i].d != 0)
             itmlen = itmlen.d + frebas[i].d - 1;
     }
-    acc = itmlen.d;
     m16 = 0;
+    return itmlen.d;
 }
 
-void find_item() {
-    d00040 = acc;
+void find_item(uint64_t arg) {
+    d00040 = acc = arg;
     acc &= 01777;
     getzon();
     acc = d00040.d & 03776000;
@@ -390,11 +387,11 @@ void find_item() {
     acc = loc220.d & 03776000;
     acc >>= 10;
     curpos = acc;
-    m5 = ARBITRARY_NONZERO;
+    m5 = ARBITRARY_NONZERO;     // clobbering the link register
 }
 
-void info() {
-    find_item();
+void info(uint64_t arg) {
+    find_item(arg);
     acc = (*aitem).d;
     desc1 = acc;
     acc &= 077777;
@@ -414,6 +411,77 @@ void totext() {
 void set_header() {
     *aitem = acc;
     dirty(1);
+}
+
+// Copies chained extents to user memory (acc = length of the first extent)
+void copy_chained() {           // a01423
+    for (;;) {
+        m16 = acc;
+        if (m16.d) {
+            if (verbose)
+                std::cerr << "From DB: " << std::oct << m16.d << "(8) words from "
+                          << aitem.d << " to " << usrloc.d << '\n';
+            do {
+                usrloc[m16-1] = aitem[m16-1];
+            } while (--m16.d);
+        }
+        usrloc = usrloc.d + curpos.d;
+        acc = loc220.d & (BITS(19) << 20);
+        if (!acc)
+            return;
+        find_item(acc >> 20);
+    }
+}
+
+// After cpyout must go to cmd0
+void cpyout() {
+    info(acc);
+    usrloc = myloc;
+    if (mylen.d && mylen.d < itmlen.d)
+        throw ERR_TOO_LONG;
+    // Skip the first word ot the found item
+    ++aitem;
+    --curpos;
+    acc = curpos.d;
+    copy_chained();
+}
+
+void lock() {
+    acc = bdtab.d << 20;
+    work = acc |= IOpat.d;
+    IOword = acc |= ONEBIT(40);
+    IOcall(IOword);
+    bdtab[1] = acc = bdtab[1].d ^ LOCKKEY;
+    if (!(acc & LOCKKEY))
+        throw ERR_LOCKED;
+    bdbuf[0] = acc;
+    IOcall(work);
+}
+
+void a00203() {
+    Array[idx.d-1] = acc;
+    acc &= BITS(19);
+    loc116 = acc;
+    acc = m16.d;
+    usrloc = acc;
+    acc += 2;
+    element = acc;
+    if (loc116 == loc246)
+        return;
+    loc246 = loc116;
+    find_item(loc246.d);
+    copy_chained();
+}
+
+void a00213() {
+    acc = 02000;
+    m16 = &loc54;
+    a00203();
+}
+
+void pr202() {
+    m16 = &loc116;
+    a00203();
 }
 
 Error eval() try {
@@ -445,28 +513,37 @@ Error eval() try {
         jump(alloc);
     case 6:
         idx = 0;
-        jump(cmd6);
+        itmlen = 041;
+        m16 = &loc54;
+        acc = adescr.d;
+        a00203();
+        jump(*m6.p);
     case 7:
         jump(cmd7);
     case 010:
-        curZone = 0;
         jump(mkctl);
     case 011:
         acc = key.d;
         jump(find);
     case 012:
-        acc = m13.d;
-        jump(cmd12);
+        myloc = &dbdesc;
+        mylen = 3;
+        acc = adescr.d;
+        cpyout();
+        jump(cmd0);
     case 013:
-        itmlen = 0;
         usable_space();
         jump(*m6.p);
     case 014:
-        acc = curkey.d;
-        jump(ckexst);
+        if (curkey == key)
+            jump(cmd0);
+        m16 = ERR_NO_NAME;
+        jump(skip);
     case 015:
-        acc = curkey.d;
-        jump(ckdnex);
+        if (curkey != key)
+            jump(cmd0);
+        m16 = ERR_EXISTS;
+        jump(skip);
     case 016:
         jump(cmd16);
     case 017:
@@ -479,7 +556,8 @@ Error eval() try {
         jump(alloc);
     case 022:
         acc = adescr.d;
-        jump(cpyout);
+        cpyout();
+        jump(cmd0);
     case 023:
         acc = adescr.d;
         jump(free);
@@ -506,8 +584,7 @@ Error eval() try {
         acc = loc12.d;
         jump(cmd32);
     case 033:
-        acc = adescr.d;
-        info();
+        info(adescr.d);
         jump(*m6.p);
     case 034:
         acc = desc1.d;
@@ -541,8 +618,8 @@ Error eval() try {
         adescr = desc1;
         jump(*m6.p);
     case 045:
-        acc = bdtab.d;
-        jump(lock);
+        lock();
+        jump(*m6.p);
     case 046:
         jump(cmd46);
     case 047:
@@ -629,7 +706,8 @@ Error eval() try {
     if (!acc) {
         if (verbose)
             std::cerr << "Loc20 == 0, nothing to compare\n";
-        jump(a00212);
+        a00213();
+        jump(cmd1a);
     }
   a00164:
     acc = m16[-1].d & 01777;
@@ -654,37 +732,12 @@ Error eval() try {
         jump(a00371);
     idx = idx.d + 2;
     acc = m16[m5+1].d;
-    m6.p = &&a00215;
-  pr202:
-    m16 = &loc116;
-  a00203:
-    Array[idx.d-1] = acc;
-    acc &= BITS(19);
-    loc116 = acc;
-    acc = m16.d;
-    usrloc = acc;
-    acc += 2;
-    element = acc;
-    acc = loc116.d ^ loc246.d;
-    if (!acc)
-        jump(*m6.p);
-    acc = loc116.d;
-    loc246 = acc;
-    find_item();
-    jump(a01423);
-  a00212:
-    m6.p = &&cmd1a;
-  a00213:
-    acc = 02000;
-    m16 = &loc54;
-    jump(a00203);
-  a00215:
+    pr202();
     m16 = &loc120;
     jump(a00164);
   cmd54:                        // mem[bdvec[next_insn]] = bdvec[012] ?
     curcmd = acc >>= 6;
-    acc &= 077;
-    m16 = acc;
+    m16 = acc & 077;
     *m13[m16] = loc12;
     jump(*m6.p);
   cmd50:                        // cmd := bdvec[bdvec[next_insn]++]
@@ -692,8 +745,7 @@ Error eval() try {
   cmd51:                        // myloc := bdvec[bdvec[next_insn]++]
     m16 = acc;
     curcmd = acc = curcmd >> 6;
-    acc &= 077;
-    m5 = acc;
+    m5 = acc & 077;
     m5 = m5.d + m13.d;
     ++*m5;
     acc = (*m5)[-1].d;
@@ -713,23 +765,12 @@ Error eval() try {
         jump(skip5);
     mylen = acc;
     jump(*m6.p);
-  lock:
-    acc <<= 20;
-    work = acc |= IOpat.d;
-    IOword = acc |= ONEBIT(40);
-    IOcall(IOword);
-    bdtab[1] = acc = bdtab[1].d ^ LOCKKEY;
-    if (!(acc & LOCKKEY))
-        throw ERR_LOCKED;
-    bdbuf[0] = acc;
-    IOcall(work);
-    jump(*m6.p);
   cmd36:
     m16 = element;
     m16[Array[idx.d]+1] = acc;
     jump(a01160);
   a00267:
-    find_item();
+    find_item(acc);
   a00270:
     acc = temp.d;
     m16 = acc;
@@ -774,15 +815,12 @@ Error eval() try {
     desc1 = acc;
     jump(*m6.p);
   a00325:
-    acc = loc220.d;
-    acc >>= 20;
-    acc &= BITS(19);
+    acc = (loc220.d >> 20) & BITS(19);
     if (acc)
         jump(a00267);
     if (jmpoff.p == &&done)
-        jump(a00332);  // impossible? should compare with &&a00317 ?
-    acc = temp.d;
-    if (!acc)
+        jump(a00332);  // impossible? should compare with &&a00317, or deliberate as a binary patch?
+    if (!temp.d)
         jump(*m6.p);
   a00332:
     m16 = ERR_STEP;
@@ -796,18 +834,8 @@ Error eval() try {
     usrloc = myloc;
     jump(a00270);
   a00340:
-    find_item();
+    find_item(acc);
     jump(cmd7);
-  ckdnex:
-    if (acc != key.d)
-        jump(cmd0);
-    m16 = ERR_EXISTS;
-    jump(skip);
-  ckexst:
-    if (acc == key.d)
-        jump(cmd0);
-    m16 = ERR_NO_NAME;
-    jump(skip);
   a00355:
     acc += 2;
     m5 = acc;
@@ -821,7 +849,7 @@ Error eval() try {
         jump(skip);
     }
     acc >>= 10;
-    call(pr202,m6);
+    pr202();
     Array[idx.d-2] = Array[idx.d-2].d + (1<<15);
     m5 = 0;
   a00367:
@@ -832,11 +860,6 @@ Error eval() try {
     adescr = element[m5+1];
     jump(rtnext);
     // pr376 (make_metablock) was here
-  cmd6:
-    itmlen = 041;
-    m16 = &loc54;
-    acc = adescr.d;
-    jump(a00203);
   step:
     goto_ = m6;
   cmd4:
@@ -849,7 +872,7 @@ Error eval() try {
     if (!m5.d)
         jump(a00415);
   a00414:
-    utm(m5,-2);
+    m5 = m5 - 2;
     jump(a00367);
   a00415:
     acc = element[-1] >> 29;
@@ -857,7 +880,7 @@ Error eval() try {
         m16 = ERR_NO_PREV;
         jump(skip);
     }
-    call(pr202,m6);
+    pr202();
     acc = Array[idx.d-2].d;
     acc -= 1<<15;
     Array[idx.d-2] = acc;
@@ -901,12 +924,6 @@ Error eval() try {
     acc = curcmd.d >> 30;
     jump(next);
   overfl: throw ERR_OVERFLOW;
-  cmd12:
-    acc += &dbdesc-BDVECT;
-    myloc = acc;
-    mylen = 3;
-    acc = adescr.d;
-    jump(cpyout);
   setctl:
     IOpat = acc & 0777777;
     dblen = dbdesc >> 18;
@@ -922,7 +939,8 @@ Error eval() try {
     acc = m16[3].d & 01777;
     acc += bdtab.d + 2;
     frebas = acc;
-    jump(a00213);
+    a00213();
+    jump(*m6.p);
   a00667:
     acc = idx.d;
     if (!acc)
@@ -988,7 +1006,7 @@ Error eval() try {
     acc = Array[idx.d].d;
     jump(a00721);
   free:
-    find_item();
+    find_item(acc);
     acc = m16[1].d;
     acc = (acc >> 10) & 077777;
     work2 = acc;
@@ -1003,10 +1021,9 @@ Error eval() try {
         acc = m5.d;
     } while (true);
   a00747:
-    acc = loc220.d & 01777;
-    d00031 = acc;
+    d00031 = loc220.d & 01777;
     do {
-        utm(m5,-1);
+        --m5;
         if (!m5.d)
             break;
         acc = m16[m5+1].d & 01777;
@@ -1016,17 +1033,16 @@ Error eval() try {
         m16[m5+1] = acc;
     } while (true);
     work = m16[1].d & 01777;
-    if (work == d00031)
-        jump(a00773);
-    if (d00031.d < work.d)
-        throw ERR_INTERNAL;
-    m5 = (d00031.d - work.d) & 077777;
-    work = work.d + curbuf.d;
-    d00031 = work.d + curpos.d;
-  a00767:
-    d00031[m5] = work[m5];
-    cycle(a00767,m5);
-  a00773:
+    if (work != d00031) {
+        if (d00031.d < work.d)
+            throw ERR_INTERNAL;
+        m5 = (d00031.d - work.d) & 077777;
+        work = work.d + curbuf.d;
+        d00031 = work.d + curpos.d;
+        do {
+            d00031[m5] = work[m5];
+        } while(--m5.d);
+    }
     acc = m16[1].d;
     acc -= 02000;
     acc += curpos.d;
@@ -1075,13 +1091,13 @@ Error eval() try {
     acc &= 0777LL << 39;
     if (acc) {
         curbuf[m16+2] = curbuf[m16+1];
-        utm(m16, -1);
+        --m16;
         acc = m16.d;
         if (m16.d)
             jump(a01035);
     }
   a01044:
-    utm(m16, 1);
+    ++m16;
     acc = m16.d;
     loc116 = acc;
     acc <<= 39;
@@ -1102,19 +1118,17 @@ Error eval() try {
     acc += 1 + curbuf.d;
     work2 = acc;
     if (!m5.d) {
-        utm(m16,-1);
+        --m16;
         ++work2;
     }
-  a01062:
     if (m16.d) {
         if (verbose)
             std::cerr << "To DB: "  << std::oct << m16.d << "(8) words from "
                       << usrloc.d << " to " << work2.d << '\n';
-      a01063:
-        work2[m16-1] = usrloc[m16-1];
-        cycle(a01063, m16);
+        do {
+            work2[m16-1] = usrloc[m16-1];
+        } while (--m16.d);
     }
-  a01067:
     loc116[m7+1] = (mylen.d << 10) | work.d | d00030.d;
     m16 = frebas;
     if (verbose)
@@ -1132,7 +1146,8 @@ Error eval() try {
     d00030 = acc;
     mylen = remlen;
   a01105:
-    cycle(a01264, m5);
+    if (--m5.d)
+        jump(a01264);
     m6.p = &&overfl;
     acc = d00030.d;
     jump(a01005);
@@ -1160,7 +1175,7 @@ Error eval() try {
     if (!(d00012.d & 077777))
         jump(*d00033.p);
     acc = d00012.d;
-    utm(m16, -1);
+    --m16;
     if (!m16.d)
         jump(a01133);
     acc += 2;
@@ -1184,14 +1199,13 @@ Error eval() try {
     limit = acc;
     acc = m16[-1].d;
     acc &= 01777;
-    m6 = acc;
-    utm(m6, m16.d);
+    m6 = acc + m16.d;
     if (verbose)
         std::cerr << "Expanding " << std::dec << (m6.d-limit.d)/2 << " elements\n";
     while (m6 != limit) {
         m6[0] = m6[-2];
         m6[1] = m6[-1];
-        utm(m6, -2);
+        m6 = m6.d - 2;
     }
     m5[0] = d00011;
     m5[1] = d00024;
@@ -1226,8 +1240,7 @@ Error eval() try {
     acc = work.d + 044;
     work = acc;
   a01201:
-    usable_space();
-    if (acc < work.d)
+    if (usable_space() < work.d)
         jump(a01116);
     d00025 = loc157;
     loc157 = (loc246.d << 29) & BITS(48);
@@ -1274,14 +1287,13 @@ Error eval() try {
         jump(drtnxt);
     acc -= 2;
     idx = acc;
-    if (!acc)
-        jump(a01123);
-    m6.p = &&a01123;
-    acc = Array[idx.d-1].d;
-    jump(pr202);
+    if (idx != 0) {
+        acc = Array[idx.d-1].d;
+        pr202();
+    }
+    jump(a01123);
   a01252:
-    usable_space();
-    if (acc < 0101)
+    if (usable_space() < 0101)
         jump(a01116);
     acc -= 0101;
     call(pr1022,m6);
@@ -1336,7 +1348,7 @@ Error eval() try {
   a01311:
     d00012 = acc;
     m6.p = &&drtnxt;
-    find_item();
+    find_item(d00012.d);
     --acc;
     m5 = acc;
     acc ^= mylen.d;
@@ -1344,17 +1356,16 @@ Error eval() try {
         jump(a01336);
     if (!m5.d)
         jump(a01323);
-  a01317:
-    acc = usrloc[m5-1].d;
-    aitem[m5] = acc;
-    cycle(a01317, m5);
+    do {
+        acc = usrloc[m5-1].d;
+        aitem[m5] = acc;
+    } while (--m5.d);
   a01323:
     m5 = m16;
     date();
     *aitem = acc;
     dirty(1);
-    acc = loc220.d;
-    acc &= BITS(19) << 20;
+    acc = loc220.d & (BITS(19) << 20);
     if (!acc)
         jump(rtnext);
     acc ^= loc220.d;
@@ -1365,8 +1376,7 @@ Error eval() try {
     date();
     m16 = curbuf;
     acc = m16[1] >> 10;
-    m5 = acc;
-    utm(m5, 1);
+    m5 = acc + 1;
     acc = m16[1].d - acc;
     acc &= 01777;
     acc += curpos.d;
@@ -1401,42 +1411,13 @@ Error eval() try {
     mylen = (datlen.d & 077777) - mylen.d;
     datlen = usrloc[-1];
     call(a01023,m6);
-    acc = d00012.d;
-    find_item();
+    find_item(d00012.d);
     acc = (d00024.d << 20) & BITS(48);
-    acc |= loc220.d;
-    loc116[m16+1] = acc;
+    loc116[m16+1] = acc | loc220.d;
     dirty(2);
     jump(rtnext);
-  cpyout:
-    info();
-  a01415:
-    m6.p = &&cmd0;
-    usrloc = myloc;
-    if (mylen.d && mylen.d < itmlen.d)
-        throw ERR_TOO_LONG;
-    ++aitem;
-    --curpos;
-    acc = curpos.d;
-  a01423:
-    m16 = acc;
-    if (m16.d) {
-        if (verbose)
-            std::cerr << "From DB: " << std::oct << m16.d << "(8) words from "
-                      << aitem.d << " to " << usrloc.d << '\n';
-        do {
-            usrloc[m16-1] = aitem[m16-1];
-        } while (--m16.d);
-    }
-  a01431:
-    usrloc = usrloc.d + curpos.d;
-    acc = loc220.d & (BITS(19) << 20);
-    if (!acc)
-        jump(*m6.p);
-    acc >>= 20;
-    find_item();
-    jump(a01423);
   mkctl: {
+        curZone = 0;
         m5 = dblen = dbdesc >> 18;
         IOpat = dbdesc.d & 0777777;
         m6 = bdtab;
@@ -1444,7 +1425,7 @@ Error eval() try {
         work2 = IOpat.d | bdtab.d << 20;
         bdtab[1] = 01777;
         do {
-            utm(m5, -1);
+            --m5;
             bdbuf[m5] = 01776;
             bdtab[0] = DBkey.d | m5.d;
             IOword = work2.d + m5.d;
@@ -1497,7 +1478,7 @@ void pasbdi() {
 
 int to_lnuzzzz(int lun, int start, int len) {
     if (lun > 077 || start > 01777 || len > 0777)
-        std::cerr << std::oct << lun << ' ' << start << ' ' << len 
+        std::cerr << std::oct << lun << ' ' << start << ' ' << len
                   << "out of valid range, truncated\n";
     return ((lun & 077) << 12) | (start & 01777) | ((len & 0777) << 18);
 }

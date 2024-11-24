@@ -1,6 +1,9 @@
 run-tests:
 	cd tests; make
 
+clean:
+	rm -f mars.o; cd tests; make clean
+
 re-mars.bin: $(HOME)/.besm6/1234
 	besmtool dump 1234 --start=01000 --length=1 --to-file=re-mars.bin
 
