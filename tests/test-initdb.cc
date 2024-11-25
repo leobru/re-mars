@@ -8,7 +8,7 @@ void usage() {
     fprintf(stderr, "Usage: test-initdb [-t] [octal]\n"
             "\t-t - dump zones in text format as well\n"
             "\t-s - trace stores\n"
-            "\toctal - total DB length in zones, 1 <= octal <= 777\n"
+            "\toctal - total DB length in zones, 1 <= octal <= 1777\n"
             "\tdefault - 3 zones\n");
 }
 
@@ -36,7 +36,7 @@ int main(int argc, char **argv) {
     }
     if (argv[optind])
         len = strtol(argv[optind], nullptr, 8);
-    if (len < 1 || len > 0777) {
+    if (len < 1 || len > 01777) {
         usage();
         exit(1);
     }

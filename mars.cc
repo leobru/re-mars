@@ -613,8 +613,9 @@ Error eval() try {
         setctl(dbdesc.d);
         break;
     case 032:
-        acc = loc12.d;
-        jump(cmd32);
+        *aitem = loc12;
+        dirty(2);
+        break;
     case 033:
         info(adescr.d);
         break;
@@ -627,7 +628,6 @@ Error eval() try {
         save();
         return ERR_SUCCESS;
     case 036:
-        acc = loc12.d;
         jump(cmd36);
     case 037:
         acc = curcmd >> 12;
@@ -684,10 +684,6 @@ Error eval() try {
         abort();
     }
     jump(cmd0);
-  cmd32:
-    *aitem = acc;
-    dirty(2);
-    jump(*m6.p);
   enter:
     savm16 = acc;
     savm13 = m13;
@@ -802,7 +798,7 @@ Error eval() try {
     jump(*m6.p);
   cmd36:
     m16 = element;
-    m16[Array[idx.d]+1] = acc;
+    m16[Array[idx.d]+1] = loc12;
     jump(a01160);
   a00267:
     find_item(acc);
@@ -1426,7 +1422,7 @@ Error eval() try {
             IOword = work2.d + m5.d;
             IOcall(IOword);
         } while (m5.d);
-        myloc = frebas = bdbuf;
+        myloc = frebas = bdbuf; // frebas[0] is now the same as bdbuf[0]
         loc20 = 02000;
         d00011 = 0;
         make_metablock();

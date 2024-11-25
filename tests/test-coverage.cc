@@ -40,7 +40,8 @@ void usage() {
       "\t-f <n>\tOperate on a file with the given name (default TEST)\n"
       "\t-n\tCreate the file before operating\n"
       "\t-l <n>\tFile length, octal (default 2)\n"
-      "\t-t\tTrace store operations\n"
+      "\t-t - dump zones in text format as well\n"
+      "\t-s\tTrace store operations\n"
       ;
 }
 
@@ -78,6 +79,9 @@ int main(int argc, char ** argv) {
             newfile = false;
             break;
         case 't':
+            mars_flags.dump_txt_zones = true;
+            break;
+        case 's':
             mars_flags.trace_stores = true;
             break;
         case 'L':
