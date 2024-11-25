@@ -35,11 +35,11 @@ void usage() {
       "Usage: mars [-h] [-V] [-i] [-L <n>] [-n] [-l <n>] [-t]\n"
       "\t-V\tVerbose\n"
       "\t-i\tInitialize the main catalog\n"
-      "\t-L <n>\tCatalog length (default 1)\n"
+      "\t-L <n>\tCatalog length, octal (default 1)\n"
       "\t\t- must be always specified if created with a non-default value\n"
       "\t-f <n>\tOperate on a file with the given name (default TEST)\n"
       "\t-n\tCreate the file before operating\n"
-      "\t-l <n>\tFile length (default 2)\n"
+      "\t-l <n>\tFile length, octal (default 2)\n"
       "\t-t\tTrace store operations\n"
       ;
 }
@@ -81,10 +81,10 @@ int main(int argc, char ** argv) {
             mars_flags.trace_stores = true;
             break;
         case 'L':
-            catalog_len = atoi(optarg);
+            catalog_len = strtol(optarg, nullptr, 8);
             break;
         case 'l':
-            file_len = atoi(optarg);
+            file_len = strtol(optarg, nullptr, 8);
             break;
         case 'f':
             fname = optarg;

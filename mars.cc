@@ -413,17 +413,23 @@ void set_header() {
     dirty(1);
 }
 
+void copy_words(word dst, word src) {
+    if (verbose)
+        std::cerr << std::oct << m16.d << "(8) words from "
+                  << src.d << " to " << dst.d << '\n';
+    do {
+        dst[m16-1] = src[m16-1];
+    } while (--m16.d);
+}
+
 // Copies chained extents to user memory (acc = length of the first extent)
 void copy_chained() {           // a01423
     for (;;) {
         m16 = acc;
         if (m16.d) {
             if (verbose)
-                std::cerr << "From DB: " << std::oct << m16.d << "(8) words from "
-                          << aitem.d << " to " << usrloc.d << '\n';
-            do {
-                usrloc[m16-1] = aitem[m16-1];
-            } while (--m16.d);
+                std::cerr << "From DB: ";
+            copy_words(usrloc, aitem);
         }
         usrloc = usrloc.d + curpos.d;
         acc = loc220.d & (BITS(19) << 20);
@@ -1135,11 +1141,8 @@ Error eval() try {
     }
     if (m16.d) {
         if (verbose)
-            std::cerr << "To DB: "  << std::oct << m16.d << "(8) words from "
-                      << usrloc.d << " to " << work2.d << '\n';
-        do {
-            work2[m16-1] = usrloc[m16-1];
-        } while (--m16.d);
+            std::cerr << "To DB: ";
+        copy_words(work2, usrloc);
     }
     loc116[m7+1] = (mylen.d << 10) | work.d | d00030.d;
     m16 = frebas;
@@ -1429,6 +1432,7 @@ Error eval() try {
         make_metablock();
         call(pr1022, m6);
         mylen = dblen.d;
+        // This trick results in max possible DB length = 753 zones.
         bdbuf[0] = 01731 - mylen.d;
         m5 = 021;
         jump(a00153);

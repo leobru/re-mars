@@ -10,13 +10,13 @@ tests: $(addsuffix .sha,$(TESTS))
 	../$<                  ;\
 	sha1sum 52*[0-7] | tee ../$@ | cmp - ../$$test.gold || rm ../$@
 
-.PRECIOUS: %.exe
+.PRECIOUS: %.exe ../mars.o
 
 %.exe: %.o ../mars.o
 	$(CXX) -o $@ $^
 
 .cc.o:
-	$(CXX) -c -I.. -o $@ $<
+	$(CXX) $(CXXFLAGS) -c -I.. -o $@ $<
 
 clean:
 	rm -rf *.run	;\
