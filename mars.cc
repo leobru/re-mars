@@ -209,6 +209,10 @@ word & IOword = data[BDSYS+037];
 word & d00040 = data[BDSYS+040];
 word & savrk = data[BDSYS+041];
 
+enum Ops {
+    FROMBASE, TOBASE, COMPARE, A00317, DONE
+};
+
 const char * msg[] = {
     "Zero key", "Page corrupted", "No such record", "Invalid name",
     "1st page corrupted", "Overflow", "Step too big", "No such name",
@@ -266,6 +270,8 @@ void IOcall(word is) {
     }
 }
 
+// Takes acc as the zone number,
+// returns the pointer to the zone read in m16
 void getzon() {
     curZone = acc;
     acc |= DBkey.d;
@@ -303,7 +309,7 @@ void save(bool force_tab = false) {
 }
 
 void finalize() {
-    d00011 = acc;
+    d00011 = acc;               // nonzero if error
     bool force_tab = false;
     if (sync != 0) {
         if (sync != 1)
@@ -515,6 +521,80 @@ void setctl(uint64_t location) {
     a00213();
 }
 
+void free_extent() {
+    d00031 = loc220.d & 01777;
+    do {
+        --m5;
+        if (!m5.d)
+            break;
+        acc = m16[m5+1].d & 01777;
+        if (acc >= d00031.d)
+            continue;
+        acc = m16[m5+1].d + curpos.d;
+        m16[m5+1] = acc;
+    } while (true);
+    work = m16[1].d & 01777;
+    if (work != d00031) {
+        if (d00031.d < work.d)
+            throw ERR_INTERNAL;
+        m5 = (d00031.d - work.d) & 077777;
+        work = work.d + curbuf.d;
+        d00031 = work.d + curpos.d;
+        do {
+            d00031[m5] = work[m5];
+        } while(--m5.d);
+    }
+    m16[1] = m16[1].d - 02000 + curpos.d;
+    frebas[curZone] = frebas[curZone].d + curpos.d + 1;
+    dirty(1);
+    acc = loc220.d;
+}
+
+void free() {
+    do {
+        find_item(acc);
+        acc = m16[1].d;
+        acc = (acc >> 10) & 077777;
+        work2 = acc;
+        acc = loc116.d;
+        m5 = acc;
+        do {
+            acc ^= work2.d;
+            if (!acc)
+                break;
+            m16[m5+1] = m16[m5+2].d;
+            ++m5;
+            acc = m5.d;
+        } while (true);
+        free_extent();
+        acc = (acc >> 20) & BITS(19);
+    } while (acc);
+    dirty = dirty.d | 1;
+}
+
+void a00747() {
+    free_extent();
+    acc = (acc >> 20) & BITS(19);
+    if (acc) {
+        free();
+        return;
+    }
+    dirty = dirty.d | 1;
+}
+
+void find_end_mark() {
+    // Searching for the end mark (originally 1 or 2 bytes)
+    m16 = -mylen.d;
+    work2 = myloc.d + mylen.d;
+    // Handling only single byte mark, contemporary style
+    char * start = (char*)&(work2[m16].d);
+    char * end = (char*)&(work2[0].d);
+    char * found = (char*)memchr(start, endmrk.d & 0xFF, end-start);
+    if (!found)
+        throw ERR_NO_END_MARK;
+    mylen = (found - start) / 8 + 1;
+}
+
 Error eval() try {
     acc = m16.d;
     jump(enter);
@@ -576,7 +656,8 @@ Error eval() try {
         skip(ERR_EXISTS);
         jump(next);
     case 016:
-        jump(cmd16);
+        find_end_mark();
+        break;
     case 017:
         jump(cmd17);
     case 020:
@@ -591,7 +672,8 @@ Error eval() try {
         break;
     case 023:
         acc = adescr.d;
-        jump(free);
+        free();
+        break;
     case 024:
         if (givenp != savedp)
             throw ERR_WRONG_PASSWORD;
@@ -635,15 +717,15 @@ Error eval() try {
     case 040:
         jump(next);
     case 041:
-        jmpoff = size_t(&&compar);
+        jmpoff = COMPARE;
         acc = mylen.d;
         jump(a00334);
     case 042:
-        jmpoff = size_t(&&tobase);
+        jmpoff = TOBASE;
         acc = mylen.d;
         jump(a00334);
     case 043:
-        jmpoff = size_t(&&frombase);
+        jmpoff = FROMBASE;
         acc = mylen.d;
         jump(a00334);
     case 044:
@@ -812,30 +894,35 @@ Error eval() try {
     m16 = curpos;
     m5 = 0;
   a00274:
-    jump(*jmpoff.p);
-  frombase:
-    while (m16.d) {
-        usrloc[m16-1] = aitem[m16-1];
-        --m16;
-    }
-    jump(done);
-  tobase:
-    dirty(1);
-    while (m16.d) {
-        aitem[m16-1] = usrloc[m16-1];
-        --m16;
-    }
-    jump(done);
-  compar:
+    switch (jmpoff.d) {
+    case FROMBASE:
+        while (m16.d) {
+            usrloc[m16-1] = aitem[m16-1];
+            --m16;
+        }
+        break;
+    case TOBASE:
+        dirty(1);
+        while (m16.d) {
+            aitem[m16-1] = usrloc[m16-1];
+            --m16;
+        }
+        break;
+    case COMPARE:
     // Check for 0 length is not needed, perhaps because the key part of datum
     // which is being compared, is never empty?
-    do {
-        if (aitem[m16-1] != usrloc[m16-1]) {
-            acc = curcmd >> 12;
-            jump(next);
-        }
-    } while (--m16.d);
-  done:
+        do {
+            if (aitem[m16-1] != usrloc[m16-1]) {
+                acc = curcmd >> 12;
+                jump(next);
+            }
+        } while (--m16.d);
+        break;
+    case A00317:
+        jump(a00317);
+    case DONE:
+        break;
+    }
     usrloc = usrloc.d + curpos.d;
   a00317:
     if (!m5.d)
@@ -849,15 +936,15 @@ Error eval() try {
     acc = (loc220.d >> 20) & BITS(19);
     if (acc)
         jump(a00267);
-    if (jmpoff.p == &&done)
-        jump(a00332);  // impossible? should compare with &&a00317, or deliberate as a binary patch?
+    if (jmpoff.d == DONE)
+        jump(a00332);  // impossible? should compare with A00317, or deliberate as a binary patch?
     if (!temp.d)
         jump(*m6.p);
   a00332:
     skip(ERR_STEP);
     jump(next);
   cmd7:
-    jmpoff = size_t(&&a00317);
+    jmpoff = A00317;
     acc = desc2.d;
   a00334:
     temp = acc;
@@ -918,19 +1005,6 @@ Error eval() try {
     acc = loc117.d & 01777;
     m5 = acc;
     jump(a00414);
-  cmd16: {
-    // Searching for the end mark (originally 1 or 2 bytes)
-    m16 = -mylen.d;
-    work2 = myloc.d + mylen.d;
-    // Handling only single byte mark, contemporary style
-    char * start = (char*)&(work2[m16].d);
-    char * end = (char*)&(work2[0].d);
-    char * found = (char*)memchr(start, endmrk.d & 0xFF, end-start);
-    if (!found)
-        throw ERR_NO_END_MARK;
-    mylen = (found - start) / 8 + 1;
-    jump(cmd0);
-    }
   cmd17:
     // Searching for the end word
     m16 = -mylen.d;
@@ -947,13 +1021,12 @@ Error eval() try {
         jump(cmd17);            // Possibly a typo/oversight, ought to be loop_here
     }
     throw ERR_INTERNAL;         // Originally "no end word"
-  overfl: throw ERR_OVERFLOW;
   a00667:
     acc = idx.d;
     if (!acc)
         jump(a01160);
     acc = loc246.d;
-    call(free,m6);
+    free();
     desc2 = 1;
     acc = loc117.d;
     d00025 = acc;
@@ -1009,60 +1082,6 @@ Error eval() try {
     m16[Array[idx.d]] = acc;
     acc = Array[idx.d].d;
     jump(a00721);
-  free:
-    find_item(acc);
-    acc = m16[1].d;
-    acc = (acc >> 10) & 077777;
-    work2 = acc;
-    acc = loc116.d;
-    m5 = acc;
-    do {
-        acc ^= work2.d;
-        if (!acc)
-            break;
-        m16[m5+1] = m16[m5+2].d;
-        ++m5;
-        acc = m5.d;
-    } while (true);
-  a00747:
-    d00031 = loc220.d & 01777;
-    do {
-        --m5;
-        if (!m5.d)
-            break;
-        acc = m16[m5+1].d & 01777;
-        if (acc >= d00031.d)
-            continue;
-        acc = m16[m5+1].d + curpos.d;
-        m16[m5+1] = acc;
-    } while (true);
-    work = m16[1].d & 01777;
-    if (work != d00031) {
-        if (d00031.d < work.d)
-            throw ERR_INTERNAL;
-        m5 = (d00031.d - work.d) & 077777;
-        work = work.d + curbuf.d;
-        d00031 = work.d + curpos.d;
-        do {
-            d00031[m5] = work[m5];
-        } while(--m5.d);
-    }
-    acc = m16[1].d;
-    acc -= 02000;
-    acc += curpos.d;
-    m16[1] = acc;
-    m16 = frebas;
-    acc = frebas[curZone].d;
-    acc += curpos.d + 1;
-    frebas[curZone] = acc;
-    dirty(1);
-    acc = loc220.d;
-  a01005:
-    acc = (acc >> 20) & BITS(19);
-    if (acc)
-        jump(free);
-    dirty = dirty.d | 1;
-    jump(*m6.p);
     // date() was here
   alloc:
     usrloc = acc;
@@ -1099,18 +1118,18 @@ Error eval() try {
     acc = m7[1].d;
     acc >>= 10;
     m16 = acc;
-  a01035:
-    acc <<= 39;
-    acc ^= curbuf[m16+1].d;
-    acc &= 0777LL << 39;
-    if (acc) {
-        curbuf[m16+2] = curbuf[m16+1];
-        --m16;
-        acc = m16.d;
-        if (m16.d)
-            jump(a01035);
-    }
-  a01044:
+    do {
+        acc <<= 39;
+        acc ^= curbuf[m16+1].d;
+        acc &= 0777LL << 39;
+        if (acc) {
+            curbuf[m16+2] = curbuf[m16+1];
+            --m16;
+            acc = m16.d;
+            if (m16.d)
+                continue;
+        }
+    } while (false);
     ++m16;
     acc = m16.d;
     loc116 = acc;
@@ -1162,14 +1181,14 @@ Error eval() try {
   a01105:
     if (--m5.d)
         jump(a01264);
-    m6.p = &&overfl;
     acc = d00030.d;
-    jump(a01005);
-  a01116:
-    loc20 = 0;
-    acc = loc12.d;
-    m6.p = &&overfl;
-    jump(free);
+    acc = (acc >> 20) & BITS(19);
+    if (acc) {
+        free();
+        throw ERR_OVERFLOW;
+    }
+    dirty = dirty.d | 1;
+    throw ERR_OVERFLOW;
   inskey:
     d00011 = key;
     acc = loc12.d;
@@ -1250,8 +1269,12 @@ Error eval() try {
     acc = work.d + 044;
     work = acc;
   a01201:
-    if (usable_space() < work.d)
-        jump(a01116);
+    if (usable_space() < work.d) {
+        loc20 = 0;
+        acc = loc12.d;
+        free();
+        throw ERR_OVERFLOW;
+    }
     d00025 = loc157;
     loc157 = (loc246.d << 29) & BITS(48);
     acc = loc117.d;
@@ -1303,8 +1326,12 @@ Error eval() try {
     }
     jump(a01123);
   a01252:
-    if (usable_space() < 0101)
-        jump(a01116);
+    if (usable_space() < 0101) {
+        loc20 = 0;
+        acc = loc12.d;
+        free();
+        throw ERR_OVERFLOW;
+    }
     acc -= 0101;
     call(pr1022,m6);
     m16 = Metadata;
@@ -1364,7 +1391,13 @@ Error eval() try {
         acc ^= loc220.d;
         loc116[m5+1] = acc;
         acc = loc220.d;
-        jump(a01005);           // Free other extents
+        acc = (acc >> 20) & BITS(19);
+        if (acc) {
+            free();
+            jump(*m6.p);
+        }
+        dirty = dirty.d | 1;
+        jump(*m6.p);
     }
     date();
     m16 = curbuf;
@@ -1379,7 +1412,7 @@ Error eval() try {
     d00010 = m6;
     d00026 = loc220;
     loc220 = loc220.d & 01777;
-    call(a00747,m6);
+    a00747();
     ++mylen;
     m5 = 0;
     m7 = curbuf;
@@ -1387,14 +1420,21 @@ Error eval() try {
     call(pr1047,m6);
     acc = d00026.d;
     m6.p = d00010.p;
-    jump(a01005);
+    acc = (acc >> 20) & BITS(19);
+    if (acc) {
+        free();
+        jump(*m6.p);
+    }
+    dirty = dirty.d | 1;
+    jump(*m6.p);
   a01361:
     usable_space();
   a01362:
     acc = (*aitem).d & 077777;
     acc += itmlen.d;
-    if (acc < mylen.d)
-        jump(overfl);
+    if (acc < mylen.d) {
+        throw ERR_OVERFLOW;
+    }
     m16 = curbuf;
     mylen = work.d;
     call(a01346,m6);

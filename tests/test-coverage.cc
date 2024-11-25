@@ -142,7 +142,7 @@ int main(int argc, char ** argv) {
     // Done with it
     deld(elt.c_str());
 
-    // Putting 100 elements of varying sizes with numerical keys (key 0 is invalid)
+    // Putting 59 elements of varying sizes with numerical keys (key 0 is invalid)
     for (int i = 0; i <= 59; ++i) {
         if (mars_flags.verbose)
             std::cerr << "Putting " << i << '\n';
