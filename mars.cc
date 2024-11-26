@@ -283,7 +283,7 @@ void getzon() {
         return;
     if (curZone.d && (dirty.d & 2)) {
         dirty = dirty.d & ~2;
-        IOword = (IOpat.d | bdbuf.d << 20) + m16[0].d;
+        IOword = (IOpat.d | bdbuf.d << 20) + (m16[0].d & 01777);
         IOcall(IOword);
     }
     IOword = (curbuf.d << 20 | curZone.d | ONEBIT(40)) + IOpat.d;
@@ -423,9 +423,11 @@ void copy_words(word dst, word src) {
     if (verbose)
         std::cerr << std::oct << m16.d << "(8) words from "
                   << src.d << " to " << dst.d << '\n';
-    do {
-        dst[m16-1] = src[m16-1];
-    } while (--m16.d);
+    if (m16.d) {
+        do {
+            dst[m16-1] = src[m16-1];
+        } while (--m16.d);
+    }
 }
 
 // Copies chained extents to user memory (acc = length of the first extent)
@@ -593,6 +595,42 @@ void find_end_mark() {
     if (!found)
         throw ERR_NO_END_MARK;
     mylen = (found - start) / 8 + 1;
+}
+
+bool proc270() {
+    acc = temp.d;
+    m16 = acc;
+    acc = (acc - curpos.d) & BITS(41);
+    if (!(acc & ONEBIT(41))) {
+        temp = acc;
+        m16 = curpos;
+        m5 = 0;
+    }
+    switch (jmpoff.d) {
+    case FROMBASE:
+        copy_words(usrloc, aitem);
+        break;
+    case TOBASE:
+        dirty(1);
+        copy_words(aitem, usrloc);
+        break;
+    case COMPARE:
+    // Check for 0 length is not needed, perhaps because the key part of datum
+    // which is being compared, is never empty?
+        do {
+            if (aitem[m16-1] != usrloc[m16-1]) {
+                acc = curcmd >> 12;
+                return true;
+            }
+        } while (--m16.d);
+        break;
+    case A00317:
+        return false;
+    case DONE:
+        break;
+    }
+    usrloc = usrloc.d + curpos.d;
+    return false;
 }
 
 Error eval() try {
@@ -839,8 +877,11 @@ Error eval() try {
     Array[idx.d] = acc;
     acc = m16[1].d;
     acc &= ONEBIT(48);
-    if (!acc)
-        jump(a00371);
+    if (!acc) {
+        curkey = element[m5];
+        adescr = element[m5+1];
+        jump(rtnext);
+    }
     idx = idx.d + 2;
     acc = m16[m5+1].d;
     pr202();
@@ -885,64 +926,27 @@ Error eval() try {
   a00267:
     find_item(acc);
   a00270:
-    acc = temp.d;
-    m16 = acc;
-    acc = (acc - curpos.d) & BITS(41);
-    if (acc & ONEBIT(41))
-        jump(a00274);
-    temp = acc;
-    m16 = curpos;
-    m5 = 0;
-  a00274:
-    switch (jmpoff.d) {
-    case FROMBASE:
-        while (m16.d) {
-            usrloc[m16-1] = aitem[m16-1];
-            --m16;
-        }
-        break;
-    case TOBASE:
-        dirty(1);
-        while (m16.d) {
-            aitem[m16-1] = usrloc[m16-1];
-            --m16;
-        }
-        break;
-    case COMPARE:
-    // Check for 0 length is not needed, perhaps because the key part of datum
-    // which is being compared, is never empty?
-        do {
-            if (aitem[m16-1] != usrloc[m16-1]) {
-                acc = curcmd >> 12;
-                jump(next);
-            }
-        } while (--m16.d);
-        break;
-    case A00317:
-        jump(a00317);
-    case DONE:
-        break;
+    if (proc270()) {
+        // COMPARE failed, skip an instruction
+        jump(next);
     }
-    usrloc = usrloc.d + curpos.d;
-  a00317:
-    if (!m5.d)
-        jump(a00325);
-    aitem = aitem.d + temp.d;
-    curpos = curpos.d - temp.d;
-    acc = (*aitem).d;
-    desc1 = acc;
+    if (m5.d) {
+        aitem = aitem.d + temp.d;
+        curpos = curpos.d - temp.d;
+        acc = (*aitem).d;
+        desc1 = acc;
+    } else {
+        acc = (loc220.d >> 20) & BITS(19);
+        if (acc)
+            jump(a00267);
+        if (jmpoff.d == DONE
+            // impossible? should compare with A00317, or deliberate as a binary patch?
+            || temp.d) {
+            skip(ERR_STEP);
+            jump(next);
+        }
+    }
     jump(*m6.p);
-  a00325:
-    acc = (loc220.d >> 20) & BITS(19);
-    if (acc)
-        jump(a00267);
-    if (jmpoff.d == DONE)
-        jump(a00332);  // impossible? should compare with A00317, or deliberate as a binary patch?
-    if (!temp.d)
-        jump(*m6.p);
-  a00332:
-    skip(ERR_STEP);
-    jump(next);
   cmd7:
     jmpoff = A00317;
     acc = desc2.d;
@@ -954,29 +958,6 @@ Error eval() try {
   a00340:
     find_item(acc);
     jump(cmd7);
-  a00355:
-    acc += 2;
-    m5 = acc;
-    (acc ^= element[-1].d) &= 01777;
-    if (acc)
-        jump(a00367);
-    acc = element[-1].d;
-    acc &= BITS(19) << 10;
-    if (!acc) {
-        skip(ERR_NO_NEXT);
-        jump(next);
-    }
-    acc >>= 10;
-    pr202();
-    Array[idx.d-2] = Array[idx.d-2].d + (1<<15);
-    m5 = 0;
-  a00367:
-    acc = m5.d | 1 << 30;
-    Array[idx.d] = acc;
-  a00371:
-    curkey = element[m5];
-    adescr = element[m5+1];
-    jump(rtnext);
     // pr376 (make_metablock) was here
   step:
     goto_ = m6;
@@ -985,26 +966,45 @@ Error eval() try {
     if (!acc)
         throw ERR_NO_CURR;
     m5 = acc;
-    if (!m16.d)
-        jump(a00355);
-    if (!m5.d)
-        jump(a00415);
-  a00414:
-    m5 = m5 - 2;
-    jump(a00367);
-  a00415:
-    acc = element[-1] >> 29;
-    if (!acc) {
-        skip(ERR_NO_PREV);
-        jump(next);
+    if (!m16.d) {
+        // Step forward
+        acc += 2;
+        m5 = acc;
+        (acc ^= element[-1].d) &= 01777;
+        if (!acc) {
+            acc = element[-1].d;
+            acc &= BITS(19) << 10;
+            if (!acc) {
+                skip(ERR_NO_NEXT);
+                jump(next);
+            }
+            acc >>= 10;
+            pr202();
+            Array[idx.d-2] = Array[idx.d-2].d + (1<<15);
+            m5 = 0;
+        }
+    } else {
+        // Step back
+        if (!m5.d) {
+            acc = element[-1] >> 29;
+            if (!acc) {
+                skip(ERR_NO_PREV);
+                jump(next);
+            }
+            pr202();
+            acc = Array[idx.d-2].d;
+            acc -= 1<<15;
+            Array[idx.d-2] = acc;
+            acc = loc117.d & 01777;
+            m5 = acc;
+        }
+        m5 = m5 - 2;
     }
-    pr202();
-    acc = Array[idx.d-2].d;
-    acc -= 1<<15;
-    Array[idx.d-2] = acc;
-    acc = loc117.d & 01777;
-    m5 = acc;
-    jump(a00414);
+    acc = m5.d | 1 << 30;
+    Array[idx.d] = acc;
+    curkey = element[m5];
+    adescr = element[m5+1];
+    jump(rtnext);
   cmd17:
     // Searching for the end word
     m16 = -mylen.d;
@@ -1243,32 +1243,26 @@ Error eval() try {
     acc = m16.d;
     usrloc = --acc;
     acc = idx.d;
-    if (acc)
-        jump(a01167);
-  a01163:
-    mylen = 041;
-    if (m16[-1].d == 040)
-        jump(a01252);
-    acc = loc20.d;
-    jump(a01311);
-  a01167:
+    if (!acc) {
+        mylen = 041;
+        if (m16[-1].d == 040)
+            jump(a01252);
+        acc = loc20.d;
+        jump(a01311);
+    }
     acc = m16[-1].d & 01777;
     acc ^= 0100;
-    if (!acc)
-        jump(a01174);
-  a01171:
-    acc = m16[-1].d & 01777;
-    mylen = ++acc;
-    acc = loc246.d;
-    jump(a01311);
-  a01174:
+    if (acc) {
+        acc = m16[-1].d & 01777;
+        mylen = ++acc;
+        acc = loc246.d;
+        jump(a01311);
+    }
     work = (idx.d * 2) + 041;
-    acc = Metadata[-1].d ^ 036;
-    if (acc)
-        jump(a01201);
-    acc = work.d + 044;
-    work = acc;
-  a01201:
+    if (Metadata[-1].d == 036) {
+        // The current metadata block is full, account for another one
+        work = work.d + 044;
+    }
     if (usable_space() < work.d) {
         loc20 = 0;
         acc = loc12.d;
@@ -1300,7 +1294,10 @@ Error eval() try {
     m5.p = &&a01231;
     goto_ = m5;
     usrloc = m16.d - 1;
-    jump(a01171);
+    acc = m16[-1].d & 01777;
+    mylen = ++acc;
+    acc = loc246.d;
+    jump(a01311);
   a01231:
     m5.p = &&a01136;
   pr1232:
@@ -1339,7 +1336,11 @@ Error eval() try {
     acc |= ONEBIT(48);
     m16[1] = acc;
     m16[-1] = 2;
-    jump(a01163);
+    mylen = 041;
+    if (m16[-1].d == 040)
+        jump(a01252);
+    acc = loc20.d;
+    jump(a01311);
   split:
     usrloc = usrloc.d + mylen.d - 1;
     m5 = dblen;
@@ -1612,6 +1613,11 @@ Error getd(const char * k, int loc, int len) {
 }
 
 Error getd(uint64_t k, int loc, int len) {
+    if (verbose) {
+        std::cerr << "Running getd(" << std::oct << std::setw(16) << std::setfill('0') << k << ", ";
+        std::cerr << std::setw(5) << loc << ":" << std::setw(0) << std::dec << len << ")\n";
+        std::cerr.copyfmt(std::ios(nullptr));
+    }
     key = k;
     mylen = len;
     myloc = loc;

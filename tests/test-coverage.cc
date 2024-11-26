@@ -34,12 +34,13 @@ void usage() {
     std::cerr <<
       "Usage: mars [-h] [-V] [-i] [-L <n>] [-n] [-l <n>] [-t]\n"
       "\t-V\tVerbose\n"
-      "\t-i\tInitialize the main catalog\n"
+      "\t-i\tDo not initialize the main catalog\n"
       "\t-L <n>\tCatalog length, octal (default 1)\n"
       "\t\t- must be always specified if created with a non-default value\n"
       "\t-f <n>\tOperate on a file with the given name (default TEST)\n"
-      "\t-n\tCreate the file before operating\n"
+      "\t-n\tDo not create the file before operating\n"
       "\t-l <n>\tFile length, octal (default 2)\n"
+      "\t-d\tInclude date stamps in descriptors\n"
       "\t-t - dump zones in text format as well\n"
       "\t-s\tTrace store operations\n"
       ;
@@ -60,8 +61,11 @@ int main(int argc, char ** argv) {
     int catalog_len = 1;
     int file_len = 2;
     std::string fname;
+
+    mars_flags.zero_date = true;
+
     for (;;) {
-        c = getopt (argc, argv, "inhVtiL:l:f:");
+        c = getopt (argc, argv, "inhVtsidL:l:f:");
         if (c < 0)
             break;
         switch (c) {
@@ -84,6 +88,9 @@ int main(int argc, char ** argv) {
         case 's':
             mars_flags.trace_stores = true;
             break;
+        case 'd':
+            mars_flags.zero_date = false;
+            break;
         case 'L':
             catalog_len = strtol(optarg, nullptr, 8);
             break;
@@ -96,7 +103,10 @@ int main(int argc, char ** argv) {
         }
     }
 
-    mars_flags.zero_date = true;
+    if (!catalog_len || !file_len) {
+        usage();
+        exit(1);
+    }
 
     if (fname.empty())
         fname = "TEST";
@@ -108,11 +118,12 @@ int main(int argc, char ** argv) {
     // Setting the root location
     SetDB(052, 0, catalog_len);
 
-    if (mars_flags.verbose)
-      std::cerr << "Usable space in root catalog: "
-                << std::oct << avail() << '\n';
-
-    // Making a new array of 'len' zones, starting from zone 1
+    if (mars_flags.verbose) {
+        int space = avail();
+        std::cerr << "Usable space in root catalog: "
+                  << std::oct << space << '\n';
+    }
+    // Making a new array of 'len' zones, starting after the root catalog
     if (newfile) {
         newd(fname.c_str(), 052, catalog_len, file_len);
     }
