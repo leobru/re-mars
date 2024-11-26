@@ -1,0 +1,60 @@
+шифр 419900зс5^
+dis 40(2048-630)^
+dis 41(2148)^
+dis 52(1234-wr)^
+ОЗУ 32^
+еев1а3
+*name
+*call ficmemory
+*perso:410440
+*assem
+ start:,name,
+ *bdvect*:,lc,168
+ *erstop*:,lc,1
+ *bdv*:,lc,1
+ *bderrn*:,lc,1
+ *bdc*:,lc,7
+ p/bdsys:,pc,1024
+ p/bdtab:,pc,1024
+ p/bdbuf:,pc,1024
+ main:,subp,
+ ,uj,main
+ ,bss,377b . to make bdvect start from 01400
+ ,end,
+*no list
+*pascal
+(*=p-,t-*)PROGRAM main (OUTPUT,BDVECT,bderrn);
+type word = record case integer of 0:(i:integer); 1:(a:alfa);
+2:(c:char) end;
+var i,j:integer;bderrn:integer;
+a:array [1..1024] _of integer;
+bdvect, sav: array[0..167] of word;
+PROCEDURE PASSETAR(I: INTEGER); EXTERNAL;
+PROCEDURE PASACD(VAR I: INTEGER); FORTRAN;
+procedure pasbd; external;
+procedure pasbdi; external;
+BEGIN
+    j := 1520000C;
+    PASACD(j);
+    PASSETAR(1520000c);
+	j := 440520001C;
+    newd('test', j);
+    opend('test');
+    for j := 1 to 65536 do begin
+        writeln(' Putting ', j:0);
+        putd(j, j:0);
+        bdvect[47B].i := 0c;
+        bdvect[3].i := 13c;
+        pasbd;
+        i := ord(bdvect[47B].c);
+        writeln('Remaining ', i);
+        if bderrn <> 0c then
+            exit;
+    end;
+END.
+*no load list
+*main start
+*execute
+*end file
+``````
+еконец
