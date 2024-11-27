@@ -374,7 +374,7 @@ void find_item(uint64_t arg) {
         acc = work.d;
     acc >>= 10;
     loc116 = acc;
-    do {
+    for (;;) {
         acc = loc116[m16+1].d;
         loc220 = acc;
         acc ^= work2.d;
@@ -384,7 +384,8 @@ void find_item(uint64_t arg) {
                 continue;
             throw ERR_NO_RECORD;
         }
-    } while (false);
+        break;
+    }
     acc = loc220.d & 01777;
     ++acc;
     acc += curbuf.d;

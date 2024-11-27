@@ -1,6 +1,9 @@
 TESTS = test-initdb test-coverage
+LONGTESTS = test-maxsize
 
 tests: $(addsuffix .sha,$(TESTS))
+
+longtests: $(addsuffix .sha,$(LONGTESTS))
 
 %.sha: %.exe %.gold
 	test=`basename $< .exe`;\

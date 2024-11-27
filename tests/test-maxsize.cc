@@ -18,7 +18,9 @@ void usage() {
       "\t\t- must be always specified if created with a non-default value\n"
       "\t-f <n>\tOperate on a file with the given name (default TEST)\n"
       "\t-n\tDo not create the file before operating\n"
-      "\t-l <n>\tFile length, octal (default 2)\n"
+      "\t-l <n>\tFile length, octal (default 427)\n"
+      "\t-R <n>\tStart record number (default 1)\n"
+      "\t-r <n>\tEnd record number (default 65536)\n"
       "\t-d\tInclude date stamps in descriptors\n"
       "\t-t - dump zones in text format as well\n"
       "\t-s\tTrace store operations\n"
@@ -38,15 +40,15 @@ int main(int argc, char ** argv) {
     int c;
     bool do_init = true, newfile = true;
     int catalog_len = 1;
-    int file_len = 0750;
-    int numrec = 65536;
+    int file_len = 0427;
+    int startrec = 1, numrec = 65536;
     bool clear = false;
     std::string fname;
 
     mars_flags.zero_date = true;
 
     for (;;) {
-        c = getopt (argc, argv, "inhVtsicdL:l:f:r:");
+        c = getopt (argc, argv, "inhVtsicdL:l:f:R:r:");
         if (c < 0)
             break;
         switch (c) {
@@ -77,6 +79,9 @@ int main(int argc, char ** argv) {
             break;
         case 'l':
             file_len = strtol(optarg, nullptr, 8);
+            break;
+        case 'R':
+            startrec = atoi(optarg);
             break;
         case 'r':
             numrec = atoi(optarg);
@@ -114,7 +119,9 @@ int main(int argc, char ** argv) {
         newd(fname.c_str(), 052, catalog_len, file_len);
     }
     // Opening it
+    mars_flags.trace_stores = true;
     opend(fname.c_str());
+    mars_flags.trace_stores = false;
     if (mars_flags.verbose) {
         int space = avail();
         std::cerr << "Usable space in the file: "
@@ -122,7 +129,7 @@ int main(int argc, char ** argv) {
     }
 
     // Putting elements of size 0 until the DB overflows
-    for (int i = 1; i <= numrec; ++i) {
+    for (int i = startrec; i <= numrec; ++i) {
       std::cerr << "Putting " << std::dec << i << '\n';
       if (i == numrec) mars_flags.trace_stores = true;
       if (putd(i | 024LL << 42, 0, 0)) {
