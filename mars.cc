@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cassert>
 #include <string>
+#include <format>
 #include <algorithm>
 #include <ctime>
 #include <getopt.h>
@@ -46,7 +47,7 @@ word& word::operator=(word x) {
 word& word::operator=(word * x) {
     ptrdiff_t offset = x-data;
     if (offset < 0 || offset >= 077777) {
-        std::cerr << "Cannot point to words outside of RAM, offset = " << std::oct << offset << '\n';
+        std::cerr << std::format("Cannot point to words outside of RAM, offset = {:o}\n", offset);
         abort();
     }
     size_t index = this-data;
@@ -231,20 +232,18 @@ void IOcall(word is) {
             return;
         }
         if (verbose)
-            std::cerr << "Reading " << nuzzzz
-                      << " to address " << std::oct << page*1024 << '\n';
+            std::cerr << std::format("Reading {} to address {:o}\n", nuzzzz, page*1024);
         fread(data+page*1024, 1024, sizeof(uint64_t), f);
         fclose(f);
     } else {
         // write
         FILE * f = fopen(nuzzzz, "w");
         if (!f) {
-            std::cerr << "Could not open " << nuzzzz << '(' << strerror(errno) << ")\n";
+            std::cerr << std::format("Could not open {} ({})\n", nuzzzz, strerror(errno));
             exit(1);
         }
         if (verbose)
-            std::cerr << "Writing " << nuzzzz
-                      << " from address " << std::oct << page*1024 << '\n';
+            std::cerr << std::format("Writing {} from address {:o}\n", nuzzzz, page*1024);
         fwrite(data+page*1024, 1024, sizeof(uint64_t), f);
         fclose(f);
 
@@ -253,7 +252,7 @@ void IOcall(word is) {
             txt += ".txt";
             FILE * t = fopen(txt.c_str(), "w");
             if (!t) {
-                std::cerr << "Could not open " << txt << '(' << strerror(errno) << ")\n";
+                std::cerr << std::format("Could not open {} ({})\n", txt, strerror(errno));
                 exit(1);
             }
             int zone = is.d & 07777;
@@ -290,8 +289,7 @@ void getzon() {
     m16 = curbuf;
     if (m16[0] == zonkey)
         return;
-    std::cerr << "Corruption: zonkey = " << std::oct << zonkey.d
-              << ", data = " << (*m16).d <<"\n";
+    std::cerr << std::format("Corruption: zonkey = {:o}, data = {:o}\n", zonkey.d, (*m16).d);
     throw ERR_BAD_PAGE;
 }
 
@@ -421,12 +419,11 @@ void set_header() {
 
 void copy_words(word dst, word src) {
     if (verbose)
-        std::cerr << std::oct << m16.d << "(8) words from "
-                  << src.d << " to " << dst.d << '\n';
-    if (m16.d) {
-        do {
-            dst[m16-1] = src[m16-1];
-        } while (--m16.d);
+        std::cerr << std::format("{:o}(8) words from {:o} to {:o}\n", m16.d, src.d, dst.d);
+    // Using backwards store order to match the original binary for ease of debugging.
+    while (m16.d) {
+        dst[m16-1] = src[m16-1];
+        --m16.d;
     }
 }
 
@@ -460,6 +457,7 @@ void cpyout() {
     copy_chained();
 }
 
+// Not really a mutex
 void lock() {
     acc = bdtab.d << 20;
     work = acc |= IOpat.d;

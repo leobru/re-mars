@@ -1,3 +1,4 @@
+CXXFLAGS ?= -std=c++20
 TESTS = test-initdb test-coverage
 LONGTESTS = test-maxsize
 

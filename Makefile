@@ -1,7 +1,7 @@
-CXXFLAGS ?= -Wall
+CXXFLAGS ?= -Wall -std=c++20
 
 run-tests: mars.o
-	cd tests; make CXX=$(CXX) CXXFLAGS=$(CXXFLAGS)
+	cd tests; make CXX=$(CXX) CXXFLAGS="$(CXXFLAGS)"
 
 clean:
 	rm -f mars.o; cd tests; make clean
