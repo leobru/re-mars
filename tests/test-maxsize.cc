@@ -39,12 +39,14 @@ int main(int argc, char ** argv) {
     bool do_init = true, newfile = true;
     int catalog_len = 1;
     int file_len = 0750;
+    int numrec = 65536;
+    bool clear = false;
     std::string fname;
 
     mars_flags.zero_date = true;
 
     for (;;) {
-        c = getopt (argc, argv, "inhVtsidL:l:f:");
+        c = getopt (argc, argv, "inhVtsicdL:l:f:r:");
         if (c < 0)
             break;
         switch (c) {
@@ -76,9 +78,14 @@ int main(int argc, char ** argv) {
         case 'l':
             file_len = strtol(optarg, nullptr, 8);
             break;
+        case 'r':
+            numrec = atoi(optarg);
+            break;
         case 'f':
             fname = optarg;
             break;
+        case 'c':
+            clear = true;
         }
     }
 
@@ -115,30 +122,29 @@ int main(int argc, char ** argv) {
     }
 
     // Putting elements of size 0 until the DB overflows
-    for (int i = 1; ; ++i) {
+    for (int i = 1; i <= numrec; ++i) {
       std::cerr << "Putting " << std::dec << i << '\n';
-        if (putd(i, 0, 0)) {
+      if (i == numrec) mars_flags.trace_stores = true;
+      if (putd(i | 024LL << 42, 0, 0)) {
             // An overflow error is expected at the last iteration
             std::cerr << "\twhile putting " << std::dec << i << '\n';
             break;
         }
-        int space = avail();
-        std::cerr << "Remaining: "
-                  << std::oct << space << '\n';
     }
-
+    mars_flags.trace_stores = false;
     if (mars_flags.verbose) {
         int space = avail();
         std::cerr << "Remaining space in the file: "
                   << std::oct << space << '\n';
     }
 
-    cleard();                   // A termination error is expected
+    if (clear) {
+        cleard();               // A termination error is expected
 
-    if (mars_flags.verbose) {
-        int space = avail();
-        std::cerr << "After clearing: "
-                  << std::oct << space << '\n';
+        if (mars_flags.verbose) {
+            int space = avail();
+            std::cerr << "After clearing: "
+                      << std::oct << space << '\n';
+        }
     }
-
 }

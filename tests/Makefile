@@ -16,7 +16,7 @@ tests: $(addsuffix .sha,$(TESTS))
 	$(CXX) -o $@ $^
 
 .cc.o:
-	$(CXX) $(CXXFLAGS) -c -I.. -o $@ $<
+	$(CXX) $(CXXFLAGS) -Wall -c -I.. -o $@ $<
 
 clean:
 	rm -rf *.run	;\

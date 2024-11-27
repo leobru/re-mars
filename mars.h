@@ -34,9 +34,9 @@ union word {
         unsigned upper9  : 9;
     };
     word(uint64_t x = 0) : d(x) { }
-    uint64_t& operator=(uint64_t x);
+    uint64_t& operator=(long unsigned int x);
     uint64_t& operator=(int x) { return this->operator=(uint64_t(x)); }
-    uint64_t& operator=(int64_t x) { return this->operator=(uint64_t(x)); }
+    uint64_t& operator=(long x) { return this->operator=(uint64_t(x)); }
     uint64_t& operator=(long long int x) { return this->operator=(uint64_t(x)); }
     uint64_t& operator=(long long unsigned int x) { return this->operator=(uint64_t(x)); }
     word& operator=(word x);
@@ -55,12 +55,12 @@ union word {
     word& operator--() { (*this) = d - 1; return *this; }
 };
 
-typedef struct {
+struct MarsFlags {
     bool dump_txt_zones = false;
     bool verbose = false;
     bool trace_stores = false;
     bool zero_date = false;
-} MarsFlags;
+};
 
 extern MarsFlags mars_flags;
 

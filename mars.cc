@@ -2,7 +2,6 @@
 #include <cstring>
 #include <iostream>
 #include <iomanip>
-#include <error.h>
 #include <cstdlib>
 #include <cassert>
 #include <string>
@@ -32,7 +31,7 @@ uint64_t& word::operator=(uint64_t x) {
     size_t index = this-data;
     if (index < 16) x &= 077777;
     if (trace_stores && index > 16 && index < RAM_LENGTH)
-        printf("       %05lo: store %016lo\n", index, x);
+        fprintf(stderr, "       %05lo: store %016lo\n", index, x);
     d=x;
     return d;
 }
@@ -40,7 +39,7 @@ word& word::operator=(word x) {
     size_t index = this-data;
     if (index < 16) x.d &= 077777;
     if (trace_stores && index > 16 && index < RAM_LENGTH)
-        printf("       %05lo: store %016lo\n", index, x.d);
+        fprintf(stderr, "       %05lo: store %016lo\n", index, x.d);
     d=x.d;
     return *this;
 }
@@ -72,10 +71,10 @@ bdvect_t sav;
 #define bdvect (*reinterpret_cast<bdvect_t*>(data+BDVECT))
 
 void dump() {
-    for (int j = 0; j < bdvect_t::SIZE; ++j) {
+    for (size_t j = 0; j < bdvect_t::SIZE; ++j) {
         if (bdvect.w[j] != sav.w[j]) {
             printf(" WORD %03o CHANGED FROM  %016lo TO  %016lo\n",
-                   j, sav.w[j].d, bdvect.w[j].d);
+                   int(j), sav.w[j].d, bdvect.w[j].d);
         }
     }
     sav = bdvect;
@@ -100,7 +99,7 @@ uint64_t word::operator&() { return this-data; }
 #define LABEL_(a) MERGE_(ret_, a)
 #define ret LABEL_(__LINE__)
 #define call(addr,link) do { link.p = &&ret; goto addr; ret:; } while (0)
-#define dirty(x) dirty = dirty.d | (curZone.d ? x : 0) + 1
+#define dirty(x) dirty = dirty.d | ((curZone.d ? x : 0) + 1)
 // #define jump(x) do { std::cerr << "Jump to " #x "\n"; goto x; } while(0)
 #define jump(x) goto x
 
@@ -555,19 +554,14 @@ void free_extent() {
 void free() {
     do {
         find_item(acc);
-        acc = m16[1].d;
-        acc = (acc >> 10) & 077777;
-        work2 = acc;
+        work2 = (m16[1].d >> 10) & 077777;
         acc = loc116.d;
         m5 = acc;
-        do {
-            acc ^= work2.d;
-            if (!acc)
-                break;
+        while (acc != work2.d) {
             m16[m5+1] = m16[m5+2].d;
             ++m5;
             acc = m5.d;
-        } while (true);
+        };
         free_extent();
         acc = (acc >> 20) & BITS(19);
     } while (acc);
@@ -633,6 +627,98 @@ bool proc270() {
     return false;
 }
 
+bool step() {
+    acc = Array[idx.d].d;
+    if (!acc)
+        throw ERR_NO_CURR;
+    m5 = acc;
+    if (!m16.d) {
+        // Step forward
+        acc += 2;
+        m5 = acc;
+        (acc ^= element[-1].d) &= 01777;
+        if (!acc) {
+            acc = element[-1].d;
+            acc &= BITS(19) << 10;
+            if (!acc) {
+                skip(ERR_NO_NEXT);
+                return true;
+            }
+            acc >>= 10;
+            pr202();
+            Array[idx.d-2] = Array[idx.d-2].d + (1<<15);
+            m5 = 0;
+        }
+    } else {
+        // Step back
+        if (!m5.d) {
+            acc = element[-1] >> 29;
+            if (!acc) {
+                skip(ERR_NO_PREV);
+                return true;
+            }
+            pr202();
+            acc = Array[idx.d-2].d;
+            acc -= 1<<15;
+            Array[idx.d-2] = acc;
+            acc = loc117.d & 01777;
+            m5 = acc;
+        }
+        m5 = m5 - 2;
+    }
+    acc = m5.d | 1 << 30;
+    Array[idx.d] = acc;
+    curkey = element[m5];
+    adescr = element[m5+1];
+    return false;
+}
+
+bool a00334() {
+    temp = acc;
+    loc53 = loc53.d + acc;
+    usrloc = myloc;
+  a00270:
+    if (proc270()) {
+        // COMPARE failed, skip an instruction
+        return true;
+    }
+    if (m5.d) {
+        aitem = aitem.d + temp.d;
+        curpos = curpos.d - temp.d;
+        acc = (*aitem).d;
+        desc1 = acc;
+    } else {
+        acc = (loc220.d >> 20) & BITS(19);
+        if (acc) {
+            find_item(acc);
+            jump(a00270);
+        }
+        if (jmpoff.d == DONE
+            // impossible? should compare with A00317, or deliberate as a binary patch?
+            || temp.d) {
+            skip(ERR_STEP);
+            return true;
+        }
+    }
+    return false;
+}
+
+void a00340() {
+    find_item(acc);
+    jmpoff = A00317;
+    acc = desc2.d;
+    a00334();
+}
+
+void assign_and_incr() {
+    m16 = acc;
+    m5 = (curcmd >> 6) & 077;
+    curcmd = curcmd >> 6;
+    m13[m16] = (*m13[m5]).d;
+    ++m13[m5];
+}
+
+unsigned maxidx = 0;
 Error eval() try {
     acc = m16.d;
     jump(enter);
@@ -668,7 +754,10 @@ Error eval() try {
         a00203();
         break;
     case 7:
-        jump(cmd7);
+        jmpoff = A00317;
+        acc = desc2.d;
+        a00334();
+        break;
     case 010:
         jump(mkctl);
     case 011:
@@ -685,12 +774,12 @@ Error eval() try {
         break;
     case 014:
         if (curkey == key)
-            jump(cmd0);
+            break;
         skip(ERR_NO_NAME);
         jump(next);
     case 015:
         if (curkey != key)
-            jump(cmd0);
+            break;
         skip(ERR_EXISTS);
         jump(next);
     case 016:
@@ -757,15 +846,21 @@ Error eval() try {
     case 041:
         jmpoff = COMPARE;
         acc = mylen.d;
-        jump(a00334);
+        if (a00334())
+            jump(next);
+        break;
     case 042:
         jmpoff = TOBASE;
         acc = mylen.d;
-        jump(a00334);
+        if (a00334())
+            jump(next);
+        break;
     case 043:
         jmpoff = FROMBASE;
         acc = mylen.d;
-        jump(a00334);
+        if(a00334())
+            jump(next);
+        break;
     case 044:
         adescr = desc1;
         break;
@@ -778,16 +873,26 @@ Error eval() try {
         acc = desc1.d;
         jump(*outadr.p);
     case 050:
+        // cmd := mem[bdvect[src]++]
+        // curcmd is ..... src 50
         acc = &orgcmd-BDVECT;
-        jump(cmd50);
+        assign_and_incr();
+        jump(next);
     case 051:
+        // myloc := mem[bdvect[src]++]
+        // curcmd is ..... src 51
         acc = &myloc-BDVECT;
-        jump(cmd51);
+        assign_and_incr();
+        break;
     case 052:
-        acc = curcmd.d;
-        jump(cmd52);
+        // bdvect[dst] := mem[bdvect[src]++]
+        // curcmd is ..... src dst 52
+        acc = (curcmd >> 6) & 077;
+        curcmd = curcmd >> 6;
+        assign_and_incr();
+        break;
     case 053:
-        // bdvect[next_insn] = bdvect[next_next_insn]
+        // bdvect[dst] = bdvect[src]
         // curcmd is ..... src dst 53
         m16 = (curcmd >> 6) & 077;
         m5 = (curcmd >> 12) & 077;
@@ -795,8 +900,12 @@ Error eval() try {
         m13[m16] = m13[m5];
         break;
     case 054:
-        acc = curcmd.d;
-        jump(cmd54);
+        // mem[bdvect[dst]] = bdvect[012]
+        // curcmd is ..... dst 54
+        m16 = (curcmd >> 6) & 077;
+        curcmd = curcmd >> 6;
+        *m13[m16] = loc12;
+        break;
     case 055:
         return ERR_SUCCESS;
     default:
@@ -816,7 +925,7 @@ Error eval() try {
         IOcall(IOword);
     }
     savm6 = m6;
-  enter2:                       // continue execution after a callback?
+    // enter2:                       // continue execution after a callback?
     acc = orgcmd.d;
     jump(next);
   drtnxt:
@@ -883,30 +992,14 @@ Error eval() try {
         jump(rtnext);
     }
     idx = idx.d + 2;
+    if (idx.d > maxidx) {
+        std::cerr << "Max idx is " << idx.d << '\n';
+        maxidx = idx.d;
+    }
     acc = m16[m5+1].d;
     pr202();
     m16 = &loc120;
     jump(a00164);
-  cmd54:                        // mem[bdvec[next_insn]] = bdvec[012] ?
-    curcmd = acc >>= 6;
-    m16 = acc & 077;
-    *m13[m16] = loc12;
-    jump(*m6.p);
-  cmd50:                        // cmd := bdvec[bdvec[next_insn]++]
-    m6.p = &&next;
-  cmd51:                        // myloc := bdvec[bdvec[next_insn]++]
-    m16 = acc;
-    curcmd = acc = curcmd >> 6;
-    m5 = acc & 077;
-    m5 = m5.d + m13.d;
-    ++*m5;
-    acc = (*m5)[-1].d;
-    m13[m16] = acc;
-    jump(*m6.p);
-  cmd52:                        // bdvec[next_insn] := bdvec[bdvec[next_next_insn]++]
-    curcmd = acc >>= 6;
-    acc &= 077;
-    jump(cmd51);
   cmd46:                        // Unpacking the descriptor (?) in myloc
     acc = myloc.d;
     acc >>= 18;
@@ -923,95 +1016,17 @@ Error eval() try {
     m16 = element;
     m16[Array[idx.d]+1] = loc12;
     jump(a01160);
-  a00267:
-    find_item(acc);
-  a00270:
-    if (proc270()) {
-        // COMPARE failed, skip an instruction
-        jump(next);
-    }
-    if (m5.d) {
-        aitem = aitem.d + temp.d;
-        curpos = curpos.d - temp.d;
-        acc = (*aitem).d;
-        desc1 = acc;
-    } else {
-        acc = (loc220.d >> 20) & BITS(19);
-        if (acc)
-            jump(a00267);
-        if (jmpoff.d == DONE
-            // impossible? should compare with A00317, or deliberate as a binary patch?
-            || temp.d) {
-            skip(ERR_STEP);
-            jump(next);
-        }
-    }
-    jump(*m6.p);
-  cmd7:
-    jmpoff = A00317;
-    acc = desc2.d;
-  a00334:
-    temp = acc;
-    loc53 = loc53.d + acc;
-    usrloc = myloc;
-    jump(a00270);
-  a00340:
-    find_item(acc);
-    jump(cmd7);
     // pr376 (make_metablock) was here
-  step:
-    goto_ = m6;
   cmd4:
-    acc = Array[idx.d].d;
-    if (!acc)
-        throw ERR_NO_CURR;
-    m5 = acc;
-    if (!m16.d) {
-        // Step forward
-        acc += 2;
-        m5 = acc;
-        (acc ^= element[-1].d) &= 01777;
-        if (!acc) {
-            acc = element[-1].d;
-            acc &= BITS(19) << 10;
-            if (!acc) {
-                skip(ERR_NO_NEXT);
-                jump(next);
-            }
-            acc >>= 10;
-            pr202();
-            Array[idx.d-2] = Array[idx.d-2].d + (1<<15);
-            m5 = 0;
-        }
-    } else {
-        // Step back
-        if (!m5.d) {
-            acc = element[-1] >> 29;
-            if (!acc) {
-                skip(ERR_NO_PREV);
-                jump(next);
-            }
-            pr202();
-            acc = Array[idx.d-2].d;
-            acc -= 1<<15;
-            Array[idx.d-2] = acc;
-            acc = loc117.d & 01777;
-            m5 = acc;
-        }
-        m5 = m5 - 2;
-    }
-    acc = m5.d | 1 << 30;
-    Array[idx.d] = acc;
-    curkey = element[m5];
-    adescr = element[m5+1];
-    jump(rtnext);
+    if (step())
+        jump(next);
+    jump(cmd0);
   cmd17:
     // Searching for the end word
     m16 = -mylen.d;
     work2 = myloc.d + mylen.d;
-  loop_here:
-    acc = work2[m16].d ^ endmrk.d;
-    if (!acc) {
+    // loop_here:
+    if (work2[m16] == endmrk) {
         m16 = m16.d + mylen.d + 1;
         mylen = m16;
         jump(cmd0);
@@ -1034,7 +1049,7 @@ Error eval() try {
     d00032 = acc;
     acc >>= 29;
     if (acc) {
-        call(a00340,m6);
+        a00340();
         acc &= ~(BITS(19) << 10);
         loc117 = acc;
         acc = d00025.d;
@@ -1055,9 +1070,7 @@ Error eval() try {
     do {
         *m5 = m5[2].d;
         ++m5;
-        acc = m5.d;
-        acc ^= work.d;
-    } while (acc);
+    } while (m5 != work);
     acc = work2.d - 2;
     acc ^= work2.d;
     acc ^= m16[-1].d;
@@ -1103,7 +1116,7 @@ Error eval() try {
         if (mylen.d >= MAXCHUNK)
             jump(split);
         // Find a zone with enough free space
-        for (int i = 0; i < dblen.d; ++i) {
+        for (size_t i = 0; i < dblen.d; ++i) {
             if (mylen.d < frebas[i].d) {
                 acc = i;
                 jump(chunk);
@@ -1122,14 +1135,12 @@ Error eval() try {
         acc <<= 39;
         acc ^= curbuf[m16+1].d;
         acc &= 0777LL << 39;
-        if (acc) {
-            curbuf[m16+2] = curbuf[m16+1];
-            --m16;
-            acc = m16.d;
-            if (m16.d)
-                continue;
-        }
-    } while (false);
+        if (!acc)
+            break;
+        curbuf[m16+2] = curbuf[m16+1];
+        --m16;
+        acc = m16.d;
+    } while (m16.d);
     ++m16;
     acc = m16.d;
     loc116 = acc;
@@ -1197,23 +1208,23 @@ Error eval() try {
   a01123:
     acc = Array[idx.d].d;
     acc >>= 15;
-  a01125:
-    d00012 = acc;
-    acc >>= 15;
-    m16 = acc;
-    if (!(d00012.d & 077777))
-        jump(*d00033.p);
-    acc = d00012.d;
-    --m16;
-    if (!m16.d)
-        jump(a01133);
-    acc += 2;
-  a01133:
-    --acc;
-    d00012 = acc;
-    call(step,m6);
-    acc = d00012.d;
-    jump(a01125);
+    for (;;) {
+        d00012 = acc;
+        acc >>= 15;
+        m16 = acc;
+        if (!(d00012.d & 077777))
+            jump(*d00033.p);    // return from pr1232
+        acc = d00012.d;
+        --m16;
+        if (m16.d) {
+            acc += 2;
+        }
+        --acc;
+        d00012 = acc;
+        if (step())
+            jump(next);
+        acc = d00012.d;
+    }
   a01136:
     acc = d00032.d;
     acc >>= 29;
@@ -1251,8 +1262,7 @@ Error eval() try {
         jump(a01311);
     }
     acc = m16[-1].d & 01777;
-    acc ^= 0100;
-    if (acc) {
+    if (acc != 0100) {
         acc = m16[-1].d & 01777;
         mylen = ++acc;
         acc = loc246.d;
@@ -1291,8 +1301,7 @@ Error eval() try {
     acc &= BITS(19) << 10;
     d00032 = (acc << 19) & BITS(48);
     m16 = &loc120;
-    m5.p = &&a01231;
-    goto_ = m5;
+    goto_ = size_t(&&a01231);
     usrloc = m16.d - 1;
     acc = m16[-1].d & 01777;
     mylen = ++acc;
@@ -1304,12 +1313,12 @@ Error eval() try {
     d00033 = m5.d;
     desc2 = 1;
     acc = (d00025 >> 10) & BITS(19);
-    if (!acc)
-        jump(a01242);
-    call(a00340,m6);
-    acc &= BITS(29);
-    acc |= d00032.d;
-    set_header();
+    if (acc) {
+        a00340();
+        acc &= BITS(29);
+        acc |= d00032.d;
+        set_header();
+    }
   a01242:
     element = Metadata;
     acc = idx.d;
@@ -1323,22 +1332,22 @@ Error eval() try {
     }
     jump(a01123);
   a01252:
-    if (usable_space() < 0101) {
-        loc20 = 0;
-        acc = loc12.d;
-        free();
-        throw ERR_OVERFLOW;
-    }
-    acc -= 0101;
-    call(pr1022,m6);
-    m16 = Metadata;
-    acc = d00024.d;
-    acc |= ONEBIT(48);
-    m16[1] = acc;
-    m16[-1] = 2;
-    mylen = 041;
-    if (m16[-1].d == 040)
-        jump(a01252);
+    do {
+        if (usable_space() < 0101) {
+            loc20 = 0;
+            acc = loc12.d;
+            free();
+            throw ERR_OVERFLOW;
+        }
+        acc -= 0101;
+        call(pr1022,m6);
+        m16 = Metadata;
+        acc = d00024.d;
+        acc |= ONEBIT(48);
+        m16[1] = acc;
+        m16[-1] = 2;
+        mylen = 041;
+    } while (m16[-1].d == 040);
     acc = loc20.d;
     jump(a01311);
   split:
@@ -1407,30 +1416,28 @@ Error eval() try {
     acc = (m16[1].d - acc) & 01777;
     acc += curpos.d - 2;
     work = acc;
-    if (acc < mylen.d)
-        jump(a01361);
-  a01346:
-    d00010 = m6;
-    d00026 = loc220;
-    loc220 = loc220.d & 01777;
-    a00747();
-    ++mylen;
-    m5 = 0;
-    m7 = curbuf;
-    acc = d00026.d & (0777LL << 39);
-    call(pr1047,m6);
-    acc = d00026.d;
-    m6.p = d00010.p;
-    acc = (acc >> 20) & BITS(19);
-    if (acc) {
-        free();
+    if (acc >= mylen.d) {
+      a01346:
+        d00010 = m6;
+        d00026 = loc220;
+        loc220 = loc220.d & 01777;
+        a00747();
+        ++mylen;
+        m5 = 0;
+        m7 = curbuf;
+        acc = d00026.d & (0777LL << 39);
+        call(pr1047,m6);
+        acc = d00026.d;
+        m6.p = d00010.p;
+        acc = (acc >> 20) & BITS(19);
+        if (acc) {
+            free();
+            jump(*m6.p);
+        }
+        dirty = dirty.d | 1;
         jump(*m6.p);
     }
-    dirty = dirty.d | 1;
-    jump(*m6.p);
-  a01361:
     usable_space();
-  a01362:
     acc = (*aitem).d & 077777;
     acc += itmlen.d;
     if (acc < mylen.d) {
@@ -1688,6 +1695,7 @@ Error cleard() {
 
 int avail() {
     orgcmd = 013;
+    itmlen = 0;
     eval();
     return itmlen.d;
 }
