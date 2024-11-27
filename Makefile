@@ -1,10 +1,11 @@
 CXXFLAGS ?= -Wall -std=c++20
 
 run-tests: mars.o
-	cd tests; make CXX=$(CXX) CXXFLAGS="$(CXXFLAGS)"
+	make -C tests CXX=$(CXX) CXXFLAGS="$(CXXFLAGS)"
 
 clean:
-	rm -f mars.o; cd tests; make clean
+	rm -f mars.o
+	make -C tests clean
 
 re-mars.bin: $(HOME)/.besm6/1234
 	besmtool dump 1234 --start=01000 --length=1 --to-file=re-mars.bin
