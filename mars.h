@@ -61,6 +61,7 @@ struct MarsFlags {
     bool verbose = false;
     bool trace_stores = false;
     bool zero_date = false;
+    bool dump_diffs = false;
 };
 
 extern MarsFlags mars_flags;

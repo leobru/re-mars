@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cassert>
 #include <unordered_map>
+#include <vector>
 #include <string>
 #include <format>
 #include <algorithm>
@@ -72,8 +73,15 @@ bdvect_t sav;
 
 #define bdvect (*reinterpret_cast<bdvect_t*>(data+BDVECT))
 
+//
+std::vector<int> comparable{
+    3,5,010,012,013,014,015,020,021,022,023,024,025,026,027,
+    031,033,034,035,036,037,040,041,042,043,044,045,046,047,050,051,052,053,054,
+    055,056,0116,0117,0120,0157,0160,0220,0241,0242,0243,0244,0245,0246,0247
+};
+
 void dump() {
-    for (size_t j = 0; j < bdvect_t::SIZE; ++j) {
+    for (auto j : comparable) {
         if (bdvect.w[j] != sav.w[j]) {
             printf(" WORD %03o CHANGED FROM  %016lo TO  %016lo\n",
                    int(j), sav.w[j].d, bdvect.w[j].d);
@@ -371,6 +379,7 @@ void make_metablock() {
 
 // Returns result in itmlen and acc
 uint64_t usable_space() {
+    itmlen = 0;
     for (int i = dblen.d - 1; i >= 0; --i) {
         if (frebas[i].d != 0)
             itmlen = itmlen.d + frebas[i].d - 1;
@@ -860,6 +869,8 @@ Error eval() try {
     case 035:
         acc = dirty.d;
         save();
+        if (mars_flags.dump_diffs)
+            dump();
         return ERR_SUCCESS;
     case 036:
         jump(cmd36);
@@ -932,6 +943,8 @@ Error eval() try {
         *m13[m16] = loc12;
         break;
     case 055:
+        if (mars_flags.dump_diffs)
+            dump();
         return ERR_SUCCESS;
     default:
         // In the original binary, loss of control ensued.
@@ -968,6 +981,8 @@ Error eval() try {
   next:
     if (!acc) {
         finalize();
+        if (mars_flags.dump_diffs)
+            dump();
         return ERR_SUCCESS;
     }
     curcmd = acc;
@@ -1518,6 +1533,8 @@ Error eval() try {
     d00010 = *(uint64_t*)msg[m16.d-1];
     acc = *((uint64_t*)msg[m16.d-1]+1);
     finalize();
+    if (mars_flags.dump_diffs)
+        dump();
     return e;
 }
 
@@ -1671,6 +1688,7 @@ Error deld(const char * k) {
 }
 
 Error deld(uint64_t k) {
+    idx = 0;
     key = k;
     orgcmd = 027231411;
     return eval();
@@ -1721,7 +1739,8 @@ uint64_t find(uint64_t k) {
 
 int getlen() {
     orgcmd = 033;
-    eval();
+    if (eval())
+        return -1;
     return itmlen.d;
 }
 

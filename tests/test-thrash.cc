@@ -135,6 +135,7 @@ int main(int argc, char ** argv) {
         for (int i = 1; i <= numrec; ++i) {
             int k = (random() % numrec) + 1;
             int size = random() % maxsize;
+            std::cout << k << ' ' << size << '\n';
             if (mars_flags.verbose)
                 std::cerr << std::format("Putting '{}' of size {}\n", k, size);
             // Memory location 010000 and up are not used, will be 0
@@ -147,11 +148,15 @@ int main(int argc, char ** argv) {
 
         space = avail();
         std::cout << std::format("Remaining space in the file: {}\n", space);
+        std::cout << "0 0\n";
 
-        if (clear) {
-            while (uint64_t k = last())
-                deld(k);
-
+        if (clear || rep+1 < repeats) {
+            while (uint64_t k = last()) {
+                if (deld(k)) {
+                    std::cerr << std::format("Unexpected error at {:o}, stopping clearing\n", k);
+                    break;
+                }
+            }
             space = avail();
             std::cout << std::format("After clearing: {}\n", space);
         }
