@@ -34,11 +34,12 @@ union word {
         unsigned upper9  : 9;
     };
     word(uint64_t x = 0) : d(x) { }
-    uint64_t& operator=(long unsigned int x);
-    uint64_t& operator=(int x) { return this->operator=(uint64_t(x)); }
-    uint64_t& operator=(long x) { return this->operator=(uint64_t(x)); }
-    uint64_t& operator=(long long int x) { return this->operator=(uint64_t(x)); }
-    uint64_t& operator=(long long unsigned int x) { return this->operator=(uint64_t(x)); }
+    uint64_t& operator=(long unsigned int x) { return store(x); }
+    uint64_t& operator=(int x) { return store(x); }
+    uint64_t& operator=(long x) { return store(x); }
+    uint64_t& operator=(long long int x) { return store(x); }
+    uint64_t& operator=(long long unsigned int x) { return store(x); }
+    uint64_t& store(uint64_t x);
     word& operator=(word x);
     word& operator=(word * x);
     inline word& operator*();
@@ -81,6 +82,9 @@ Error InitDB(int lun, int start_zone, int length);
 
 // The root catalog length must be given when opening the database
 Error SetDB(int lun, int start_zone, int length);
+
+// Save the DB to disk
+void IOflush();
 
 Error newd(const char * k, int lun, int start_zone, int len);
 

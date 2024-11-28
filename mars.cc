@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <cstdlib>
 #include <cassert>
+#include <unordered_map>
 #include <string>
 #include <format>
 #include <algorithm>
@@ -28,7 +29,7 @@ word & m6 = data[6];
 word & m7 = data[7];
 word & m13 = data[13];
 
-uint64_t& word::operator=(uint64_t x) {
+uint64_t& word::store(uint64_t x) {
     size_t index = this-data;
     if (index < 16) x &= 077777;
     if (trace_stores && index > 16 && index < RAM_LENGTH)
@@ -84,7 +85,7 @@ void dump() {
 word& word::operator*() {
     unsigned a = d & 077777;
     if (a >= sizeof(data)/sizeof(*data)) {
-        std::cerr << "Address " << std::oct << a << " out of range\n";
+      std::cerr << std::format("Address {:o} out of range\n", a);
         abort();
     }
     return data[a];
@@ -220,52 +221,77 @@ const char * msg[] = {
     "DB is locked", "No current record", "No prev. record", "No next record",
     "Wrong password" };
 
-void IOcall(word is) {
-    int page = (is >> 30) & BITS(5);
-    char nuzzzz[7];
-    sprintf(nuzzzz, "%06o", int(is.d & BITS(18)));
-    if (is.d & ONEBIT(40)) {
-        // read
-        FILE * f = fopen(nuzzzz, "r");
-        if (!f) {
-            std::cerr << "Reading zone " << nuzzzz << " which does not exist yet\n";
-            return;
-        }
-        if (verbose)
-            std::cerr << std::format("Reading {} to address {:o}\n", nuzzzz, page*1024);
-        fread(data+page*1024, 1024, sizeof(uint64_t), f);
-        fclose(f);
-    } else {
-        // write
-        FILE * f = fopen(nuzzzz, "w");
+struct Page {
+    word w[1024];
+};
+
+std::unordered_map<std::string, Page> DiskImage;
+
+void IOflush() {
+    for (auto & it : DiskImage) {
+        const std::string& nuzzzz = it.first;
+        FILE * f = fopen(nuzzzz.c_str(), "w");
         if (!f) {
             std::cerr << std::format("Could not open {} ({})\n", nuzzzz, strerror(errno));
             exit(1);
         }
-        if (verbose)
-            std::cerr << std::format("Writing {} from address {:o}\n", nuzzzz, page*1024);
-        fwrite(data+page*1024, 1024, sizeof(uint64_t), f);
+        fwrite(&it.second, 1, sizeof(Page), f);
         fclose(f);
 
         if (mars_flags.dump_txt_zones) {
-            std::string txt(nuzzzz);
-            txt += ".txt";
+            std::string txt(nuzzzz+".txt");
             FILE * t = fopen(txt.c_str(), "w");
             if (!t) {
                 std::cerr << std::format("Could not open {} ({})\n", txt, strerror(errno));
                 exit(1);
             }
-            int zone = is.d & 07777;
+            const char * zone = nuzzzz.c_str()+2;
             for (int i = 0; i < 1024; ++i) {
-                fprintf(t, "%04o.%04o:  %04o %04o %04o %04o\n",
-                        zone, i, int(data[page*1024+i] >> 36),
-                        int((data[page*1024+i] >> 24) & 07777),
-                        int((data[page*1024+i] >> 12) & 07777),
-                        int((data[page*1024+i] >> 0) & 07777));
+                fprintf(t, "%s.%04o:  %04o %04o %04o %04o\n",
+                        zone, i, int(it.second.w[i] >> 36),
+                        int((it.second.w[i] >> 24) & 07777),
+                        int((it.second.w[i] >> 12) & 07777),
+                        int((it.second.w[i] >> 0) & 07777));
             }
             fclose(t);
         }
     }
+}
+
+void IOcall(word is) {
+    int page = (is >> 30) & BITS(5);
+    std::string nuzzzz;
+    bool stores = mars_flags.trace_stores;
+    mars_flags.trace_stores = false;
+    nuzzzz = std::format("{:06o}", is.d & BITS(18));
+    if (is.d & ONEBIT(40)) {
+        // read
+        auto it = DiskImage.find(nuzzzz);
+        if (verbose)
+            std::cerr << std::format("Reading {} to address {:o}\n", nuzzzz, page*1024);
+        if (it == DiskImage.end()) {
+            FILE * f = fopen(nuzzzz.c_str(), "r");
+            if (!f) {
+                std::cerr << "\tZone " << nuzzzz << " does not exist yet\n";
+                *reinterpret_cast<Page*>(data+page*1024) = Page();
+                trace_stores = stores;
+                return;
+            }
+            if (verbose)
+                std::cerr << "\tFirst time - reading from disk\n";
+
+            fread(data+page*1024, 1024, sizeof(uint64_t), f);
+            fclose(f);
+            DiskImage[nuzzzz] = *reinterpret_cast<Page*>(data+page*1024);
+        } else
+            *reinterpret_cast<Page*>(data+page*1024) = it->second;
+    } else {
+        // write
+        if (verbose)
+            std::cerr << std::format("Writing {} from address {:o}\n", nuzzzz, page*1024);
+        DiskImage[nuzzzz] = *reinterpret_cast<Page*>(data+page*1024);
+    }
+    mars_flags.trace_stores = stores;
 }
 
 // Takes acc as the zone number,
@@ -908,7 +934,8 @@ Error eval() try {
     case 055:
         return ERR_SUCCESS;
     default:
-        std::cerr << std::oct << m5.d << " NYI\n";
+        // In the original binary, loss of control ensued.
+        std::cerr << std::format("Invalid micro-operation {:o} encountered\n", m5.d);
         abort();
     }
     jump(cmd0);
