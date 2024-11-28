@@ -1594,8 +1594,8 @@ Error opend(const char * k) {
 
 Error putd(const char * k, int loc, int len) {
     if (verbose)
-        std::cerr << "Running putd('" << k << "', '"
-                  << reinterpret_cast<char*>(data+loc) << "':" << len << ")\n";
+        std::cerr << std::format("Running putd('{}', '{}':{})\n", k,
+                                 reinterpret_cast<char*>(data+loc), len);
     key = *reinterpret_cast<const uint64_t*>(k);
     mylen = len;
     myloc = loc;
@@ -1605,9 +1605,7 @@ Error putd(const char * k, int loc, int len) {
 
 Error putd(uint64_t k, int loc, int len) {
     if (verbose) {
-        std::cerr << "Running putd(" << std::oct << std::setw(16) << std::setfill('0') << k << ", ";
-        std::cerr << std::setw(5) << loc << ":" << std::setw(0) << std::dec << len << ")\n";
-        std::cerr.copyfmt(std::ios(nullptr));
+        std::cerr << std::format("Running putd({:016o}, {:05o}, {})\n", k, loc, len);
     }
     key = k;
     mylen = len;
@@ -1637,6 +1635,14 @@ Error modd(const char * k, int loc, int len) {
     return eval();
 }
 
+Error modd(uint64_t k, int loc, int len) {
+    key = k;
+    mylen = len;
+    myloc = loc;
+    orgcmd = 020402621001511;
+    return eval();
+}
+
 Error getd(const char * k, int loc, int len) {
     key = *reinterpret_cast<const uint64_t*>(k);
     mylen = len;
@@ -1660,6 +1666,12 @@ Error getd(uint64_t k, int loc, int len) {
 
 Error deld(const char * k) {
     key = *reinterpret_cast<const uint64_t*>(k);
+    orgcmd = 027231411;
+    return eval();
+}
+
+Error deld(uint64_t k) {
+    key = k;
     orgcmd = 027231411;
     return eval();
 }

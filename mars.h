@@ -93,10 +93,12 @@ Error opend(const char * k);
 Error putd(uint64_t k, int loc, int len);
 
 Error modd(const char * k, int loc, int len);
+Error modd(uint64_t k, int loc, int len);
 Error getd(const char * k, int loc, int len);
 Error getd(uint64_t k, int loc, int len);
 
 Error deld(const char * k);
+Error deld(uint64_t k);
 
 Error root(), cleard();
 
