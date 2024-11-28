@@ -154,4 +154,5 @@ int main(int argc, char ** argv) {
                       << std::oct << space << '\n';
         }
     }
+    IOflush();
 }

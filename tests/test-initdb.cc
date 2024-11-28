@@ -43,4 +43,5 @@ int main(int argc, char **argv) {
 
     mars_flags.zero_date = true;
     InitDB(052, 0, len);
+    IOflush();
 }

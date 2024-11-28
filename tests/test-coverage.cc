@@ -175,4 +175,5 @@ int main(int argc, char ** argv) {
     }
 
     cleard();                   // A termination error is expected
+    IOflush();
 }
