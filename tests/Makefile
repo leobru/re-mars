@@ -17,12 +17,13 @@ ifneq (,$(wildcard /usr/src/googletest/googletest/src/gtest-all.cc))
     GTEST_DIR   = /usr/src/googletest/googletest
 else ifneq (,$(wildcard /usr/local/opt/googletest/include/googletest/googletest/src/gtest-all.cc))
     GTEST_DIR   = /usr/local/opt/googletest/include/googletest/googletest
+    CXXFLAGS    += -I/usr/local/opt/googletest/include
 else ifneq (,$(wildcard /opt/homebrew/opt/googletest/include/googletest/googletest/src/gtest-all.cc))
     GTEST_DIR   = /opt/homebrew/opt/googletest/include/googletest/googletest
+    CXXFLAGS    += -I/opt/homebrew/opt/googletest/include
 else
     $(error Please install googletest)
 endif
-CXXFLAGS        += -I$(GTEST_DIR)
 
 tests:          gtests $(TESTS_SHA)
 		./gtests
@@ -54,7 +55,7 @@ gtests:         $(OBJS) $(GTEST)
 		$(CXX) $(LDFLAGS) $(OBJS) $(GTEST) -o $@
 
 gtest-all.o:    $(GTEST_DIR)/src/gtest-all.cc
-		$(CXX) -c $(CXXFLAGS) -o $@ $?
+		$(CXX) -c $(CXXFLAGS) -I$(GTEST_DIR) -o $@ $?
 
 gtest_main.o:   $(GTEST_DIR)/src/gtest_main.cc
 		$(CXX) -c $(CXXFLAGS) -o $@ $?

@@ -33,16 +33,18 @@ word & m13 = data[13];
 uint64_t& word::store(uint64_t x) {
     size_t index = this-data;
     if (index < 16) x &= 077777;
-    if (trace_stores && index > 16 && index < RAM_LENGTH)
-        fprintf(stderr, "       %05lo: store %016lo\n", index, x);
+    if (trace_stores && index > 16 && index < RAM_LENGTH) {
+        std::cerr << std::format("       {:05o}: store {:016o}\n", index, x);
+    }
     d=x;
     return d;
 }
 word& word::operator=(word x) {
     size_t index = this-data;
     if (index < 16) x.d &= 077777;
-    if (trace_stores && index > 16 && index < RAM_LENGTH)
-        fprintf(stderr, "       %05lo: store %016lo\n", index, x.d);
+    if (trace_stores && index > 16 && index < RAM_LENGTH) {
+        std::cerr << std::format("       {:05o}: store {:016o}\n", index, x.d);
+    }
     d=x.d;
     return *this;
 }
@@ -83,8 +85,8 @@ std::vector<int> comparable{
 void dump() {
     for (auto j : comparable) {
         if (bdvect.w[j] != sav.w[j]) {
-            printf(" WORD %03o CHANGED FROM  %016lo TO  %016lo\n",
-                   int(j), sav.w[j].d, bdvect.w[j].d);
+            std::cout << std::format(" WORD {:03o} CHANGED FROM  {:016o} TO  {:016o}\n",
+                                     int(j), sav.w[j].d, bdvect.w[j].d);
         }
     }
     sav = bdvect;
@@ -117,7 +119,7 @@ uint64_t word::operator&() { return this-data; }
 word & outadr = data[BDVECT+1];
 word & orgcmd = data[BDVECT+3];
 word & curcmd = data[BDVECT+5];
-word & sync = data[BDVECT+6];
+word & syncw = data[BDVECT+6];
 word & givenp = data[BDVECT+7];
 word & key = data[BDVECT+010];
 word & erhndl = data[BDVECT+011];
@@ -342,8 +344,8 @@ void save(bool force_tab = false) {
 void finalize() {
     d00011 = acc;               // nonzero if error
     bool force_tab = false;
-    if (sync != 0) {
-        if (sync != 1)
+    if (syncw != 0) {
+        if (syncw != 1)
             return;
         m16 = bdtab;
         if (m16[1].d & LOCKKEY) {
@@ -439,10 +441,10 @@ void info(uint64_t arg) {
 }
 
 void totext() {
-    sprintf((char*)&endmrk.d, " %05o", int(acc & 077777));
+    snprintf((char*)&endmrk.d, 6, " %05o", int(acc & 077777));
     acc = desc1.d;
     // Timestamp; OK to spill to desc2
-    sprintf((char*)&desc1.d, " %d%d.%d%d.X%d", int((acc >> 46) & 3),
+    snprintf((char*)&desc1.d, 12, " %d%d.%d%d.X%d", int((acc >> 46) & 3),
             int((acc >> 42) & 15), int((acc >> 41) & 1),
             int((acc >> 37) & 15), int((acc >> 33) & 15));
 }
