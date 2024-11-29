@@ -9,7 +9,7 @@
 #include <string>
 #include <format>
 #include <algorithm>
-#include <ctime>
+#include <chrono>
 #include <getopt.h>
 
 #include "mars.h"
@@ -156,7 +156,7 @@ word & loc117 = data[BDVECT+0117];
 word & loc120 = data[BDVECT+0120];
 word & loc157 = data[BDVECT+0157];
 word & loc160 = data[BDVECT+0160];
-word & loc220 = data[BDVECT+0220];
+word & curExtent = data[BDVECT+0220];
 word & curbuf = data[BDVECT+0241];
 word & idx = data[BDVECT+0242];
 word & curZone = data[BDVECT+0244];
@@ -357,9 +357,10 @@ void finalize() {
 }
 
 void date() {
-    time_t t = time(nullptr);
-    struct tm & l = *localtime(&t);
-    int d = l.tm_mday, m = l.tm_mon + 1, y = l.tm_year + 1900;
+    using namespace std::chrono;
+    const year_month_day ymd{floor<days>(system_clock::now())};
+    unsigned d{ymd.day()}, m{ymd.month()};
+    int y{ymd.year()};
     uint64_t stamp = mars_flags.zero_date ? 0 : (d/10*16+d%10) << 9 |
         (m/10*16+m%10) << 4 |
         y % 10;
@@ -411,7 +412,7 @@ void find_item(uint64_t arg) {
     loc116 = acc;
     for (;;) {
         acc = loc116[m16+1].d;
-        loc220 = acc;
+        curExtent = acc;
         acc ^= work2.d;
         acc &= 0777LL << 39;
         if (acc) {
@@ -421,11 +422,11 @@ void find_item(uint64_t arg) {
         }
         break;
     }
-    acc = loc220.d & 01777;
+    acc = curExtent.d & 01777;
     ++acc;
     acc += curbuf.d;
     aitem = acc;
-    acc = loc220.d & 03776000;
+    acc = curExtent.d & 03776000;
     acc >>= 10;
     curpos = acc;
     m5 = ARBITRARY_NONZERO;     // clobbering the link register
@@ -477,7 +478,7 @@ void copy_chained() {           // a01423
             copy_words(usrloc, aitem);
         }
         usrloc = usrloc.d + curpos.d;
-        acc = loc220.d & (BITS(19) << 20);
+        acc = curExtent.d & (BITS(19) << 20);
         if (!acc)
             return;
         find_item(acc >> 20);
@@ -562,7 +563,7 @@ void setctl(uint64_t location) {
 }
 
 void free_extent() {
-    d00031 = loc220.d & 01777;
+    d00031 = curExtent.d & 01777;
     do {
         --m5;
         if (!m5.d)
@@ -587,7 +588,7 @@ void free_extent() {
     m16[1] = m16[1].d - 02000 + curpos.d;
     frebas[curZone] = frebas[curZone].d + curpos.d + 1;
     dirty(1);
-    acc = loc220.d;
+    acc = curExtent.d;
 }
 
 void free() {
@@ -727,7 +728,7 @@ bool a00334() {
         acc = (*aitem).d;
         desc1 = acc;
     } else {
-        acc = (loc220.d >> 20) & BITS(19);
+        acc = (curExtent.d >> 20) & BITS(19);
         if (acc) {
             find_item(acc);
             jump(a00270);
@@ -757,7 +758,6 @@ void assign_and_incr() {
     ++m13[m5];
 }
 
-unsigned maxidx = 0;
 Error eval() try {
     acc = m16.d;
     jump(enter);
@@ -1038,9 +1038,8 @@ Error eval() try {
         jump(rtnext);
     }
     idx = idx.d + 2;
-    if (idx.d > maxidx) {
-        std::cerr << "Max idx is " << idx.d << '\n';
-        maxidx = idx.d;
+    if (idx.d > 7) {
+        std::cerr << "Idx = " << idx.d << ": DB will be corrupted\n";
     }
     acc = m16[m5+1].d;
     pr202();
@@ -1441,12 +1440,12 @@ Error eval() try {
         date();
         *aitem = acc;
         dirty(1);
-        acc = loc220.d & (BITS(19) << 20);
+        acc = curExtent.d & (BITS(19) << 20);
         if (!acc)
             jump(rtnext);       // No extents to free: done
-        acc ^= loc220.d;
+        acc ^= curExtent.d;
         loc116[m5+1] = acc;
-        acc = loc220.d;
+        acc = curExtent.d;
         acc = (acc >> 20) & BITS(19);
         if (acc) {
             free();
@@ -1465,8 +1464,8 @@ Error eval() try {
     if (acc >= mylen.d) {
       a01346:
         d00010 = m6;
-        d00026 = loc220;
-        loc220 = loc220.d & 01777;
+        d00026 = curExtent;
+        curExtent = curExtent.d & 01777;
         a00747();
         ++mylen;
         m5 = 0;
@@ -1498,7 +1497,7 @@ Error eval() try {
     call(a01023,m6);
     find_item(d00012.d);
     acc = (d00024.d << 20) & BITS(48);
-    loc116[m16+1] = acc | loc220.d;
+    loc116[m16+1] = acc | curExtent.d;
     dirty(2);
     jump(rtnext);
   mkctl: {
@@ -1533,8 +1532,7 @@ Error eval() try {
     if (acc)
         savm16 = acc;
     m7 = m16;
-    std::cerr << "ERROR " << std::dec << m16.d
-              << " (" << msg[m16.d-1] << ")\n";
+    std::cerr << std::format("ERROR {} ({})\n", m16.d, msg[m16.d-1]);
     d00010 = *(uint64_t*)msg[m16.d-1];
     acc = *((uint64_t*)msg[m16.d-1]+1);
     finalize();

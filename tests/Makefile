@@ -4,13 +4,16 @@
 #   brew install googletest         -- on MacOS
 #
 CXXFLAGS        ?= -std=c++20
-TESTS           = test-initdb test-coverage
+#
+# Superseded by test-smoke
+# TESTS           = test-initdb test-coverage
+#
 LONGTESTS       = test-maxsize
 TESTS_SHA       = $(addsuffix .sha,$(TESTS))
 TESTS_EXE       = $(addsuffix .exe,$(TESTS))
 LONGTESTS_SHA   = $(addsuffix .sha,$(LONGTESTS))
 OBJS            = test-smoke.o
-GTEST           = gtest-all.o gtest_main.o
+GTEST           = gtest-all.o gtest_main.o fixture.o
 
 # Find googletest sources
 ifneq (,$(wildcard /usr/src/googletest/googletest/src/gtest-all.cc))
@@ -52,8 +55,8 @@ clean:
 		rm -f $(TESTS_EXE) $(TESTS_SHA)
 		rm -f *.o ../*.o gtests
 
-gtests:         $(OBJS) $(GTEST)
-		$(CXX) $(LDFLAGS) $(OBJS) $(GTEST) -o $@
+gtests:         $(OBJS) $(GTEST) ../mars.o
+		$(CXX) $(LDFLAGS) $^ -o $@
 
 gtest-all.o:    $(GTEST_DIR)/src/gtest-all.cc
 		$(CXX) -c $(CXXFLAGS) -I$(GTEST_DIR) -I$(GTEST_INC) -o $@ $?

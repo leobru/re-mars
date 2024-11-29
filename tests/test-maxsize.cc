@@ -119,7 +119,7 @@ int main(int argc, char ** argv) {
         newd(fname.c_str(), 052, catalog_len, file_len);
     }
     // Opening it
-    mars_flags.trace_stores = true;
+    // mars_flags.trace_stores = true;
     opend(fname.c_str());
     mars_flags.trace_stores = false;
     if (mars_flags.verbose) {
@@ -130,8 +130,8 @@ int main(int argc, char ** argv) {
 
     // Putting elements of size 0 until the DB overflows
     for (int i = startrec; i <= numrec; ++i) {
-      std::cerr << "Putting " << std::dec << i << '\n';
-      if (i == numrec) mars_flags.trace_stores = true;
+      // std::cerr << "Putting " << std::dec << i << '\n';
+      // if (i == numrec) mars_flags.trace_stores = true;
       if (putd(i | 024LL << 42, 0, 0)) {
             // An overflow error is expected at the last iteration
             std::cerr << "\twhile putting " << std::dec << i << '\n';
