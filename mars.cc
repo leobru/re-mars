@@ -441,12 +441,15 @@ void info(uint64_t arg) {
 }
 
 void totext() {
-    snprintf((char*)&endmrk.d, 6, " %05o", int(acc & 077777));
+    char buf[13];
+    snprintf(buf, sizeof(buf), " %05o", int(acc & 077777));
+    strncpy((char*)&endmrk.d, buf, 6);
     acc = desc1.d;
     // Timestamp; OK to spill to desc2
-    snprintf((char*)&desc1.d, 12, " %d%d.%d%d.X%d", int((acc >> 46) & 3),
+    snprintf(buf, sizeof(buf), " %d%d.%d%d.X%d", int((acc >> 46) & 3),
             int((acc >> 42) & 15), int((acc >> 41) & 1),
             int((acc >> 37) & 15), int((acc >> 33) & 15));
+    strncpy((char*)&desc1.d, buf, 12);
 }
 
 void set_header() {

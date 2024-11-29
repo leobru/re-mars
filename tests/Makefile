@@ -15,12 +15,13 @@ GTEST           = gtest-all.o gtest_main.o
 # Find googletest sources
 ifneq (,$(wildcard /usr/src/googletest/googletest/src/gtest-all.cc))
     GTEST_DIR   = /usr/src/googletest/googletest
+    GTEST_INC   = /usr/src/googletest/googletest/include
 else ifneq (,$(wildcard /usr/local/opt/googletest/include/googletest/googletest/src/gtest-all.cc))
     GTEST_DIR   = /usr/local/opt/googletest/include/googletest/googletest
-    CXXFLAGS    += -I/usr/local/opt/googletest/include
+    GTEST_INC   = /usr/local/opt/googletest/include
 else ifneq (,$(wildcard /opt/homebrew/opt/googletest/include/googletest/googletest/src/gtest-all.cc))
     GTEST_DIR   = /opt/homebrew/opt/googletest/include/googletest/googletest
-    CXXFLAGS    += -I/opt/homebrew/opt/googletest/include
+    GTEST_INC   = /opt/homebrew/opt/googletest/include
 else
     $(error Please install googletest)
 endif
@@ -44,7 +45,7 @@ longtests:      $(LONGTESTS_SHA)
 		$(CXX) -o $@ $^
 
 .cc.o:
-		$(CXX) $(CXXFLAGS) -Wall -c -I.. -o $@ $<
+		$(CXX) $(CXXFLAGS) -I$(GTEST_INC) -Wall -c -I.. -o $@ $<
 
 clean:
 		rm -rf *.run
@@ -55,7 +56,7 @@ gtests:         $(OBJS) $(GTEST)
 		$(CXX) $(LDFLAGS) $(OBJS) $(GTEST) -o $@
 
 gtest-all.o:    $(GTEST_DIR)/src/gtest-all.cc
-		$(CXX) -c $(CXXFLAGS) -I$(GTEST_DIR) -o $@ $?
+		$(CXX) -c $(CXXFLAGS) -I$(GTEST_DIR) -I$(GTEST_INC) -o $@ $?
 
 gtest_main.o:   $(GTEST_DIR)/src/gtest_main.cc
 		$(CXX) -c $(CXXFLAGS) -o $@ $?
