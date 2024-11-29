@@ -59,4 +59,4 @@ gtest-all.o:    $(GTEST_DIR)/src/gtest-all.cc
 		$(CXX) -c $(CXXFLAGS) -I$(GTEST_DIR) -I$(GTEST_INC) -o $@ $?
 
 gtest_main.o:   $(GTEST_DIR)/src/gtest_main.cc
-		$(CXX) -c $(CXXFLAGS) -o $@ $?
+		$(CXX) -c $(CXXFLAGS) -I$(GTEST_INC) -o $@ $?
