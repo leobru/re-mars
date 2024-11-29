@@ -30,11 +30,15 @@ word & m6 = data[6];
 word & m7 = data[7];
 word & m13 = data[13];
 
+// History of all stores, for debug.
+std::unordered_map<size_t, uint64_t> all_stores;
+
 uint64_t& word::store(uint64_t x) {
     size_t index = this-data;
     if (index < 16) x &= 077777;
     if (trace_stores && index > 16 && index < RAM_LENGTH) {
         std::cerr << std::format("       {:05o}: store {:016o}\n", index, x);
+        all_stores[index] = x;
     }
     d=x;
     return d;
@@ -44,6 +48,7 @@ word& word::operator=(word x) {
     if (index < 16) x.d &= 077777;
     if (trace_stores && index > 16 && index < RAM_LENGTH) {
         std::cerr << std::format("       {:05o}: store {:016o}\n", index, x.d);
+        all_stores[index] = x.d;
     }
     d=x.d;
     return *this;
@@ -55,10 +60,16 @@ word& word::operator=(word * x) {
         abort();
     }
     size_t index = this-data;
-    if (trace_stores && index > 16 && index < RAM_LENGTH)
+    if (trace_stores && index > 16 && index < RAM_LENGTH) {
         printf("       %05lo: store %016lo\n", index, offset);
+        all_stores[index] = offset;
+    }
     d=offset;
     return *this;
+}
+
+uint64_t get_store(size_t index) {
+    return all_stores[index];
 }
 
 struct bdvect_t {

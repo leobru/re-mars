@@ -102,4 +102,7 @@ uint64_t find(const char * k), find(uint64_t k);
 
 int getlen(), avail();
 
+// Get result of store(), when flag trace_stores is enabled.
+uint64_t get_store(size_t index);
+
 #endif

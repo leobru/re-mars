@@ -12,8 +12,8 @@ LONGTESTS       = test-maxsize
 TESTS_SHA       = $(addsuffix .sha,$(TESTS))
 TESTS_EXE       = $(addsuffix .exe,$(TESTS))
 LONGTESTS_SHA   = $(addsuffix .sha,$(LONGTESTS))
-OBJS            = test-smoke.o
-GTEST           = gtest-all.o gtest_main.o fixture.o
+OBJS            = ../mars.o test-smoke.o test-stores.o fixture.o
+GTEST           = gtest-all.o gtest_main.o
 
 # Find googletest sources
 ifneq (,$(wildcard /usr/src/googletest/googletest/src/gtest-all.cc))
