@@ -1,6 +1,31 @@
 #include <gtest/gtest.h>
+#include <algorithm>
 
 #include "mars.h"
+
+static std::string tobesm(std::string s) {
+    // Convert to the BESM-6 compatible format for ease of comparison
+    s += "     ";
+    s.resize(6);
+    std::reverse(s.begin(), s.end());
+    s.resize(8);
+    return s;
+}
+
+static bool compare(int start1, int start2, int len) {
+    bool match = true;
+    for (int i = 0; i < len; ++i) {
+        if (data[start1+i] != data[start2+i]) {
+            match = false;
+            std::cout << "Element " << std::dec << i << " does not match ("
+                      << data[start1+i].d << " vs " << data[start2+i].d << ")\n";
+        }
+    }
+    if (match && mars_flags.verbose)
+        std::cout << std::dec << len << " elements match between "
+                  << std::oct << start1 << " and " << start2 << '\n';
+    return match;
+}
 
 TEST(mars, initdb_stores)
 {
@@ -161,4 +186,85 @@ TEST(mars, initdb_stores)
 
     // Writing 520000 from address 4000
     EXPECT_EQ(get_store(01647), 0'0000'0000'0000'0000u); // latest
+}
+
+TEST(mars, cleard_stores)
+{
+    const int catalog_len = 1;
+    const int file_len = 2;
+    const std::string fname = tobesm("TEST");
+
+    mars_flags.zero_date = true;
+    mars_flags.trace_stores = false; // enable later
+    mars_flags.verbose = true;
+
+    // Initializing the database catalog: 1 zone, starting from zone 0 on LUN 52 (arbitrary)
+    InitDB(052, 0, catalog_len);
+
+    // Setting the root location
+    SetDB(052, 0, catalog_len);
+
+    // Making a new array of 'len' zones, starting after the root catalog
+    newd(fname.c_str(), 052, catalog_len, file_len);
+
+    // Opening it
+    opend(fname.c_str());
+
+    const int PAGE1 = 010000;
+    const int PAGE2 = 012000;
+    for (int i = 0; i < 1024; ++i) {
+        data[PAGE1 + i] = (064LL << 42) + i;
+    }
+
+    // Initializing an array of 1024 words
+    std::string elt = "A";
+
+    // Putting one half of it to the DB
+    modd(elt.c_str(), PAGE1, 512);
+
+    // Putting all of it (will be split: max usable words in a zone = 01775)
+    modd(elt.c_str(), PAGE1, 1024);
+
+    // Again (exact match of length)
+    modd(elt.c_str(), PAGE1, 1024);
+
+    // With smaller length (reusing the block)
+    modd(elt.c_str(), PAGE1+1, 1023);
+
+    // Getting back
+    getd(elt.c_str(), PAGE2, 1023);
+    ASSERT_TRUE(compare(PAGE2, PAGE1+1, 1023));
+
+    // Done with it
+    deld(elt.c_str());
+
+    // Putting 59 elements of varying sizes with numerical keys (key 0 is invalid)
+    for (int i = 0; i <= 59; ++i) {
+        if (i < 59) {
+            EXPECT_EQ(putd(i+1, PAGE1+1, i), 0)
+                << "while putting " << std::dec << i;
+        } else {
+            // An overflow error is expected at the last iteration
+            EXPECT_NE(putd(i+1, PAGE1+1, i), 0)
+                << "while putting " << std::dec << i;
+        }
+    }
+
+    uint64_t k = last();
+    while (k) {
+        int len = getlen();
+        getd(k, PAGE2, 100);
+        ASSERT_TRUE(compare(PAGE2, PAGE1+1, len))
+            << "Found " << std::oct << k << ' ' << len;
+        k = prev();
+    }
+
+    // A termination error is expected
+    mars_flags.trace_stores = true;
+    std::cout << "cleard()\n";
+    cleard();
+    // TODO: more stores
+    EXPECT_EQ(get_store(01450), 0'0000'0000'0000'1456u);
+
+    IOflush();
 }
