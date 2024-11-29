@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <string>
+#include <algorithm>
 
 //
 // Read file contents and return it as a string.
