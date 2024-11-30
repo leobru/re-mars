@@ -138,6 +138,7 @@ int main(int argc, char ** argv) {
     // Initializing an array of 1024 words
 
     std::string elt = "A";
+    elt.resize(8);
     // Putting one half of it to the DB
     modd(elt.c_str(), PAGE1, 512);
     // Putting all of it (will be split: max usable words in a zone = 01775)

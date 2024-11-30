@@ -94,6 +94,7 @@ TEST(mars, coverage)
     init(PAGE1, 1024);
 
     std::string elt = "A";
+    elt.resize(8);
     // Putting one half of it to the DB
     ASSERT_EQ(modd(elt.c_str(), PAGE1, 512), ERR_SUCCESS);
     // Putting all of it (will be split: max usable words in a zone = 01775)
