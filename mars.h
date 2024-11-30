@@ -24,15 +24,8 @@ enum Error {
     ERR_WRONG_PASSWORD = 17
 };
 
-union word {
+struct word {
     uint64_t d;
-    void*    p;
-    struct {
-        unsigned off1 : 10;
-        unsigned off2 : 10;
-        unsigned extent  : 19;
-        unsigned upper9  : 9;
-    };
     word(uint64_t x = 0) : d(x) { }
     uint64_t& operator=(long unsigned int x) { return store(x); }
     uint64_t& operator=(int x) { return store(x); }

@@ -110,10 +110,20 @@ uint64_t word::operator&() { return this-data; }
 #define MERGE_(a,b)  a##b
 #define LABEL_(a) MERGE_(ret_, a)
 #define ret LABEL_(__LINE__)
-#define call(addr,link) do { link.p = &&ret; goto addr; ret:; } while (0)
+#define INDJUMP_MAGIC 076500
+#define target(label) (jumptab.count(&&label) ? jumptab[&&label] :      \
+                       (targets.push_back(&&label),                     \
+                        jumptab[&&label] = targets.size() + INDJUMP_MAGIC-1))
+#define call(addr,link) do { link = target(ret); goto addr; ret:; } while (0)
 #define dirty(x) dirty = dirty.d | ((curZone.d ? x : 0) + 1)
 // #define jump(x) do { std::cerr << "Jump to " #x "\n"; goto x; } while(0)
 #define jump(x) goto x
+#define indjump(x)                                                      \
+    do {                                                                \
+        assert ((x.d & ~077LL) == INDJUMP_MAGIC &&                      \
+                (x.d & 077) < targets.size());                          \
+        goto *(targets[x.d & 077]);                                     \
+    } while (false)
 
 // struct Bdvect
 word & outadr = data[BDVECT+1];
@@ -164,6 +174,7 @@ word & loc246 = data[BDVECT+0246];
 word & dirty = data[BDVECT+0247];
 
 union Accumulator {
+    static const uint64_t MASK = BITS(48);
     uint64_t d;
     struct {
         unsigned off1 : 10;
@@ -177,16 +188,18 @@ union Accumulator {
         unsigned stamp  : 15;
     };
     operator uint64_t() { return d; }
-    uint64_t& operator=(uint64_t x) { d = x; return d; }
+    uint64_t& operator=(uint64_t x) { d = x & MASK; return d; }
+    uint64_t& operator=(word x) { d = x.d & MASK; return d; }
     uint64_t& operator&=(uint64_t x) { d &= x; return d; }
-    uint64_t& operator|=(uint64_t x) { d |= x; return d; }
-    uint64_t& operator^=(uint64_t x) { d ^= x; return d; }
-    uint64_t& operator+=(uint64_t x) { d += x; return d; }
-    uint64_t& operator-=(uint64_t x) { d -= x; return d; }
-    uint64_t& operator<<=(int x) { d <<= x; return d; }
+    uint64_t& operator|=(uint64_t x) { d |= x; d &= MASK; return d; }
+    uint64_t& operator^=(uint64_t x) { d ^= x; d &= MASK; return d; }
+    uint64_t& operator+=(uint64_t x) { d += x; d &= MASK; return d; }
+    uint64_t& operator-=(uint64_t x) { d -= x; d &= MASK; return d; }
+    uint64_t& operator<<=(int x) { d <<= x; d &= MASK; return d; }
     uint64_t& operator>>=(int x) { d >>= x; return d; }
-    uint64_t& operator++() { ++d; return d; }
-    uint64_t& operator--() { --d; return d; }
+    uint64_t& operator++() { ++d; d &= MASK; return d; }
+    uint64_t& operator--() { --d; d &= MASK; return d; }
+
 } acc;
 
 // struct Mars
@@ -446,11 +459,11 @@ void totext() {
     snprintf(buf, sizeof(buf), " %05o", int(acc & 077777));
     strncpy((char*)&endmrk.d, buf, 6);
     acc = desc1.d;
-    // Timestamp; OK to spill to desc2
     snprintf(buf, sizeof(buf), " %d%d.%d%d.X%d", int((acc >> 46) & 3),
             int((acc >> 42) & 15), int((acc >> 41) & 1),
             int((acc >> 37) & 15), int((acc >> 33) & 15));
-    strncpy((char*)&desc1.d, buf, 12);
+    strncpy((char*)&desc1.d, buf, 8);
+    strncpy((char*)&desc2.d, buf+8, 8);
 }
 
 void set_header() {
@@ -759,6 +772,8 @@ void assign_and_incr() {
 }
 
 Error eval() try {
+    std::unordered_map<void*,int> jumptab;
+    std::vector<void*> targets;
     acc = m16.d;
     jump(enter);
     // The switch is entered with m6 = cmd0 and acc = 0
@@ -912,7 +927,7 @@ Error eval() try {
         jump(cmd46);
     case 047:
         acc = desc1.d;
-        jump(*outadr.p);
+        indjump(outadr);
     case 050:
         // cmd := mem[bdvect[src]++]
         // curcmd is ..... src 50
@@ -975,12 +990,11 @@ Error eval() try {
   drtnxt:
     dirty = dirty.d | 1;
   rtnext:
-    if (goto_.p) {
-        void * to = goto_.p;
+    if (goto_.d) {
+        word to = goto_;
         goto_ = 0;
-        jump(*to);
+        indjump(to);
     }
-    goto_ = 0;
   cmd0:
     acc = curcmd >> 6;
   next:
@@ -993,7 +1007,7 @@ Error eval() try {
     curcmd = acc;
     m5 = acc & BITS(6);
   a00153:
-    m6.p = &&cmd0;
+    m6 = target(cmd0);
     goto_ = 0;
     jump(switch_);
   find:
@@ -1004,14 +1018,13 @@ Error eval() try {
   cmd1:
     idx = acc;
     temp = temp.d ^ BITS(47);
-  cmd1a:
-    m16 = Metadata;
-    acc = loc20.d;
-    if (!acc) {
+    while (true) {
+        m16 = Metadata;
+        if (loc20.d)
+            break;
         if (verbose)
             std::cerr << "Loc20 == 0, nothing to compare\n";
         a00213();
-        jump(cmd1a);
     }
   a00164:
     acc = m16[-1].d & 01777;
@@ -1056,7 +1069,7 @@ Error eval() try {
         jump(next);
     }
     mylen = acc;
-    jump(*m6.p);
+    indjump(m6);
   cmd36:
     m16 = element;
     m16[Array[idx.d]+1] = loc12;
@@ -1128,8 +1141,8 @@ Error eval() try {
     acc &= 077777;
     if (!acc) {
         d00011 = m16[0];
-        goto_ = size_t(&&a00730);
-        d00033 = size_t(&&a00731);
+        goto_ = target(a00730);
+        d00033 = target(a00731);
     }
     jump(a01160);
   a00730:
@@ -1226,7 +1239,7 @@ Error eval() try {
     if (!m5.d) {
         work2[-1] = datlen;
         dirty(2);
-        jump(*m6.p);
+        indjump(m6);
     }
     dirty(1);
     acc = d00024.d;
@@ -1257,8 +1270,9 @@ Error eval() try {
         d00012 = acc;
         acc >>= 15;
         m16 = acc;
-        if (!(d00012.d & 077777))
-            jump(*d00033.p);    // return from pr1232
+        if (!(d00012.d & 077777)) {
+            indjump(d00033);    // return from pr1232
+        }
         acc = d00012.d;
         --m16;
         if (m16.d) {
@@ -1346,14 +1360,14 @@ Error eval() try {
     acc &= BITS(19) << 10;
     d00032 = (acc << 19) & BITS(48);
     m16 = &loc120;
-    goto_ = size_t(&&a01231);
+    goto_ = target(a01231);
     usrloc = m16.d - 1;
     acc = m16[-1].d & 01777;
     mylen = ++acc;
     acc = loc246.d;
     jump(a01311);
   a01231:
-    m5.p = &&a01136;
+    m5 = target(a01136);
   pr1232:
     d00033 = m5.d;
     desc2 = 1;
@@ -1424,7 +1438,7 @@ Error eval() try {
     acc = adescr.d;
   a01311:
     d00012 = acc;
-    m6.p = &&drtnxt;
+    m6 = target(drtnxt);
     find_item(d00012.d);
     --acc;
     m5 = acc;
@@ -1449,10 +1463,10 @@ Error eval() try {
         acc = (acc >> 20) & BITS(19);
         if (acc) {
             free();
-            jump(*m6.p);
+            indjump(m6);
         }
         dirty = dirty.d | 1;
-        jump(*m6.p);
+        indjump(m6);
     }
     date();
     m16 = curbuf;
@@ -1473,14 +1487,14 @@ Error eval() try {
         acc = d00026.d & (0777LL << 39);
         call(pr1047,m6);
         acc = d00026.d;
-        m6.p = d00010.p;
+        m6 = d00010;
         acc = (acc >> 20) & BITS(19);
         if (acc) {
             free();
-            jump(*m6.p);
+            indjump(m6);
         }
         dirty = dirty.d | 1;
-        jump(*m6.p);
+        indjump(m6);
     }
     usable_space();
     acc = (*aitem).d & 077777;
