@@ -723,6 +723,7 @@ TEST(mars, cleard_stores)
 
     // Initializing an array of 1024 words
     std::string elt = "A";
+    elt.resize(8);
 
     // Putting one half of it to the DB
     modd(elt.c_str(), PAGE1, 512);
