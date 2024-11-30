@@ -694,6 +694,221 @@ TEST(mars, newd_stores)
     EXPECT_EQ(get_store(01647), 0'0000'0000'0000'0000u); // latest
 }
 
+TEST(mars, opend_stores)
+{
+    const int catalog_len = 1;
+    const int file_len = 2;
+    const std::string fname = tobesm("TEST");
+
+    mars_flags.zero_date = true;
+    //mars_flags.verbose = true;
+
+    // Initializing the database catalog: 1 zone, starting from zone 0 on LUN 52 (arbitrary)
+    InitDB(052, 0, catalog_len);
+
+    // Setting the root location
+    SetDB(052, 0, catalog_len);
+
+    // Making a new array of 'len' zones, starting after the root catalog
+    newd(fname.c_str(), 052, catalog_len, file_len);
+
+    // Opening it
+    //mars_flags.trace_stores = true;
+    mars_flags.memoize_stores = true;
+    std::cout << "opend()\n";
+    opend(fname.c_str());
+
+    // Running opend('  TSET')
+    EXPECT_EQ(get_store(01410), 0'2504'2523'2502'0040u);
+    EXPECT_EQ(get_store(01403), 0'0000'0025'1214'1131u);
+    EXPECT_EQ(get_store(02007), 0'0000'0000'0000'6000u);
+    EXPECT_EQ(get_store(02013), 0'0000'0000'0000'1400u);
+    EXPECT_EQ(get_store(02041), 0'0340'0000'0000'0000u);
+    EXPECT_EQ(get_store(02017), 0'0000'0000'0000'4000u);
+    EXPECT_EQ(get_store(02021), 0'0000'0000'0000'0000u);
+//  EXPECT_EQ(get_store(02020), 0'0000'0406'1017'7065u); // random address, don't check
+//  EXPECT_EQ(get_store(01405), 0'0000'0025'1214'1131u); // overwritten
+    EXPECT_EQ(get_store(02014), 0'0000'0000'0000'0000u);
+
+    // Executing microcode 31
+//  EXPECT_EQ(get_store(01431), 0'0000'0000'0000'4000u); // overwritten
+//  EXPECT_EQ(get_store(01430), 0'0000'0000'0152'0000u); // overwritten
+//  EXPECT_EQ(get_store(01444), 0'0000'0000'0052'0000u); // overwritten
+//  EXPECT_EQ(get_store(01451), 0'0000'0000'0000'0001u); // overwritten
+//  EXPECT_EQ(get_store(02037), 0'0010'0200'0052'0000u); // overwritten
+
+    // Reading 520000 to address 4000
+    EXPECT_EQ(get_store(01641), 0'0000'0000'0000'4000u);
+    EXPECT_EQ(get_store(01642), 0'0000'0000'0000'0000u);
+//  EXPECT_EQ(get_store(01646), 0'0000'0000'0000'0000u); // overwritten
+    EXPECT_EQ(get_store(01644), 0'0000'0000'0000'0000u);
+//  EXPECT_EQ(get_store(01434), 0'0000'0000'0000'5735u); // overwritten
+    EXPECT_EQ(get_store(01420), 0'0000'0000'0000'2000u);
+//  EXPECT_EQ(get_store(01516), 0'0000'0000'0000'2000u); // overwritten
+//  EXPECT_EQ(get_store(02016), 0'0000'0000'0000'1454u); // overwritten
+    EXPECT_EQ(get_store(01450), 0'0000'0000'0000'1456u);
+//  EXPECT_EQ(get_store(01646), 0'0000'0000'0000'2000u); // overwritten
+//  EXPECT_EQ(get_store(02040), 0'0000'0000'0000'2000u); // overwritten
+    EXPECT_EQ(get_store(01644), 0'0000'0000'0000'0000u);
+//  EXPECT_EQ(get_store(02015), 0'0000'0000'0000'4000u); // overwritten
+    EXPECT_EQ(get_store(01641), 0'0000'0000'0000'4000u);
+//  EXPECT_EQ(get_store(02035), 0'0000'0000'0000'2000u); // overwritten
+//  EXPECT_EQ(get_store(02036), 0'0010'0000'0000'0000u); // overwritten
+//  EXPECT_EQ(get_store(01516), 0'0000'0000'0000'0001u); // overwritten
+//  EXPECT_EQ(get_store(01620), 0'0010'0000'0010'5735u); // overwritten
+//  EXPECT_EQ(get_store(01446), 0'0000'0000'0000'5736u); // overwritten
+//  EXPECT_EQ(get_store(01445), 0'0000'0000'0000'0042u); // overwritten
+
+    // From DB: 42(8) words from 5736 to 1454
+    EXPECT_EQ(get_store(01515), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01514), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01513), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01512), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01511), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01510), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01507), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01506), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01505), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01504), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01503), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01502), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01501), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01500), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01477), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01476), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01475), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01474), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01473), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01472), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01471), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01470), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01467), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01466), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01465), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01464), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01463), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01462), 0'1234'5670'0765'4321u);
+//  EXPECT_EQ(get_store(01461), 0'0000'0000'0000'6000u); // overwritten
+//  EXPECT_EQ(get_store(01460), 0'2504'2523'2502'0040u); // overwritten
+    EXPECT_EQ(get_store(01457), 0'0000'0000'0000'2000u);
+    EXPECT_EQ(get_store(01456), 0'0000'0000'0000'0000u);
+//  EXPECT_EQ(get_store(01455), 0'0000'0000'0000'0004u); // overwritten
+    EXPECT_EQ(get_store(01454), 0'0000'0000'0000'0041u);
+//  EXPECT_EQ(get_store(02016), 0'0000'0000'0000'1516u); // overwritten
+//  EXPECT_EQ(get_store(01405), 0'0000'0000'2512'1411u); // overwritten
+    EXPECT_EQ(get_store(02014), 0'0000'0000'0000'0000u);
+
+    // Executing microcode 11
+//  EXPECT_EQ(get_store(02027), 0'2504'2523'2502'0040u); // overwritten
+    EXPECT_EQ(get_store(01642), 0'0000'0000'0000'0000u);
+    EXPECT_EQ(get_store(02027), 0'1273'5254'5275'7737u); // latest
+
+    // Comparing 2 elements
+    EXPECT_EQ(get_store(01421), 0'0000'0100'0000'0002u);
+    EXPECT_EQ(get_store(01437), 0'2504'2523'2502'0040u);
+    EXPECT_EQ(get_store(01435), 0'0000'0000'0000'6000u);
+    EXPECT_EQ(get_store(02014), 0'0000'0000'0000'0000u);
+//  EXPECT_EQ(get_store(01405), 0'0000'0000'0025'1214u); // overwritten
+    EXPECT_EQ(get_store(02014), 0'0000'0000'0000'0000u);
+
+    // Executing microcode 14
+//  EXPECT_EQ(get_store(01405), 0'0000'0000'0000'2512u); // overwritten
+    EXPECT_EQ(get_store(02014), 0'0000'0000'0000'0000u);
+
+    // Executing microcode 12
+    EXPECT_EQ(get_store(01413), 0'0000'0000'0000'1430u);
+    EXPECT_EQ(get_store(01415), 0'0000'0000'0000'0003u);
+//  EXPECT_EQ(get_store(02040), 0'0000'0000'0000'6000u); // overwritten
+    EXPECT_EQ(get_store(01644), 0'0000'0000'0000'0000u);
+//  EXPECT_EQ(get_store(02015), 0'0000'0000'0000'4000u); // overwritten
+    EXPECT_EQ(get_store(01641), 0'0000'0000'0000'4000u);
+//  EXPECT_EQ(get_store(02035), 0'0000'0000'0000'6000u); // overwritten
+//  EXPECT_EQ(get_store(02036), 0'0030'0000'0000'0000u); // overwritten
+//  EXPECT_EQ(get_store(01516), 0'0000'0000'0000'0003u); // overwritten
+//  EXPECT_EQ(get_store(01620), 0'0030'0000'0000'7730u); // overwritten
+//  EXPECT_EQ(get_store(01446), 0'0000'0000'0000'5731u); // overwritten
+//  EXPECT_EQ(get_store(01445), 0'0000'0000'0000'0003u); // overwritten
+    EXPECT_EQ(get_store(01441), 0'0000'0000'0000'0002u);
+    EXPECT_EQ(get_store(01447), 0'0000'0000'0000'0002u);
+    EXPECT_EQ(get_store(01453), 0'0000'0000'0000'0000u);
+//  EXPECT_EQ(get_store(02016), 0'0000'0000'0000'1430u); // overwritten
+//  EXPECT_EQ(get_store(01446), 0'0000'0000'0000'5732u); // overwritten
+//  EXPECT_EQ(get_store(01445), 0'0000'0000'0000'0002u); // overwritten
+
+    // From DB: 2(8) words from 5732 to 1430
+    EXPECT_EQ(get_store(01431), 0'0524'6520'4010'0000u); // latest
+    EXPECT_EQ(get_store(01430), 0'0000'0000'0252'0001u); // latest
+//  EXPECT_EQ(get_store(02016), 0'0000'0000'0000'1432u); // overwritten
+    EXPECT_EQ(get_store(01405), 0'0000'0000'0000'0025u); // latest
+    EXPECT_EQ(get_store(02014), 0'0000'0000'0000'0000u);
+
+    // Executing microcode 25
+    EXPECT_EQ(get_store(01444), 0'0000'0000'0052'0001u); // latest
+    EXPECT_EQ(get_store(01451), 0'0000'0000'0000'0002u); // latest
+    EXPECT_EQ(get_store(02037), 0'0010'0200'0052'0001u); // latest
+
+    // Reading 520001 to address 4000
+    EXPECT_EQ(get_store(01641), 0'0000'0000'0000'4000u);
+    EXPECT_EQ(get_store(01642), 0'0000'0000'0000'0000u);
+//  EXPECT_EQ(get_store(01646), 0'0000'0000'0000'0000u); // overwritten
+    EXPECT_EQ(get_store(01644), 0'0000'0000'0000'0000u);
+    EXPECT_EQ(get_store(01434), 0'0000'0000'0000'5734u); // latest
+    EXPECT_EQ(get_store(01420), 0'0000'0000'0000'2000u);
+//  EXPECT_EQ(get_store(01516), 0'0000'0000'0000'2000u); // overwritten
+//  EXPECT_EQ(get_store(02016), 0'0000'0000'0000'1454u); // overwritten
+    EXPECT_EQ(get_store(01450), 0'0000'0000'0000'1456u);
+    EXPECT_EQ(get_store(01646), 0'0000'0000'0000'2000u); // latest
+    EXPECT_EQ(get_store(02040), 0'0000'0000'0000'2000u); // latest
+    EXPECT_EQ(get_store(01644), 0'0000'0000'0000'0000u);
+    EXPECT_EQ(get_store(02015), 0'0524'6520'4010'0000u); // latest
+    EXPECT_EQ(get_store(01641), 0'0000'0000'0000'4000u);
+    EXPECT_EQ(get_store(02035), 0'0000'0000'0000'2000u); // latest
+    EXPECT_EQ(get_store(02036), 0'0010'0000'0000'0000u); // latest
+    EXPECT_EQ(get_store(01516), 0'0000'0000'0000'0001u); // latest
+    EXPECT_EQ(get_store(01620), 0'0010'0000'0010'5735u); // latest
+    EXPECT_EQ(get_store(01446), 0'0000'0000'0000'5736u); // latest
+    EXPECT_EQ(get_store(01445), 0'0000'0000'0000'0042u); // latest
+
+    // From DB: 42(8) words from 5736 to 1454
+    EXPECT_EQ(get_store(01515), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01514), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01513), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01512), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01511), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01510), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01507), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01506), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01505), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01504), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01503), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01502), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01501), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01500), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01477), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01476), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01475), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01474), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01473), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01472), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01471), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01470), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01467), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01466), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01465), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01464), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01463), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01462), 0'1234'5670'0765'4321u);
+    EXPECT_EQ(get_store(01461), 0'1234'5670'0765'4321u); // latest
+    EXPECT_EQ(get_store(01460), 0'1234'5670'0765'4321u); // latest
+    EXPECT_EQ(get_store(01457), 0'0000'0000'0000'2000u);
+    EXPECT_EQ(get_store(01456), 0'0000'0000'0000'0000u);
+    EXPECT_EQ(get_store(01455), 0'0000'0000'0000'0002u); // latest
+    EXPECT_EQ(get_store(01454), 0'0000'0000'0000'0041u);
+    EXPECT_EQ(get_store(02016), 0'0000'0000'0000'1516u); // latest
+    EXPECT_EQ(get_store(02011), 0'0000'0000'0000'0000u);
+    EXPECT_EQ(get_store(01647), 0'0000'0000'0000'0000u);
+}
+
 TEST(mars, cleard_stores)
 {
     const int catalog_len = 1;
@@ -715,13 +930,13 @@ TEST(mars, cleard_stores)
     // Opening it
     opend(fname.c_str());
 
+    // Initializing an array of 1024 words
     const int PAGE1 = 010000;
     const int PAGE2 = 012000;
     for (int i = 0; i < 1024; ++i) {
         data[PAGE1 + i] = (064LL << 42) + i;
     }
 
-    // Initializing an array of 1024 words
     std::string elt = "A";
     elt.resize(8);
 
