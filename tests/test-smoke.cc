@@ -34,6 +34,7 @@ TEST(mars, diagnostics)
     ASSERT_EQ(putd(one, 0, 0), ERR_EXISTS);
     ASSERT_EQ(getd(one, 0, 0), ERR_SUCCESS);
     ASSERT_EQ(deld(one), ERR_SUCCESS);
+    IOdiscard();
 }
 
 static void zeromem() {

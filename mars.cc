@@ -267,6 +267,10 @@ struct Page {
 
 std::unordered_map<std::string, Page> DiskImage;
 
+void IOdiscard() {
+    DiskImage.clear();
+}
+
 void IOflush() {
     for (auto & it : DiskImage) {
         const std::string& nuzzzz = it.first;
@@ -296,6 +300,7 @@ void IOflush() {
             fclose(t);
         }
     }
+    IOdiscard();
 }
 
 void IOcall(word is) {

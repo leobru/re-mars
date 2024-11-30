@@ -81,6 +81,9 @@ Error SetDB(int lun, int start_zone, int length);
 // Save the DB to disk
 void IOflush();
 
+// Discard the in-memory image of the DB
+void IOdiscard();
+
 Error newd(const char * k, int lun, int start_zone, int len);
 
 Error opend(const char * k);
