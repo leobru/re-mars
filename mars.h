@@ -98,7 +98,7 @@ Error getd(uint64_t k, int loc, int len);
 Error deld(const char * k);
 Error deld(uint64_t k);
 
-Error root(), cleard();
+Error root(), cleard(bool forward), eval();
 
 uint64_t first(), last(), prev(), next();
 

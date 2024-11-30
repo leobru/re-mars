@@ -983,7 +983,7 @@ TEST(mars, cleard_stores)
     // A termination error is expected
     mars_flags.memoize_stores = true;
     std::cout << "cleard()\n";
-    cleard();
+    cleard(false);
     // TODO: more stores
     EXPECT_EQ(get_store(01450), 0'0000'0000'0000'1456u);
 

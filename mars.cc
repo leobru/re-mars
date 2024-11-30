@@ -174,7 +174,7 @@ word & aitem = data[BDVECT+046];
 word & itmlen = data[BDVECT+047];
 word & element = data[BDVECT+050];
 word & dblen = data[BDVECT+051];
-word & loc53 = data[BDVECT+053];
+word & curlen = data[BDVECT+053];
 word & loc54 = data[BDVECT+054];
 // Metadata[-1] (loc55) is also used
 word * const Metadata = data+BDVECT+056;
@@ -473,7 +473,7 @@ void info(uint64_t arg) {
     desc1 = acc;
     acc &= 077777;
     itmlen = acc;
-    loc53 = 0;
+    curlen = 0;
 }
 
 void totext() {
@@ -748,9 +748,9 @@ bool step() {
     return false;
 }
 
-bool a00334() {
-    temp = acc;
-    loc53 = loc53.d + acc;
+bool a00334(word arg) {
+    temp = arg;
+    curlen = curlen.d + arg.d;
     usrloc = myloc;
   a00270:
     if (proc270()) {
@@ -781,8 +781,7 @@ bool a00334() {
 void a00340() {
     find_item(acc);
     jmpoff = A00317;
-    acc = desc2.d;
-    a00334();
+    a00334(desc2);
 }
 
 void assign_and_incr() {
@@ -791,6 +790,23 @@ void assign_and_incr() {
     curcmd = curcmd >> 6;
     m13[m16] = (*m13[m5]).d;
     ++m13[m5];
+}
+
+// Performs operations of upper bits in myloc
+// using value in curlen, assigning to desc2 and mylen.
+// Conditionally skips the next 4 instructions.
+// From the code is appears that the max expected
+// length of the datum was 017777.
+bool cmd46() {
+    acc = (myloc >> 18) & BITS(15);
+    desc2 = acc -= curlen.d;
+    acc = (myloc >> 33) & 017777;
+    if (!acc) {
+        acc = curcmd.d >> 30;
+        return true;
+    }
+    mylen = acc;
+    return false;
 }
 
 Error eval() try {
@@ -831,8 +847,7 @@ Error eval() try {
         break;
     case 7:
         jmpoff = A00317;
-        acc = desc2.d;
-        a00334();
+        a00334(desc2);
         break;
     case 010:
         jump(mkctl);
@@ -923,20 +938,17 @@ Error eval() try {
         jump(next);
     case 041:
         jmpoff = COMPARE;
-        acc = mylen.d;
-        if (a00334())
+        if (a00334(mylen))
             jump(next);
         break;
     case 042:
         jmpoff = TOBASE;
-        acc = mylen.d;
-        if (a00334())
+        if (a00334(mylen))
             jump(next);
         break;
     case 043:
         jmpoff = FROMBASE;
-        acc = mylen.d;
-        if(a00334())
+        if(a00334(mylen))
             jump(next);
         break;
     case 044:
@@ -946,7 +958,9 @@ Error eval() try {
         lock();
         break;
     case 046:
-        jump(cmd46);
+        if (cmd46())
+            jump(next);
+        break;
     case 047:
         acc = desc1.d;
         indjump(outadr);
@@ -1080,18 +1094,6 @@ Error eval() try {
     pr202();
     m16 = &loc120;
     jump(a00164);
-  cmd46:                        // Unpacking the descriptor (?) in myloc
-    acc = myloc.d;
-    acc >>= 18;
-    acc &= 077777;
-    desc2 = acc -= loc53.d;
-    acc = (myloc >> 33) & 017777;
-    if (!acc) {
-        acc = curcmd.d >> 30;
-        jump(next);
-    }
-    mylen = acc;
-    indjump(m6);
   cmd36:
     m16 = element;
     m16[Array[idx.d]+1] = loc12;
@@ -1132,9 +1134,7 @@ Error eval() try {
         a00340();
         acc &= ~(BITS(19) << 10);
         loc117 = acc;
-        acc = d00025.d;
-        acc &= BITS(19) << 10;
-        acc |= loc117.d;
+        acc = (d00025 & (BITS(19) << 10)) | loc117;
         set_header();
     }
     call(pr1232,m5);
@@ -1285,27 +1285,6 @@ Error eval() try {
     acc = loc12.d;
     adescr = acc;
     jump(a01140);
-  a01123:
-    acc = Array[idx.d].d;
-    acc >>= 15;
-    for (;;) {
-        d00012 = acc;
-        acc >>= 15;
-        m16 = acc;
-        if (!(d00012.d & 077777)) {
-            indjump(d00033);    // return from pr1232
-        }
-        acc = d00012.d;
-        --m16;
-        if (m16.d) {
-            acc += 2;
-        }
-        --acc;
-        d00012 = acc;
-        if (step())
-            jump(next);
-        acc = d00012.d;
-    }
   a01136:
     acc = d00032.d;
     acc >>= 29;
@@ -1390,45 +1369,67 @@ Error eval() try {
     jump(a01311);
   a01231:
     m5 = target(a01136);
+    // pr1232 can return in 3 ways:
+    // - back to the caller
+    // - terminating execution of the instruction (next)
+    // - potential termination of the execution
+    //   with setting the dirty flag (drtnxt)
   pr1232:
     d00033 = m5.d;
     desc2 = 1;
     acc = (d00025 >> 10) & BITS(19);
     if (acc) {
         a00340();
-        acc &= BITS(29);
-        acc |= d00032.d;
+        acc = (acc & BITS(29)) | d00032.d;
         set_header();
     }
   a01242:
     element = Metadata;
     acc = idx.d;
-    if (!acc)
+    if (!acc) {
+        if (goto_.d)
+            std::cerr << "Returning from pr1232 with non-0 goto_\n";
         jump(drtnxt);
+    }
     acc -= 2;
     idx = acc;
     if (idx != 0) {
         acc = Array[idx.d-1].d;
         pr202();
     }
-    jump(a01123);
-  a01252:
-    do {
-        if (usable_space() < 0101) {
-            loc20 = 0;
-            acc = loc12.d;
-            free();
-            throw ERR_OVERFLOW;
+    acc = Array[idx.d].d;
+    acc >>= 15;
+    for (;;) {
+        d00012 = acc;
+        acc >>= 15;
+        m16 = acc;
+        if (!(d00012.d & 077777)) {
+            indjump(d00033);    // return from pr1232
         }
-        acc -= 0101;
-        call(pr1022,m6);
-        m16 = Metadata;
-        acc = d00024.d;
-        acc |= ONEBIT(48);
-        m16[1] = acc;
-        m16[-1] = 2;
-        mylen = 041;
-    } while (m16[-1].d == 040);
+        acc = d00012.d;
+        --m16;
+        if (m16.d) {
+            acc += 2;
+        }
+        --acc;
+        d00012 = acc;
+        if (step())
+            jump(next);
+        acc = d00012.d;
+    }
+  a01252:
+    if (usable_space() < 0101) {
+        loc20 = 0;
+        acc = loc12.d;
+        free();
+        throw ERR_OVERFLOW;
+    }
+    acc -= 0101;
+    call(pr1022,m6);
+    m16 = Metadata;
+    m16[1] = d00024.d | ONEBIT(48);
+    m16[-1] = 2;
+    mylen = 041;
     acc = loc20.d;
     jump(a01311);
   split:
@@ -1783,9 +1784,12 @@ int getlen() {
     return itmlen.d;
 }
 
-Error cleard() {
+Error cleard(bool forward) {
     key = 0;
-    orgcmd = 030272302;
+    if (forward)
+        orgcmd = 0302723000401;
+    else
+        orgcmd = 030272302;
     return eval();
 }
 

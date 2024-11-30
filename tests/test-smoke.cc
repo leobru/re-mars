@@ -107,7 +107,7 @@ TEST(mars, coverage)
     // Getting back
     ASSERT_EQ(getd(elt.c_str(), PAGE2, 1023), ERR_SUCCESS);
     EXPECT_TRUE(compare(PAGE2, PAGE1+1, 1023));
-    EXPECT_EQ(deld(elt.c_str()), ERR_SUCCESS);
+    EXPECT_EQ(cleard(true), ERR_SUCCESS);
 
     // Putting 59 elements of varying sizes with numerical keys (key 0 is invalid)
     for (int i = 0; i <= 59; ++i) {
@@ -123,7 +123,7 @@ TEST(mars, coverage)
         k = prev();
     }
 
-    EXPECT_EQ(cleard(), ERR_NO_RECORD);
+    EXPECT_EQ(cleard(false), ERR_NO_RECORD);
     IOflush();
 
     run_command(result, "sha1sum 52000[0-2]");

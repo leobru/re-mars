@@ -12,7 +12,7 @@ LONGTESTS       = test-maxsize
 TESTS_SHA       = $(addsuffix .sha,$(TESTS))
 TESTS_EXE       = $(addsuffix .exe,$(TESTS))
 LONGTESTS_SHA   = $(addsuffix .sha,$(LONGTESTS))
-OBJS            = ../mars.o test-smoke.o test-stores.o fixture.o
+OBJS            = ../mars.o test-smoke.o test-stores.o test-random.o fixture.o
 GTEST           = gtest-all.o gtest_main.o
 
 # Find googletest sources
@@ -45,7 +45,7 @@ longtests:      $(LONGTESTS_SHA)
 .PRECIOUS: %.exe ../mars.o
 
 %.exe: %.o ../mars.o
-		$(CXX) -o $@ $^
+		$(CXX) $(CXXFLAGS) -o $@ $^
 
 .cc.o:
 		$(CXX) $(CXXFLAGS) -I$(GTEST_INC) -Wall -c -I.. -o $@ $<
