@@ -35,7 +35,6 @@ struct word {
     uint64_t& store(uint64_t x);
     word& operator=(word x);
     word& operator=(word * x);
-    inline word& operator*();
     inline uint64_t operator&();
     inline word& operator[](word x);
     word operator+(word x) const { return d + x.d; }
@@ -48,6 +47,7 @@ struct word {
     word& operator++() { (*this) = d + 1; return *this; }
     word& operator--() { (*this) = d - 1; return *this; }
 };
+word& deref(const word &x);
 
 struct MarsFlags {
     bool dump_txt_zones = false;

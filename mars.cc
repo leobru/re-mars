@@ -109,8 +109,8 @@ void dump() {
     sav = bdvect;
 }
 
-word& word::operator*() {
-    unsigned a = d & 077777;
+word& deref(const word &x) {
+    unsigned a = x.d & 077777;
     if (a >= sizeof(data)/sizeof(*data)) {
       std::cerr << std::format("Address {:o} out of range\n", a);
         abort();
@@ -118,7 +118,7 @@ word& word::operator*() {
     return data[a];
 }
 
-word& word::operator[](word x) { return *(*this + x.d); }
+word& word::operator[](word x) { return deref(*this + x.d); }
 
 uint64_t word::operator&() { return this-data; }
 
@@ -360,7 +360,7 @@ void getzon() {
     m16 = curbuf;
     if (m16[0] == zonkey)
         return;
-    std::cerr << std::format("Corruption: zonkey = {:o}, data = {:o}\n", zonkey.d, (*m16).d);
+    std::cerr << std::format("Corruption: zonkey = {:o}, data = {:o}\n", zonkey.d, deref(m16).d);
     throw ERR_BAD_PAGE;
 }
 
@@ -469,7 +469,7 @@ void find_item(uint64_t arg) {
 
 void info(uint64_t arg) {
     find_item(arg);
-    acc = (*aitem).d;
+    acc = deref(aitem).d;
     desc1 = acc;
     acc &= 077777;
     itmlen = acc;
@@ -489,7 +489,7 @@ void totext() {
 }
 
 void set_header() {
-    *aitem = acc;
+    deref(aitem) = acc;
     dirty(1);
 }
 
@@ -585,7 +585,7 @@ void setctl(uint64_t location) {
     IOword = bdtab.d << 20 | IOpat.d | ONEBIT(40);
     IOcall(IOword);
     m16 = curbuf = bdtab;
-    acc = (*m16).d;
+    acc = deref(m16).d;
     if (acc != DBkey.d)
         throw ERR_BAD_CATALOG;
     idx = 0;
@@ -760,7 +760,7 @@ bool a00334() {
     if (m5.d) {
         aitem = aitem.d + temp.d;
         curpos = curpos.d - temp.d;
-        acc = (*aitem).d;
+        acc = deref(aitem).d;
         desc1 = acc;
     } else {
         acc = (curExtent.d >> 20) & BITS(19);
@@ -789,7 +789,7 @@ void assign_and_incr() {
     m16 = acc;
     m5 = (curcmd >> 6) & 077;
     curcmd = curcmd >> 6;
-    m13[m16] = (*m13[m5]).d;
+    m13[m16] = deref(m13[m5]).d;
     ++m13[m5];
 }
 
@@ -898,7 +898,7 @@ Error eval() try {
         setctl(dbdesc.d);
         break;
     case 032:
-        *aitem = loc12;
+        deref(aitem) = loc12;
         dirty(2);
         break;
     case 033:
@@ -982,7 +982,7 @@ Error eval() try {
         // curcmd is ..... dst 54
         m16 = (curcmd >> 6) & 077;
         curcmd = curcmd >> 6;
-        *m13[m16] = loc12;
+        deref(m13[m16]) = loc12;
         break;
     case 055:
         if (mars_flags.dump_diffs)
@@ -1148,7 +1148,7 @@ Error eval() try {
     work2 = acc;
     work = acc + element.d;
     do {
-        *m5 = m5[2].d;
+        deref(m5) = m5[2].d;
         ++m5;
     } while (m5 != work);
     acc = work2.d - 2;
@@ -1474,7 +1474,7 @@ Error eval() try {
         }
         m5 = m16;
         date();
-        *aitem = acc;
+        deref(aitem) = acc;
         dirty(1);
         acc = curExtent.d & (BITS(19) << 20);
         if (!acc)
@@ -1519,7 +1519,7 @@ Error eval() try {
         indjump(m6);
     }
     usable_space();
-    acc = (*aitem).d & 077777;
+    acc = deref(aitem).d & 077777;
     acc += itmlen.d;
     if (acc < mylen.d) {
         throw ERR_OVERFLOW;
