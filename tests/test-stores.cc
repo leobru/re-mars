@@ -30,11 +30,10 @@ static bool compare(int start1, int start2, int len) {
 TEST(mars, initdb_stores)
 {
     mars_flags.zero_date = true;
-    mars_flags.trace_stores = true;
-    mars_flags.verbose = true;
+    mars_flags.memoize_stores = true;
+    //mars_flags.verbose = true;
 
     InitDB(052, 0, 3);
-    IOflush();
 
     EXPECT_EQ(get_store(01417), 0'0000'0000'0000'4000u);
     EXPECT_EQ(get_store(01416), 0'0000'0000'0000'6000u);
@@ -194,14 +193,13 @@ TEST(mars, setdb_stores)
     const std::string fname = tobesm("TEST");
 
     mars_flags.zero_date = true;
-    mars_flags.trace_stores = false; // enable later
-    mars_flags.verbose = true;
+    //mars_flags.verbose = true;
 
     // Initializing the database catalog: 1 zone, starting from zone 0 on LUN 52 (arbitrary)
     InitDB(052, 0, catalog_len);
 
     // Setting the root location
-    mars_flags.trace_stores = true;
+    mars_flags.memoize_stores = true;
     std::cout << "SetDB()\n";
     SetDB(052, 0, catalog_len);
 
@@ -301,8 +299,7 @@ TEST(mars, cleard_stores)
     const std::string fname = tobesm("TEST");
 
     mars_flags.zero_date = true;
-    mars_flags.trace_stores = false; // enable later
-    mars_flags.verbose = true;
+    //mars_flags.verbose = true;
 
     // Initializing the database catalog: 1 zone, starting from zone 0 on LUN 52 (arbitrary)
     InitDB(052, 0, catalog_len);
@@ -366,7 +363,7 @@ TEST(mars, cleard_stores)
     }
 
     // A termination error is expected
-    mars_flags.trace_stores = true;
+    mars_flags.memoize_stores = true;
     std::cout << "cleard()\n";
     cleard();
     // TODO: more stores

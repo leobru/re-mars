@@ -53,6 +53,7 @@ struct MarsFlags {
     bool dump_txt_zones = false;
     bool verbose = false;
     bool trace_stores = false;
+    bool memoize_stores = false;
     bool zero_date = false;
     bool dump_diffs = false;
 };
@@ -102,7 +103,7 @@ uint64_t find(const char * k), find(uint64_t k);
 
 int getlen(), avail();
 
-// Get result of store(), when flag trace_stores is enabled.
+// Get result of store(), when flag memoize_stores is enabled.
 uint64_t get_store(size_t index);
 
 #endif

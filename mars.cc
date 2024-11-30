@@ -38,6 +38,8 @@ uint64_t& word::store(uint64_t x) {
     if (index < 16) x &= 077777;
     if (trace_stores && index > 16 && index < RAM_LENGTH) {
         std::cerr << std::format("       {:05o}: store {:016o}\n", index, x);
+    }
+    if (mars_flags.memoize_stores && index > 16 && index < RAM_LENGTH) {
         all_stores[index] = x;
     }
     d=x;
@@ -48,6 +50,8 @@ word& word::operator=(word x) {
     if (index < 16) x.d &= 077777;
     if (trace_stores && index > 16 && index < RAM_LENGTH) {
         std::cerr << std::format("       {:05o}: store {:016o}\n", index, x.d);
+    }
+    if (mars_flags.memoize_stores && index > 16 && index < RAM_LENGTH) {
         all_stores[index] = x.d;
     }
     d=x.d;
@@ -62,6 +66,8 @@ word& word::operator=(word * x) {
     size_t index = this-data;
     if (trace_stores && index > 16 && index < RAM_LENGTH) {
         printf("       %05lo: store %016lo\n", index, offset);
+    }
+    if (mars_flags.memoize_stores && index > 16 && index < RAM_LENGTH) {
         all_stores[index] = offset;
     }
     d=offset;
