@@ -25,7 +25,9 @@ enum Error {
 };
 
 struct word {
+    word * const data = nullptr;
     uint64_t d;
+    word(word * base, uint64_t x) : data(base), d(x) { }
     word(uint64_t x = 0) : d(x) { }
     uint64_t& operator=(long unsigned int x) { return store(x); }
     uint64_t& operator=(int x) { return store(x); }

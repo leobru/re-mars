@@ -34,6 +34,7 @@ word & m13 = data[13];
 std::unordered_map<size_t, uint64_t> all_stores;
 
 uint64_t& word::store(uint64_t x) {
+    assert(data);
     size_t index = this-data;
     if (index < 16) x &= 077777;
     if (trace_stores && index > 16 && index < RAM_LENGTH) {
@@ -46,6 +47,7 @@ uint64_t& word::store(uint64_t x) {
     return d;
 }
 word& word::operator=(word x) {
+    assert(data);
     size_t index = this-data;
     if (index < 16) x.d &= 077777;
     if (trace_stores && index > 16 && index < RAM_LENGTH) {
@@ -58,6 +60,7 @@ word& word::operator=(word x) {
     return *this;
 }
 word& word::operator=(word * x) {
+    assert(data);
     ptrdiff_t offset = x-data;
     if (offset < 0 || offset >= 077777) {
         std::cerr << std::format("Cannot point to words outside of RAM, offset = {:o}\n", offset);
@@ -111,14 +114,16 @@ void dump() {
 
 word& word::operator*() {
     unsigned a = d & 077777;
-    if (a >= sizeof(data)/sizeof(*data)) {
+    if (a >= RAM_LENGTH) {
       std::cerr << std::format("Address {:o} out of range\n", a);
         abort();
     }
     return data[a];
 }
 
-word& word::operator[](word x) { return *(*this + x.d); }
+word& word::operator[](word x) {
+    return *word(data, d+x.d);
+}
 
 uint64_t word::operator&() { return this-data; }
 
@@ -150,7 +155,7 @@ word & syncw = data[BDVECT+6];
 word & givenp = data[BDVECT+7];
 word & key = data[BDVECT+010];
 word & erhndl = data[BDVECT+011];
-word & loc12 = data[BDVECT+012];
+word & curDescr = data[BDVECT+012];
 word & myloc = data[BDVECT+013];
 word & loc14 = data[BDVECT+014];
 word & mylen = data[BDVECT+015];
@@ -180,7 +185,7 @@ word & loc54 = data[BDVECT+054];
 word * const Metadata = data+BDVECT+056;
 word & loc116 = data[BDVECT+0116];
 word & loc117 = data[BDVECT+0117];
-word & loc120 = data[BDVECT+0120];
+word * Loc120 = data+BDVECT+0120;
 word & loc157 = data[BDVECT+0157];
 word & loc160 = data[BDVECT+0160];
 word & curExtent = data[BDVECT+0220];
@@ -261,7 +266,17 @@ const char * msg[] = {
     "DB is locked", "No current record", "No prev. record", "No next record",
     "Wrong password" };
 
+#pragma GCC diagnostic ignored "-Wclass-memaccess"
 struct Page {
+    Page() {}
+    Page& operator=(const Page & p) {
+        memcpy(this, &p, sizeof(Page));
+        return *this;
+    }
+    Page(word * base) {
+        for (int i = 0; i < 1024; ++i)
+            w[i] = word(base, 0);
+    }
     word w[1024];
 };
 
@@ -279,7 +294,9 @@ void IOflush() {
             std::cerr << std::format("Could not open {} ({})\n", nuzzzz, strerror(errno));
             exit(1);
         }
-        fwrite(&it.second, 1, sizeof(Page), f);
+        for (int i = 0; i < 1024; ++i) {
+            fwrite(&it.second.w[i].d, 1, sizeof(uint64_t), f);
+        }
         fclose(f);
 
         if (mars_flags.dump_txt_zones) {
@@ -318,14 +335,15 @@ void IOcall(word is) {
             FILE * f = fopen(nuzzzz.c_str(), "r");
             if (!f) {
                 std::cerr << "\tZone " << nuzzzz << " does not exist yet\n";
-                *reinterpret_cast<Page*>(data+page*1024) = Page();
+                *reinterpret_cast<Page*>(data+page*1024) = Page(data);
                 trace_stores = stores;
                 return;
             }
             if (verbose)
                 std::cerr << "\tFirst time - reading from disk\n";
-
-            fread(data+page*1024, 1024, sizeof(uint64_t), f);
+            for (int i = 0; i < 1024; ++i) {
+                fread(&data[page*1024+i].d, 1, sizeof(uint64_t), f);
+            }
             fclose(f);
             DiskImage[nuzzzz] = *reinterpret_cast<Page*>(data+page*1024);
         } else
@@ -913,7 +931,7 @@ Error eval() try {
         setctl(dbdesc.d);
         break;
     case 032:
-        *aitem = loc12;
+        *aitem = curDescr;
         dirty(2);
         break;
     case 033:
@@ -996,7 +1014,7 @@ Error eval() try {
         // curcmd is ..... dst 54
         m16 = (curcmd >> 6) & 077;
         curcmd = curcmd >> 6;
-        *m13[m16] = loc12;
+        *m13[m16] = curDescr;
         break;
     case 055:
         if (mars_flags.dump_diffs)
@@ -1092,11 +1110,11 @@ Error eval() try {
     }
     acc = m16[m5+1].d;
     pr202();
-    m16 = &loc120;
+    m16 = Loc120;
     jump(a00164);
   cmd36:
     m16 = element;
-    m16[Array[idx.d]+1] = loc12;
+    m16[Array[idx.d]+1] = curDescr;
     jump(a01160);
     // pr376 (make_metablock) was here
   cmd4:
@@ -1159,27 +1177,26 @@ Error eval() try {
     if (!acc)
         jump(a00667);
     acc = loc116.d;
-  a00721:
-    acc &= 077777;
-    if (!acc) {
-        d00011 = m16[0];
-        goto_ = target(a00730);
-        d00033 = target(a00731);
+    while (true) {
+        acc &= 077777;
+        if (!acc) {
+            d00011 = m16[0];
+            goto_ = target(a00730);
+            d00033 = target(a00731);
+        }
+        jump(a01160);
+      a00730:
+        jump(a01242);
+      a00731:
+        acc = d00011.d;
+        m16 = element;
+        m16[Array[idx.d]] = acc;
+        acc = Array[idx.d].d;
     }
-    jump(a01160);
-  a00730:
-    jump(a01242);
-  a00731:
-    acc = d00011.d;
-    m16 = element;
-    m16[Array[idx.d]] = acc;
-    acc = Array[idx.d].d;
-    jump(a00721);
-    // date() was here
   alloc:
     usrloc = acc;
     call(pr1022,m6);
-    loc12 = d00024;
+    curDescr = d00024;
     jump(cmd0);
   pr1022:
     date();
@@ -1282,7 +1299,7 @@ Error eval() try {
     throw ERR_OVERFLOW;
   inskey:
     d00011 = key;
-    acc = loc12.d;
+    acc = curDescr.d;
     adescr = acc;
     jump(a01140);
   a01136:
@@ -1335,7 +1352,7 @@ Error eval() try {
     }
     if (usable_space() < work.d) {
         loc20 = 0;
-        acc = loc12.d;
+        acc = curDescr.d;
         free();
         throw ERR_OVERFLOW;
     }
@@ -1360,7 +1377,7 @@ Error eval() try {
     loc117 = acc;
     acc &= BITS(19) << 10;
     d00032 = (acc << 19) & BITS(48);
-    m16 = &loc120;
+    m16 = Loc120;
     goto_ = target(a01231);
     usrloc = m16.d - 1;
     acc = m16[-1].d & 01777;
@@ -1420,7 +1437,7 @@ Error eval() try {
   a01252:
     if (usable_space() < 0101) {
         loc20 = 0;
-        acc = loc12.d;
+        acc = curDescr.d;
         free();
         throw ERR_OVERFLOW;
     }
@@ -1579,6 +1596,9 @@ Error eval() try {
 }
 
 void pasbdi() {
+    for (size_t i = 0; i < RAM_LENGTH; ++i) {
+        new (data+i) word(data, 0);
+    }
     // Faking MARS words
     m16 = 04700;
     m13 = 01654;
