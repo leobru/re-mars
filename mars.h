@@ -52,9 +52,9 @@ struct word {
 };
 
 class Mars {
-    class MarsImpl & impl;
+    struct MarsImpl & impl;
     friend struct word;
-    friend class MarsImpl;
+    friend struct MarsImpl;
   public:
     struct bdvect_t {
         static const size_t SIZE = 168;
