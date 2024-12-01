@@ -266,18 +266,17 @@ const char * msg[] = {
     "DB is locked", "No current record", "No prev. record", "No next record",
     "Wrong password" };
 
-#pragma GCC diagnostic ignored "-Wclass-memaccess"
 struct Page {
-    Page() {}
-    Page& operator=(const Page & p) {
-        memcpy(this, &p, sizeof(Page));
-        return *this;
-    }
-    Page(word * base) {
+    Page() { }
+    Page(word * page) {
         for (int i = 0; i < 1024; ++i)
-            w[i] = word(base, 0);
+            w[i] = page[i].d;
     }
-    word w[1024];
+    void to_memory(word * page) {
+        for (int i = 0; i < 1024; ++i)
+            page[i].d = w[i];
+    }
+    uint64_t w[1024];
 };
 
 std::unordered_map<std::string, Page> DiskImage;
@@ -294,9 +293,7 @@ void IOflush() {
             std::cerr << std::format("Could not open {} ({})\n", nuzzzz, strerror(errno));
             exit(1);
         }
-        for (int i = 0; i < 1024; ++i) {
-            fwrite(&it.second.w[i].d, 1, sizeof(uint64_t), f);
-        }
+        fwrite(&it.second, 1, sizeof(Page), f);
         fclose(f);
 
         if (mars_flags.dump_txt_zones) {
@@ -335,24 +332,23 @@ void IOcall(word is) {
             FILE * f = fopen(nuzzzz.c_str(), "r");
             if (!f) {
                 std::cerr << "\tZone " << nuzzzz << " does not exist yet\n";
-                *reinterpret_cast<Page*>(data+page*1024) = Page(data);
+                for (int i = page*1024; i < (page+1)*1024; ++i)
+                    data[i] = ARBITRARY_NONZERO;
                 trace_stores = stores;
                 return;
             }
             if (verbose)
                 std::cerr << "\tFirst time - reading from disk\n";
-            for (int i = 0; i < 1024; ++i) {
-                fread(&data[page*1024+i].d, 1, sizeof(uint64_t), f);
-            }
+            fread(&DiskImage[nuzzzz], 1, sizeof(Page), f);
             fclose(f);
-            DiskImage[nuzzzz] = *reinterpret_cast<Page*>(data+page*1024);
+            DiskImage[nuzzzz].to_memory(data+page*1024);
         } else
-            *reinterpret_cast<Page*>(data+page*1024) = it->second;
+            it->second.to_memory(data+page*1024);
     } else {
         // write
         if (verbose)
             std::cerr << std::format("Writing {} from address {:o}\n", nuzzzz, page*1024);
-        DiskImage[nuzzzz] = *reinterpret_cast<Page*>(data+page*1024);
+        DiskImage[nuzzzz] = data+page*1024;
     }
     mars_flags.trace_stores = stores;
 }
