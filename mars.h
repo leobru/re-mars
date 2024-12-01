@@ -53,7 +53,7 @@ struct word {
 
 class Mars {
     class MarsImpl & impl;
-    friend class word;
+    friend struct word;
     friend class MarsImpl;
   public:
     struct bdvect_t {

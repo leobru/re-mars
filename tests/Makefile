@@ -47,7 +47,7 @@ longtests:      $(LONGTESTS_SHA)
 %.exe: %.o ../mars.o
 		$(CXX) $(CXXFLAGS) -o $@ $^
 
-.cc.o:
+%.o: %.cc ../mars.h
 		$(CXX) $(CXXFLAGS) -I$(GTEST_INC) -Wall -c -I.. -o $@ $<
 
 clean:
