@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <format>
 #include <algorithm>
 #include <ctime>
 #include <getopt.h>
@@ -42,13 +43,15 @@ int main(int argc, char ** argv) {
     int catalog_len = 1;
     int file_len = 0427;
     int startrec = 1, numrec = 65536;
-    bool clear = false;
+    int space;
+    int clear = 0;
     std::string fname;
 
-    mars_flags.zero_date = true;
+    Mars mars;
+    mars.zero_date = true;
 
     for (;;) {
-        c = getopt (argc, argv, "inhVtsicdL:l:f:R:r:");
+        c = getopt (argc, argv, "inhVtsiCcdL:l:f:R:r:");
         if (c < 0)
             break;
         switch (c) {
@@ -57,7 +60,7 @@ int main(int argc, char ** argv) {
             usage ();
             return 0;
         case 'V':
-            mars_flags.verbose = true;
+            mars.verbose = true;
             break;
         case 'i':
             do_init = false;
@@ -66,13 +69,13 @@ int main(int argc, char ** argv) {
             newfile = false;
             break;
         case 't':
-            mars_flags.dump_txt_zones = true;
+            mars.dump_txt_zones = true;
             break;
         case 's':
-            mars_flags.trace_stores = true;
+            mars.trace_stores = true;
             break;
         case 'd':
-            mars_flags.zero_date = false;
+            mars.zero_date = false;
             break;
         case 'L':
             catalog_len = strtol(optarg, nullptr, 8);
@@ -90,7 +93,11 @@ int main(int argc, char ** argv) {
             fname = optarg;
             break;
         case 'c':
-            clear = true;
+            clear = -1;
+            break;
+        case 'C':
+            clear = 1;
+            break;
         }
     }
 
@@ -104,55 +111,44 @@ int main(int argc, char ** argv) {
     fname = tobesm(fname);
     // Initializing the database catalog: 1 zone, starting from zone 0 on LUN 52 (arbitrary)
     if (do_init) {
-        InitDB(052, 0, catalog_len);
+        mars.InitDB(052, 0, catalog_len);
     }
     // Setting the root location
-    SetDB(052, 0, catalog_len);
+    mars.SetDB(052, 0, catalog_len);
 
-    if (mars_flags.verbose) {
-        int space = avail();
-        std::cerr << "Usable space in root catalog: "
-                  << std::oct << space << '\n';
+    if (mars.verbose) {
+        space = mars.avail();
+        std::cerr << std::format("Usable space in root catalog: {:o}\n", space);
     }
     // Making a new array of 'len' zones, starting after the root catalog
     if (newfile) {
-        newd(fname.c_str(), 052, catalog_len, file_len);
+        mars.newd(fname.c_str(), 052, catalog_len, file_len);
     }
     // Opening it
-    // mars_flags.trace_stores = true;
-    opend(fname.c_str());
-    mars_flags.trace_stores = false;
-    if (mars_flags.verbose) {
-        int space = avail();
-        std::cerr << "Usable space in the file: "
-                  << std::oct << space << '\n';
-    }
+    // mars.trace_stores = true;
+    mars.opend(fname.c_str());
+    mars.trace_stores = false;
+    space = mars.avail();
+    std::cout << std::format("Usable space in the file: {:o}\n", space);
 
     // Putting elements of size 0 until the DB overflows
     for (int i = startrec; i <= numrec; ++i) {
       // std::cerr << "Putting " << std::dec << i << '\n';
       // if (i == numrec) mars_flags.trace_stores = true;
-      if (putd(i | 024LL << 42, 0, 0)) {
+      if (mars.putd(i | 024LL << 42, 0, 0)) {
             // An overflow error is expected at the last iteration
-            std::cerr << "\twhile putting " << std::dec << i << '\n';
+            std::cerr << "\twhile putting " << i << '\n';
             break;
         }
     }
-    mars_flags.trace_stores = false;
-    if (mars_flags.verbose) {
-        int space = avail();
-        std::cerr << "Remaining space in the file: "
-                  << std::oct << space << '\n';
-    }
+    mars.trace_stores = false;
+    space = mars.avail();
+    std::cout << std::format("Remaining space in the file: {:o}\n", space);
 
     if (clear) {
-        cleard();               // A termination error is expected
+        mars.cleard(clear > 0);
 
-        if (mars_flags.verbose) {
-            int space = avail();
-            std::cerr << "After clearing: "
-                      << std::oct << space << '\n';
-        }
+        space = mars.avail();
+        std::cout << std::format("After clearing: {:o}\n", space);
     }
-    IOflush();
 }

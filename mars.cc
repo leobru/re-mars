@@ -1639,13 +1639,6 @@ void MarsImpl::pasbdi() {
     m6 = 022731;
     bdtab = Mars::BDTAB;
     bdbuf = Mars::BDBUF;
-    data[BDSYS+0042] = 02300'0150'0000'0000;
-    data[BDSYS+0043] = 02000'0027'2300'0160;
-    data[BDSYS+0044] = 02010'1532'2300'0156;
-    data[BDSYS+0045] = 02010'1533'0000'0000;
-    data[BDSYS+0046] = 00040'0016'2300'0410;
-    data[BDSYS+0047] = 02000'0011'2300'0375;
-    data[BDSYS+0050] = 05400'0242'2300'0404;
     abdv = BDVECT;
     for (int i = 0; i < 041; ++i)
         data[FAKEBLK+i].d = ARBITRARY_NONZERO;
@@ -1677,7 +1670,7 @@ Error Mars::InitDB(int lun, int start, int len) {
 Error Mars::newd(const char * k, int lun, int start, int len) {
     int lnuzzzz = to_lnuzzzz(lun, start, len);
     if (verbose)
-        std::cerr << "Running newd('" << k << "', " << std::oct << lnuzzzz << ")\n";
+        std::cerr << std::format("Running newd('{}', {:o})\n", k, lnuzzzz);
     impl.key = *reinterpret_cast<const uint64_t*>(k);
     data[077776] = lnuzzzz;
     data[077777] = (impl.key.d << 10) & BITS(48);
@@ -1687,9 +1680,9 @@ Error Mars::newd(const char * k, int lun, int start, int len) {
     impl.orgcmd = 0;
     impl.myloc = 077776;
     impl.mylen = 2;
-    impl.orgcmd = 02621151131LL;
+    impl.orgcmd = 02621151131LL; // ROOT FIND NOTFOUND PUT ADDKEY
     impl.eval();
-    impl.orgcmd = 010121411;
+    impl.orgcmd = 010121411;    // FIND FOUND SETCTL MKCTL
     return impl.eval();
 }
 
@@ -1697,7 +1690,7 @@ Error Mars::opend(const char * k) {
     if (verbose)
         std::cerr << "Running opend('" << k << "')\n";
     impl.key = *reinterpret_cast<const uint64_t*>(k);
-    impl.orgcmd = 02512141131;
+    impl.orgcmd = 02512141131;  // ROOT FIND FOUND SETCTL OPEN
     return impl.eval();
 }
 
@@ -1714,7 +1707,7 @@ Error Mars::putd(const char * k, int loc, int len) {
 
 Error Mars::putd(uint64_t k, int loc, int len) {
     if (verbose) {
-        std::cerr << std::format("Running putd({:016o}, {:05o}, {})\n", k, loc, len);
+        std::cerr << std::format("Running putd({:016o}, {:05o}:{})\n", k, loc, len);
     }
     impl.key = k;
     impl.mylen = len;
@@ -1726,8 +1719,7 @@ Error Mars::putd(uint64_t k, int loc, int len) {
 Error Mars::putd(const char * k, const char * v) {
     size_t len = (strlen(v)+7)/8;
     if (verbose)
-        std::cerr << "Running putd('" << k << "', '"
-                  << v << "':" << len << ")\n";
+        std::cerr << std::format("Running putd('{}', '{}':{})\n", k, v, len);
     impl.key = *reinterpret_cast<const uint64_t*>(k);
     strcpy((char*)(data+RAM_LENGTH-len), v);
     impl.mylen = len;
@@ -1740,7 +1732,7 @@ Error Mars::modd(const char * k, int loc, int len) {
     impl.key = *reinterpret_cast<const uint64_t*>(k);
     impl.mylen = len;
     impl.myloc = loc;
-    impl.orgcmd = 020402621001511;
+    impl.orgcmd = 020402621001511; // FIND NOTFOUND ? (PUT ADDKEY DONE) : UPDATE
     return impl.eval();
 }
 
@@ -1756,15 +1748,13 @@ Error Mars::getd(const char * k, int loc, int len) {
     impl.key = *reinterpret_cast<const uint64_t*>(k);
     impl.mylen = len;
     impl.myloc = loc;
-    impl.orgcmd = 0221411;
+    impl.orgcmd = 0221411;      // FIND FOUND GET
     return impl.eval();
 }
 
 Error Mars::getd(uint64_t k, int loc, int len) {
     if (verbose) {
-        std::cerr << "Running getd(" << std::oct << std::setw(16) << std::setfill('0') << k << ", ";
-        std::cerr << std::setw(5) << loc << ":" << std::setw(0) << std::dec << len << ")\n";
-        std::cerr.copyfmt(std::ios(nullptr));
+        std::cerr << std::format("Running getd({:016o}, {:05o}:{})\n", k, loc, len);
     }
     impl.key = k;
     impl.mylen = len;
@@ -1775,7 +1765,7 @@ Error Mars::getd(uint64_t k, int loc, int len) {
 
 Error Mars::deld(const char * k) {
     impl.key = *reinterpret_cast<const uint64_t*>(k);
-    impl.orgcmd = 027231411;
+    impl.orgcmd = 027231411;    // FIND FOUND FREE DELKEY
     return impl.eval();
 }
 
@@ -1792,7 +1782,7 @@ Error Mars::root() {
 }
 
 uint64_t Mars::first() {
-    impl.orgcmd = 0401;
+    impl.orgcmd = 0401;         // BEGIN NEXT
     impl.eval();
     return impl.curkey.d;
 }
@@ -1839,9 +1829,9 @@ int Mars::getlen() {
 Error Mars::cleard(bool forward) {
     impl.key = 0;
     if (forward)
-        impl.orgcmd = 0302723000401;
+        impl.orgcmd = 0302723000401; // BEGIN NEXT ? (FREE DELKEY LOOP) : empty
     else
-        impl.orgcmd = 030272302;
+        impl.orgcmd = 030272302; // LAST FREE DELKEY LOOP (terminates with ERR_NO_RECORD)
     return impl.eval();
 }
 
@@ -1856,54 +1846,3 @@ Error Mars::eval(uint64_t microcode) {
     impl.orgcmd = microcode;
     return impl.eval();
 }
-#if 0
-<<<<<<< Updated upstream
-// struct Bdvect
-word & outadr = data[BDVECT+1];
-word & orgcmd = data[BDVECT+3];
-word & curcmd = data[BDVECT+5];
-word & syncw = data[BDVECT+6];
-word & givenp = data[BDVECT+7];
-word & key = data[BDVECT+010];
-word & erhndl = data[BDVECT+011];
-word & curDescr = data[BDVECT+012];
-word & myloc = data[BDVECT+013];
-word & loc14 = data[BDVECT+014];
-word & mylen = data[BDVECT+015];
-word & bdbuf = data[BDVECT+016];
-word & bdtab = data[BDVECT+017];
-word & loc20 = data[BDVECT+020];
-word * const Array = data+BDVECT+021;
-word & dbdesc = data[BDVECT+030];
-word & DBkey = data[BDVECT+031];
-word & savedp = data[BDVECT+032];
-word & frebas = data[BDVECT+034];
-word & adescr = data[BDVECT+035];
-word & limit = data[BDVECT+036];
-word & curkey = data[BDVECT+037];
-word & endmrk = data[BDVECT+040];
-word & desc1 = data[BDVECT+041];
-word & desc2 = data[BDVECT+042];
-word & IOpat = data[BDVECT+044];
-word & curpos = data[BDVECT+045];
-word & aitem = data[BDVECT+046];
-word & itmlen = data[BDVECT+047];
-word & element = data[BDVECT+050];
-word & dblen = data[BDVECT+051];
-word & curlen = data[BDVECT+053];
-word & loc54 = data[BDVECT+054];
-// Metadata[-1] (loc55) is also used
-word * const Metadata = data+BDVECT+056;
-word & loc116 = data[BDVECT+0116];
-word & loc117 = data[BDVECT+0117];
-word * Loc120 = data+BDVECT+0120;
-word & loc157 = data[BDVECT+0157];
-word & loc160 = data[BDVECT+0160];
-word & curExtent = data[BDVECT+0220];
-word & curbuf = data[BDVECT+0241];
-word & idx = data[BDVECT+0242];
-word & curZone = data[BDVECT+0244];
-word & loc246 = data[BDVECT+0246];
-word & dirty = data[BDVECT+0247];
-=======
-#endif

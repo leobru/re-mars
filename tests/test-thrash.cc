@@ -48,7 +48,8 @@ int main(int argc, char ** argv) {
     bool clear = true;
     std::string fname;
 
-    mars_flags.zero_date = true;
+    Mars mars;
+    mars.zero_date = true;
 
     for (;;) {
         c = getopt (argc, argv, "inhVtsicdm:L:l:f:r:R:");
@@ -60,7 +61,7 @@ int main(int argc, char ** argv) {
             usage ();
             return 0;
         case 'V':
-            mars_flags.verbose = true;
+            mars.verbose = true;
             break;
         case 'i':
             do_init = false;
@@ -69,13 +70,13 @@ int main(int argc, char ** argv) {
             newfile = false;
             break;
         case 't':
-            mars_flags.dump_txt_zones = true;
+            mars.dump_txt_zones = true;
             break;
         case 's':
-            mars_flags.trace_stores = true;
+            mars.trace_stores = true;
             break;
         case 'd':
-            mars_flags.zero_date = false;
+            mars.zero_date = false;
             break;
         case 'L':
             catalog_len = strtol(optarg, nullptr, 8);
@@ -111,22 +112,22 @@ int main(int argc, char ** argv) {
     fname = tobesm(fname);
     // Initializing the database catalog: 1 zone, starting from zone 0 on LUN 52 (arbitrary)
     if (do_init) {
-        InitDB(052, 0, catalog_len);
+        mars.InitDB(052, 0, catalog_len);
     }
     // Setting the root location
-    SetDB(052, 0, catalog_len);
+    mars.SetDB(052, 0, catalog_len);
 
-    if (mars_flags.verbose) {
-        int space = avail();
+    if (mars.verbose) {
+        int space = mars.avail();
         std::cerr << std::format("Usable space in root catalog: {:o}\n", space);
     }
     // Making a new array of 'len' zones, starting after the root catalog
     if (newfile) {
-        newd(fname.c_str(), 052, catalog_len, file_len);
+        mars.newd(fname.c_str(), 052, catalog_len, file_len);
     }
     // Opening it
-    opend(fname.c_str());
-    int space = avail();
+    mars.opend(fname.c_str());
+    int space = mars.avail();
     std::cout << std::format("Usable space in the file: {}\n", space);
 
     for (int rep = 0; rep < repeats; rep++) {
@@ -136,30 +137,29 @@ int main(int argc, char ** argv) {
             int k = (random() % numrec) + 1;
             int size = random() % maxsize;
             std::cout << k << ' ' << size << '\n';
-            if (mars_flags.verbose)
+            if (mars.verbose)
                 std::cerr << std::format("Putting '{}' of size {}\n", k, size);
             // Memory location 010000 and up are not used, will be 0
-            if (modd(k | 024LL << 42, 010000, size)) {
+            if (mars.modd(k | 024LL << 42, 010000, size)) {
                 // An overflow error is possible
                 std::cout << std::format("Overflow when attempting to put record #{}\n", i);
                 break;
             }
         }
 
-        space = avail();
+        space = mars.avail();
         std::cout << std::format("Remaining space in the file: {}\n", space);
         std::cout << "0 0\n";
 
         if (clear || rep+1 < repeats) {
-            while (uint64_t k = last()) {
-                if (deld(k)) {
+            while (uint64_t k = mars.last()) {
+                if (mars.deld(k)) {
                     std::cerr << std::format("Unexpected error at {:o}, stopping clearing\n", k);
                     break;
                 }
             }
-            space = avail();
+            space = mars.avail();
             std::cout << std::format("After clearing: {}\n", space);
         }
     }
-    IOflush();
 }

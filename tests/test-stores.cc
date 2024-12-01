@@ -39,13 +39,6 @@ TEST(mars, initdb_stores)
 
     EXPECT_EQ(mars.get_store(01417), 0'0000'0000'0000'4000u);
     EXPECT_EQ(mars.get_store(01416), 0'0000'0000'0000'6000u);
-    EXPECT_EQ(mars.get_store(02042), 0'2300'0150'0000'0000u);
-    EXPECT_EQ(mars.get_store(02043), 0'2000'0027'2300'0160u);
-    EXPECT_EQ(mars.get_store(02044), 0'2010'1532'2300'0156u);
-    EXPECT_EQ(mars.get_store(02045), 0'2010'1533'0000'0000u);
-    EXPECT_EQ(mars.get_store(02046), 0'0040'0016'2300'0410u);
-    EXPECT_EQ(mars.get_store(02047), 0'2000'0011'2300'0375u);
-    EXPECT_EQ(mars.get_store(02050), 0'5400'0242'2300'0404u);
     EXPECT_EQ(mars.get_store(02003), 0'0000'0000'0000'1400u);
     EXPECT_EQ(mars.get_store(01430), 0'0000'0000'0352'0000u);
     EXPECT_EQ(mars.get_store(01431), 0'0000'0000'0000'4000u);
@@ -207,13 +200,6 @@ TEST(mars, setdb_stores)
 
     EXPECT_EQ(mars.get_store(01417), 0'0000'0000'0000'4000u);
     EXPECT_EQ(mars.get_store(01416), 0'0000'0000'0000'6000u);
-    EXPECT_EQ(mars.get_store(02042), 0'2300'0150'0000'0000u);
-    EXPECT_EQ(mars.get_store(02043), 0'2000'0027'2300'0160u);
-    EXPECT_EQ(mars.get_store(02044), 0'2010'1532'2300'0156u);
-    EXPECT_EQ(mars.get_store(02045), 0'2010'1533'0000'0000u);
-    EXPECT_EQ(mars.get_store(02046), 0'0040'0016'2300'0410u);
-    EXPECT_EQ(mars.get_store(02047), 0'2000'0011'2300'0375u);
-    EXPECT_EQ(mars.get_store(02050), 0'5400'0242'2300'0404u);
     EXPECT_EQ(mars.get_store(02003), 0'0000'0000'0000'1400u);
     EXPECT_EQ(mars.get_store(01403), 0'0000'0000'0000'0031u);
     EXPECT_EQ(mars.get_store(02007), 0'0000'0000'0000'4700u);

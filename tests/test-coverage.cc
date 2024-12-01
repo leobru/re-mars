@@ -62,7 +62,8 @@ int main(int argc, char ** argv) {
     int file_len = 2;
     std::string fname;
 
-    mars_flags.zero_date = true;
+    Mars mars;
+    mars.zero_date = true;
 
     for (;;) {
         c = getopt (argc, argv, "inhVtsidL:l:f:");
@@ -74,7 +75,7 @@ int main(int argc, char ** argv) {
             usage ();
             return 0;
         case 'V':
-            mars_flags.verbose = true;
+            mars.verbose = true;
             break;
         case 'i':
             do_init = false;
@@ -83,13 +84,13 @@ int main(int argc, char ** argv) {
             newfile = false;
             break;
         case 't':
-            mars_flags.dump_txt_zones = true;
+            mars.dump_txt_zones = true;
             break;
         case 's':
-            mars_flags.trace_stores = true;
+            mars.trace_stores = true;
             break;
         case 'd':
-            mars_flags.zero_date = false;
+            mars.zero_date = false;
             break;
         case 'L':
             catalog_len = strtol(optarg, nullptr, 8);
@@ -113,22 +114,21 @@ int main(int argc, char ** argv) {
     fname = tobesm(fname);
     // Initializing the database catalog: 1 zone, starting from zone 0 on LUN 52 (arbitrary)
     if (do_init) {
-        InitDB(052, 0, catalog_len);
+        mars.InitDB(052, 0, catalog_len);
     }
     // Setting the root location
-    SetDB(052, 0, catalog_len);
+    mars.SetDB(052, 0, catalog_len);
 
-    if (mars_flags.verbose) {
-        int space = avail();
-        std::cerr << "Usable space in root catalog: "
-                  << std::oct << space << '\n';
+    if (mars.verbose) {
+        int space = mars.avail();
+        std::cerr << std::format("Usable space in root catalog: {:o}\n", space);
     }
     // Making a new array of 'len' zones, starting after the root catalog
     if (newfile) {
-        newd(fname.c_str(), 052, catalog_len, file_len);
+        mars.newd(fname.c_str(), 052, catalog_len, file_len);
     }
     // Opening it
-    opend(fname.c_str());
+    mars.opend(fname.c_str());
 
     const int PAGE1 = 010000;
     const int PAGE2 = 012000;
@@ -140,41 +140,41 @@ int main(int argc, char ** argv) {
     std::string elt = "A";
     elt.resize(8);
     // Putting one half of it to the DB
-    modd(elt.c_str(), PAGE1, 512);
+    mars.modd(elt.c_str(), PAGE1, 512);
     // Putting all of it (will be split: max usable words in a zone = 01775)
-    modd(elt.c_str(), PAGE1, 1024);
+    mars.modd(elt.c_str(), PAGE1, 1024);
     // Again (exact match of length)
-    modd(elt.c_str(), PAGE1, 1024);
+    mars.modd(elt.c_str(), PAGE1, 1024);
     // With smaller length (reusing the block)
-    modd(elt.c_str(), PAGE1+1, 1023);
+    mars.modd(elt.c_str(), PAGE1+1, 1023);
     // Getting back
-    getd(elt.c_str(), PAGE2, 1023);
+    mars.getd(elt.c_str(), PAGE2, 1023);
     if (!compare(PAGE2, PAGE1+1, 1023))
         exit(1);
     // Done with it
-    deld(elt.c_str());
+    mars.deld(elt.c_str());
 
     // Putting 59 elements of varying sizes with numerical keys (key 0 is invalid)
     for (int i = 0; i <= 59; ++i) {
-        if (mars_flags.verbose)
+        if (mars.verbose)
             std::cerr << "Putting " << i << '\n';
-        if (putd(i+1, PAGE1+1, i)) {
+        if (mars.putd(i+1, PAGE1+1, i)) {
             // An overflow error is expected at the last iteration
             std::cerr << "\twhile putting " << std::dec << i << '\n';
         }
     }
 
-    uint64_t k = last();
+    uint64_t k = mars.last();
     while (k) {
-        int len = getlen();
-        if (mars_flags.verbose)
+        int len = mars.getlen();
+        if (mars.verbose)
             std::cout << "Found " << std::oct << k << ' ' << len << '\n';
-        getd(k, PAGE2, 100);
+        mars.getd(k, PAGE2, 100);
         if (!compare(PAGE2, PAGE1+1, len))
             exit(1);
-        k = prev();
+        k = mars.prev();
     }
 
-    cleard();                   // A termination error is expected
+    cleard(false);              // A termination error is expected
     IOflush();
 }
