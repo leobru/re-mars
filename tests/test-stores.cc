@@ -1505,6 +1505,108 @@ TEST(mars, putd_stores)
     EXPECT_EQ(get_store(01647), 0'0000'0000'0000'0000u); // latest
 }
 
+TEST(mars, getd_num_stores)
+{
+    const int catalog_len = 1;
+    const int file_len = 2;
+    const std::string fname = tobesm("TEST");
+
+    mars_flags.zero_date = true;
+    //mars_flags.verbose = true;
+
+    // Initializing the database catalog: 1 zone, starting from zone 0 on LUN 52 (arbitrary)
+    InitDB(052, 0, catalog_len);
+
+    // Setting the root location
+    SetDB(052, 0, catalog_len);
+
+    // Making a new array of 'len' zones, starting after the root catalog
+    newd(fname.c_str(), 052, catalog_len, file_len);
+
+    // Opening it
+    opend(fname.c_str());
+
+    // Initializing an array of 1024 words
+    const int PAGE1 = 010000;
+    const int PAGE2 = 012000;
+    for (int i = 0; i < 1024; ++i) {
+        data[PAGE1 + i] = (064LL << 42) + i;
+    }
+
+    // Put element with numerical key
+    putd(123, PAGE1, 10);
+
+    // Get it back
+    //mars_flags.trace_stores = true;
+    mars_flags.memoize_stores = true;
+    std::cout << "getd()\n";
+    getd(123, PAGE2, 10);
+    ASSERT_TRUE(compare(PAGE2, PAGE1, 10));
+
+    // Running getd(0000000000000173, 12000:10)
+    EXPECT_EQ(get_store(01410), 0'0000'0000'0000'0173u);
+    EXPECT_EQ(get_store(01415), 0'0000'0000'0000'0012u);
+    EXPECT_EQ(get_store(01413), 0'0000'0000'0001'2000u);
+    EXPECT_EQ(get_store(01403), 0'0000'0000'0022'1411u);
+    EXPECT_EQ(get_store(02007), 0'0000'0000'0000'4000u);
+    EXPECT_EQ(get_store(02013), 0'0000'0000'0000'1400u);
+    EXPECT_EQ(get_store(02041), 0'0340'0000'0000'0000u);
+    EXPECT_EQ(get_store(02017), 0'0000'0000'0000'4000u);
+    EXPECT_EQ(get_store(02021), 0'0000'0000'0000'4000u);
+    EXPECT_EQ(get_store(02020), 0'0000'0000'0007'6502u);
+//  EXPECT_EQ(get_store(01405), 0'0000'0000'0022'1411u); // overwritten
+    EXPECT_EQ(get_store(02014), 0'0000'0000'0000'0000u);
+
+    // Executing microcode 11
+//  EXPECT_EQ(get_store(02027), 0'0000'0000'0000'0173u); // overwritten
+    EXPECT_EQ(get_store(01642), 0'0000'0000'0000'0000u);
+    EXPECT_EQ(get_store(02027), 0'3777'7777'7777'7604u); // latest
+
+    // Comparing 2 elements
+    EXPECT_EQ(get_store(01421), 0'0000'0100'0000'0002u);
+    EXPECT_EQ(get_store(01437), 0'0000'0000'0000'0173u);
+    EXPECT_EQ(get_store(01435), 0'0000'0000'0000'6000u);
+//  EXPECT_EQ(get_store(01405), 0'0000'0000'0000'2214u); // overwritten
+    EXPECT_EQ(get_store(02014), 0'0000'0000'0000'0000u);
+
+    // Executing microcode 14
+    EXPECT_EQ(get_store(01405), 0'0000'0000'0000'0022u); // latest
+    EXPECT_EQ(get_store(02014), 0'0000'0000'0000'0000u);
+
+    // Executing microcode 22
+    EXPECT_EQ(get_store(02040), 0'0000'0000'0000'6000u);
+    EXPECT_EQ(get_store(01644), 0'0000'0000'0000'0000u);
+    EXPECT_EQ(get_store(02015), 0'0524'6520'4010'0000u);
+    EXPECT_EQ(get_store(01641), 0'0000'0000'0000'4000u);
+    EXPECT_EQ(get_store(02035), 0'0000'0000'0000'6000u);
+    EXPECT_EQ(get_store(02036), 0'0030'0000'0000'0000u);
+    EXPECT_EQ(get_store(01516), 0'0000'0000'0000'0003u);
+    EXPECT_EQ(get_store(01620), 0'0030'0000'0002'7717u);
+//  EXPECT_EQ(get_store(01446), 0'0000'0000'0000'5720u); // overwritten
+//  EXPECT_EQ(get_store(01445), 0'0000'0000'0000'0013u); // overwritten
+    EXPECT_EQ(get_store(01441), 0'0000'0000'0000'0012u);
+    EXPECT_EQ(get_store(01447), 0'0000'0000'0000'0012u);
+    EXPECT_EQ(get_store(01453), 0'0000'0000'0000'0000u);
+//  EXPECT_EQ(get_store(02016), 0'0000'0000'0001'2000u); // overwritten
+    EXPECT_EQ(get_store(01446), 0'0000'0000'0000'5721u); // latest
+    EXPECT_EQ(get_store(01445), 0'0000'0000'0000'0012u); // latest
+
+    // From DB: 12(8) words from 5721 to 12000
+    EXPECT_EQ(get_store(012011),0'6400'0000'0000'0011u);
+    EXPECT_EQ(get_store(012010),0'6400'0000'0000'0010u);
+    EXPECT_EQ(get_store(012007),0'6400'0000'0000'0007u);
+    EXPECT_EQ(get_store(012006),0'6400'0000'0000'0006u);
+    EXPECT_EQ(get_store(012005),0'6400'0000'0000'0005u);
+    EXPECT_EQ(get_store(012004),0'6400'0000'0000'0004u);
+    EXPECT_EQ(get_store(012003),0'6400'0000'0000'0003u);
+    EXPECT_EQ(get_store(012002),0'6400'0000'0000'0002u);
+    EXPECT_EQ(get_store(012001),0'6400'0000'0000'0001u);
+    EXPECT_EQ(get_store(012000),0'6400'0000'0000'0000u);
+    EXPECT_EQ(get_store(02016), 0'0000'0000'0001'2012u); // latest
+    EXPECT_EQ(get_store(02011), 0'0000'0000'0000'0000u);
+    EXPECT_EQ(get_store(01647), 0'0000'0000'0000'0000u);
+}
+
 TEST(mars, cleard_stores)
 {
     Mars mars(false);
