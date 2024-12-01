@@ -14,118 +14,43 @@
 
 #include "mars.h"
 
-MarsFlags mars_flags;
-
-bool & trace_stores = mars_flags.trace_stores;
-bool & verbose = mars_flags.verbose;
-
-word data[RAM_LENGTH];
-
-uint64_t rk = 7LL << 41;
-
-// For convenience of detection which locations not to trace
-word & m5 = data[5];
-word & m16 = data[016];
-word & m6 = data[6];
-word & m7 = data[7];
-word & m13 = data[13];
-
-// History of all stores, for debug.
-std::unordered_map<size_t, uint64_t> all_stores;
-
-uint64_t& word::store(uint64_t x) {
-    assert(data);
-    size_t index = this-data;
-    if (index < 16) x &= 077777;
-    if (trace_stores && index > 16 && index < RAM_LENGTH) {
-        std::cerr << std::format("       {:05o}: store {:016o}\n", index, x);
-    }
-    if (mars_flags.memoize_stores && index > 16 && index < RAM_LENGTH) {
-        all_stores[index] = x;
-    }
-    d=x;
-    return d;
-}
-word& word::operator=(word x) {
-    assert(data);
-    size_t index = this-data;
-    if (index < 16) x.d &= 077777;
-    if (trace_stores && index > 16 && index < RAM_LENGTH) {
-        std::cerr << std::format("       {:05o}: store {:016o}\n", index, x.d);
-    }
-    if (mars_flags.memoize_stores && index > 16 && index < RAM_LENGTH) {
-        all_stores[index] = x.d;
-    }
-    d=x.d;
-    return *this;
-}
-word& word::operator=(word * x) {
-    assert(data);
-    ptrdiff_t offset = x-data;
-    if (offset < 0 || offset >= 077777) {
-        std::cerr << std::format("Cannot point to words outside of RAM, offset = {:o}\n", offset);
-        abort();
-    }
-    size_t index = this-data;
-    if (trace_stores && index > 16 && index < RAM_LENGTH) {
-        printf("       %05lo: store %016lo\n", index, offset);
-    }
-    if (mars_flags.memoize_stores && index > 16 && index < RAM_LENGTH) {
-        all_stores[index] = offset;
-    }
-    d=offset;
-    return *this;
-}
-
-uint64_t get_store(size_t index) {
-    return all_stores[index];
-}
-
-struct bdvect_t {
-    static const size_t SIZE = 168;
-    word w[SIZE];
-};
-
-bdvect_t sav;
+const uint64_t rk = 7LL << 41;
 
 #define FAKEBLK 020
 #define ARBITRARY_NONZERO 01234567007654321LL
 #define ROOTKEY 04000
 #define LOCKKEY ONEBIT(32)
 
-#define bdvect (*reinterpret_cast<bdvect_t*>(data+BDVECT))
-
-//
-std::vector<int> comparable{
+static const std::vector<int> comparable{
     3,5,010,012,013,014,015,020,021,022,023,024,025,026,027,
     031,033,034,035,036,037,040,041,042,043,044,045,046,047,050,051,052,053,054,
     055,056,0116,0117,0120,0157,0160,0220,0241,0242,0243,0244,0245,0246,0247
 };
 
-void dump() {
+void Mars::dump() {
     for (auto j : comparable) {
-        if (bdvect.w[j] != sav.w[j]) {
+        if (bdvect().w[j] != sav.w[j]) {
             std::cout << std::format(" WORD {:03o} CHANGED FROM  {:016o} TO  {:016o}\n",
-                                     int(j), sav.w[j].d, bdvect.w[j].d);
+                                     int(j), sav.w[j].d, bdvect().w[j].d);
         }
     }
-    sav = bdvect;
+    sav = bdvect();
 }
 
 word& word::operator*() {
     unsigned a = d & 077777;
-    if (a >= RAM_LENGTH) {
+    if (a >= Mars::RAM_LENGTH) {
       std::cerr << std::format("Address {:o} out of range\n", a);
         abort();
     }
-    return data[a];
+    return mars->data[a];
 }
 
 word& word::operator[](word x) {
-    return *word(data, d+x.d);
+    return *word(*mars, d+x.d);
 }
 
-uint64_t word::operator&() { return this-data; }
+uint64_t word::operator&() { return this-mars->data; }
 
 #define ONEBIT(n) (1ULL << ((n)-1))   // one bit set, from 1 to 48
 #define BITS(n)   (~0ULL >> (64 - n)) // bitmask of bits from 0 to n
@@ -137,7 +62,7 @@ uint64_t word::operator&() { return this-data; }
                        (targets.push_back(&&label),                     \
                         jumptab[&&label] = targets.size() + INDJUMP_MAGIC-1))
 #define call(addr,link) do { link = target(ret); goto addr; ret:; } while (0)
-#define dirty(x) dirty = dirty.d | ((curZone.d ? x : 0) + 1)
+#define setDirty(x) dirty = dirty.d | ((curZone.d ? x : 0) + 1)
 // #define jump(x) do { std::cerr << "Jump to " #x "\n"; goto x; } while(0)
 #define jump(x) goto x
 #define indjump(x)                                                      \
@@ -147,53 +72,225 @@ uint64_t word::operator&() { return this-data; }
         goto *(targets[x.d & 077]);                                     \
     } while (false)
 
-// struct Bdvect
-word & outadr = data[BDVECT+1];
-word & orgcmd = data[BDVECT+3];
-word & curcmd = data[BDVECT+5];
-word & syncw = data[BDVECT+6];
-word & givenp = data[BDVECT+7];
-word & key = data[BDVECT+010];
-word & erhndl = data[BDVECT+011];
-word & curDescr = data[BDVECT+012];
-word & myloc = data[BDVECT+013];
-word & loc14 = data[BDVECT+014];
-word & mylen = data[BDVECT+015];
-word & bdbuf = data[BDVECT+016];
-word & bdtab = data[BDVECT+017];
-word & loc20 = data[BDVECT+020];
-word * const Array = data+BDVECT+021;
-word & dbdesc = data[BDVECT+030];
-word & DBkey = data[BDVECT+031];
-word & savedp = data[BDVECT+032];
-word & frebas = data[BDVECT+034];
-word & adescr = data[BDVECT+035];
-word & limit = data[BDVECT+036];
-word & curkey = data[BDVECT+037];
-word & endmrk = data[BDVECT+040];
-word & desc1 = data[BDVECT+041];
-word & desc2 = data[BDVECT+042];
-word & IOpat = data[BDVECT+044];
-word & curpos = data[BDVECT+045];
-word & aitem = data[BDVECT+046];
-word & itmlen = data[BDVECT+047];
-word & element = data[BDVECT+050];
-word & dblen = data[BDVECT+051];
-word & curlen = data[BDVECT+053];
-word & loc54 = data[BDVECT+054];
+struct Page {
+    Page() { }
+    Page(word * page) {
+        for (int i = 0; i < 1024; ++i)
+            w[i] = page[i].d;
+    }
+    void to_memory(word * page) {
+        for (int i = 0; i < 1024; ++i)
+            page[i].d = w[i];
+    }
+    uint64_t w[1024];
+};
+
+struct MarsImpl {
+    static const int BDVECT = Mars::BDVECT;
+    static const int BDSYS = Mars::BDSYS;
+    typedef word & wordref;
+    Mars & mars;
+    word * const data;
+    bool & verbose;
+    // Registers
+    wordref m5, m6, m7, m13, m16;
+
+    // For convenience of detection which locations not to trace,
+    // the registers are mapped to the lower addresses of the RAM.
+
+    // Fields of BDVECT
+    wordref outadr, orgcmd, curcmd, syncw, givenp, key,
+        erhndl, curDescr, myloc, loc14, mylen, bdbuf, bdtab,
+        loc20, dbdesc, DBkey, savedp, frebas, adescr, limit,
+        curkey, endmrk, desc1, desc2, IOpat, curpos, aitem, itmlen,
+        element, dblen, curlen, loc54, loc116, loc117,
+        loc157, loc160, curExtent, curbuf, idx, curZone, loc246,
+        dirty;
+
 // Metadata[-1] (loc55) is also used
-word * const Metadata = data+BDVECT+056;
-word & loc116 = data[BDVECT+0116];
-word & loc117 = data[BDVECT+0117];
-word * Loc120 = data+BDVECT+0120;
-word & loc157 = data[BDVECT+0157];
-word & loc160 = data[BDVECT+0160];
-word & curExtent = data[BDVECT+0220];
-word & curbuf = data[BDVECT+0241];
-word & idx = data[BDVECT+0242];
-word & curZone = data[BDVECT+0244];
-word & loc246 = data[BDVECT+0246];
-word & dirty = data[BDVECT+0247];
+    word * const Array;
+    word * const Metadata;
+    word * const Loc120;
+
+    // Fields of BDSYS
+    uint64_t & arch;
+    wordref abdv, savm16, d00010, d00011, d00012,
+        savm13, goto_, zonkey, usrloc, savm7, savm6,
+        savm5, jmpoff, datlen, d00024, d00025, d00026,
+        temp, d00030, d00031, d00032, d00033, remlen,
+        work, work2, IOword, d00040, savrk;
+
+    std::unordered_map<std::string, Page> DiskImage;
+
+    // History of all stores, for debug.
+    std::unordered_map<size_t, uint64_t> all_stores;
+
+    MarsImpl(Mars & up) :
+        mars(up), data(up.data), verbose(up.verbose),
+        m5(data[5]), m6(data[6]), m7(data[7]), m13(data[013]), m16(data[016]),
+        outadr(data[BDVECT+1]),
+        orgcmd(data[BDVECT+3]),
+        curcmd(data[BDVECT+5]),
+        syncw(data[BDVECT+6]),
+        givenp(data[BDVECT+7]),
+        key(data[BDVECT+010]),
+        erhndl(data[BDVECT+011]),
+        curDescr(data[BDVECT+012]),
+        myloc(data[BDVECT+013]),
+        loc14(data[BDVECT+014]),
+        mylen(data[BDVECT+015]),
+        bdbuf(data[BDVECT+016]),
+        bdtab(data[BDVECT+017]),
+        loc20(data[BDVECT+020]),
+        dbdesc(data[BDVECT+030]),
+        DBkey(data[BDVECT+031]),
+        savedp(data[BDVECT+032]),
+        frebas(data[BDVECT+034]),
+        adescr(data[BDVECT+035]),
+        limit(data[BDVECT+036]),
+        curkey(data[BDVECT+037]),
+        endmrk(data[BDVECT+040]),
+        desc1(data[BDVECT+041]),
+        desc2(data[BDVECT+042]),
+        IOpat(data[BDVECT+044]),
+        curpos(data[BDVECT+045]),
+        aitem(data[BDVECT+046]),
+        itmlen(data[BDVECT+047]),
+        element(data[BDVECT+050]),
+        dblen(data[BDVECT+051]),
+        curlen(data[BDVECT+053]),
+        loc54(data[BDVECT+054]),
+        loc116(data[BDVECT+0116]),
+        loc117(data[BDVECT+0117]),
+        loc157(data[BDVECT+0157]),
+        loc160(data[BDVECT+0160]),
+        curExtent(data[BDVECT+0220]),
+        curbuf(data[BDVECT+0241]),
+        idx(data[BDVECT+0242]),
+        curZone(data[BDVECT+0244]),
+        loc246(data[BDVECT+0246]),
+        dirty(data[BDVECT+0247]),
+
+        Array(data+BDVECT+021),
+        // Metadata[-1] (loc55) is also used
+        Metadata(data+BDVECT+056),
+        Loc120(data+BDVECT+0120),
+
+        // Fields of BDSYS
+        arch(data[BDSYS+4].d),
+        abdv(data[BDSYS+3]),
+        savm16(data[BDSYS+7]),
+        d00010(data[BDSYS+010]),
+        d00011(data[BDSYS+011]),
+        d00012(data[BDSYS+012]),
+        savm13(data[BDSYS+013]),
+        goto_(data[BDSYS+014]),
+        zonkey(data[BDSYS+015]),
+        usrloc(data[BDSYS+016]),
+        savm7(data[BDSYS+017]),
+        savm6(data[BDSYS+020]),
+        savm5(data[BDSYS+021]),
+        jmpoff(data[BDSYS+022]),
+        datlen(data[BDSYS+023]),
+        d00024(data[BDSYS+024]),
+        d00025(data[BDSYS+025]),
+        d00026(data[BDSYS+026]),
+        temp(data[BDSYS+027]),
+        d00030(data[BDSYS+030]),
+        d00031(data[BDSYS+031]),
+        d00032(data[BDSYS+032]),
+        d00033(data[BDSYS+033]),
+        remlen(data[BDSYS+034]),
+        work(data[BDSYS+035]),
+        work2(data[BDSYS+036]),
+        IOword(data[BDSYS+037]),
+        d00040(data[BDSYS+040]),
+        savrk(data[BDSYS+041]) { }
+    void IOflush();
+    void IOcall(word);
+    void getzon();
+    void save(bool);
+    void finalize();
+    void date();
+    void make_metablock();
+    uint64_t usable_space();
+    void find_item(uint64_t);
+    void info(uint64_t);
+    void totext();
+    void set_header();
+    void copy_words(word, word);
+    void copy_chained();
+    void cpyout();
+    void lock();
+    void a00203(), a00213(), pr202(), a00747(), a00340();
+    void skip(Error);
+    void setctl(uint64_t);
+    void free_extent(), free();
+    void find_end_mark();
+    bool proc270(), step(), a00334(word);
+    bool cmd46();
+    void assign_and_incr();
+    void pasbdi();
+    Error eval();
+};
+
+uint64_t Mars::get_store(size_t index) {
+    return impl.all_stores[index];
+}
+
+uint64_t& word::store(uint64_t x) {
+    assert(mars);
+    size_t index = this-mars->data;
+    if (index < 16) x &= 077777;
+    if (mars->trace_stores && index > 16 && index < Mars::RAM_LENGTH) {
+        std::cerr << std::format("       {:05o}: store {:016o}\n", index, x);
+    }
+    if (mars->memoize_stores && index > 16 && index < Mars::RAM_LENGTH) {
+        mars->impl.all_stores[index] = x;
+    }
+    d=x;
+    return d;
+}
+word& word::operator=(word x) {
+    assert(mars);
+    size_t index = this-mars->data;
+    if (index < 16) x.d &= 077777;
+    if (mars->trace_stores && index > 16 && index < Mars::RAM_LENGTH) {
+        std::cerr << std::format("       {:05o}: store {:016o}\n", index, x.d);
+    }
+    if (mars->memoize_stores && index > 16 && index < Mars::RAM_LENGTH) {
+        mars->impl.all_stores[index] = x.d;
+    }
+    d=x.d;
+    return *this;
+}
+word& word::operator=(word * x) {
+    assert(mars);
+    ptrdiff_t offset = x-mars->data;
+    if (offset < 0 || offset >= 077777) {
+        std::cerr << std::format("Cannot point to words outside of RAM, offset = {:o}\n", offset);
+        abort();
+    }
+    size_t index = this-mars->data;
+    if (mars->trace_stores && index > 16 && index < Mars::RAM_LENGTH) {
+        printf("       %05lo: store %016lo\n", index, offset);
+    }
+    if (mars->memoize_stores && index > 16 && index < Mars::RAM_LENGTH) {
+        mars->impl.all_stores[index] = offset;
+    }
+    d=offset;
+    return *this;
+}
+
+Mars::Mars() : impl(*new MarsImpl(*this)) { }
+Mars::Mars(bool persistent) : impl(*new MarsImpl(*this)), flush(persistent) { }
+
+Mars::~Mars() {
+    if (flush) {
+        impl.IOflush();
+    }
+    delete &impl;
+}
 
 union Accumulator {
     static const uint64_t MASK = BITS(48);
@@ -224,37 +321,6 @@ union Accumulator {
 
 } acc;
 
-// struct Mars
-word & abdv = data[BDSYS+3];
-uint64_t & arch = data[BDSYS+4].d;
-word & savm16 = data[BDSYS+7];
-word & d00010 = data[BDSYS+010];
-word & d00011 = data[BDSYS+011];
-word & d00012 = data[BDSYS+012];
-word & savm13 = data[BDSYS+013];
-word & goto_ = data[BDSYS+014];
-word & zonkey = data[BDSYS+015];
-word & usrloc = data[BDSYS+016];
-word & savm7 = data[BDSYS+017];
-word & savm6 = data[BDSYS+020];
-word & savm5 = data[BDSYS+021];
-word & jmpoff = data[BDSYS+022];
-word & datlen = data[BDSYS+023];
-word & d00024 = data[BDSYS+024];
-word & d00025 = data[BDSYS+025];
-word & d00026 = data[BDSYS+026];
-word & temp = data[BDSYS+027];
-word & d00030 = data[BDSYS+030];
-word & d00031 = data[BDSYS+031];
-word & d00032 = data[BDSYS+032];
-word & d00033 = data[BDSYS+033];
-word & remlen = data[BDSYS+034];
-word & work = data[BDSYS+035];
-word & work2 = data[BDSYS+036];
-word & IOword = data[BDSYS+037];
-word & d00040 = data[BDSYS+040];
-word & savrk = data[BDSYS+041];
-
 enum Ops {
     FROMBASE, TOBASE, COMPARE, A00317, DONE
 };
@@ -266,26 +332,7 @@ const char * msg[] = {
     "DB is locked", "No current record", "No prev. record", "No next record",
     "Wrong password" };
 
-struct Page {
-    Page() { }
-    Page(word * page) {
-        for (int i = 0; i < 1024; ++i)
-            w[i] = page[i].d;
-    }
-    void to_memory(word * page) {
-        for (int i = 0; i < 1024; ++i)
-            page[i].d = w[i];
-    }
-    uint64_t w[1024];
-};
-
-std::unordered_map<std::string, Page> DiskImage;
-
-void IOdiscard() {
-    DiskImage.clear();
-}
-
-void IOflush() {
+void MarsImpl::IOflush() {
     for (auto & it : DiskImage) {
         const std::string& nuzzzz = it.first;
         FILE * f = fopen(nuzzzz.c_str(), "w");
@@ -296,7 +343,7 @@ void IOflush() {
         fwrite(&it.second, 1, sizeof(Page), f);
         fclose(f);
 
-        if (mars_flags.dump_txt_zones) {
+        if (mars.dump_txt_zones) {
             std::string txt(nuzzzz+".txt");
             FILE * t = fopen(txt.c_str(), "w");
             if (!t) {
@@ -314,14 +361,13 @@ void IOflush() {
             fclose(t);
         }
     }
-    IOdiscard();
 }
 
-void IOcall(word is) {
+void MarsImpl::IOcall(word is) {
     int page = (is >> 30) & BITS(5);
     std::string nuzzzz;
-    bool stores = mars_flags.trace_stores;
-    mars_flags.trace_stores = false;
+    bool stores = mars.trace_stores;
+    mars.trace_stores = false;
     nuzzzz = std::format("{:06o}", is.d & BITS(18));
     if (is.d & ONEBIT(40)) {
         // read
@@ -334,7 +380,7 @@ void IOcall(word is) {
                 std::cerr << "\tZone " << nuzzzz << " does not exist yet\n";
                 for (int i = page*1024; i < (page+1)*1024; ++i)
                     data[i] = ARBITRARY_NONZERO;
-                trace_stores = stores;
+                mars.trace_stores = stores;
                 return;
             }
             if (verbose)
@@ -350,12 +396,12 @@ void IOcall(word is) {
             std::cerr << std::format("Writing {} from address {:o}\n", nuzzzz, page*1024);
         DiskImage[nuzzzz] = data+page*1024;
     }
-    mars_flags.trace_stores = stores;
+    mars.trace_stores = stores;
 }
 
 // Takes acc as the zone number,
 // returns the pointer to the zone read in m16
-void getzon() {
+void MarsImpl::getzon() {
     curZone = acc;
     acc |= DBkey.d;
     zonkey = acc;
@@ -378,7 +424,7 @@ void getzon() {
     throw ERR_BAD_PAGE;
 }
 
-void save(bool force_tab = false) {
+void MarsImpl::save(bool force_tab = false) {
     if (force_tab || (dirty.d & 1)) {
         IOword = IOpat.d | bdtab.d << 20;
         IOcall(IOword);
@@ -390,7 +436,7 @@ void save(bool force_tab = false) {
     dirty = 0;
 }
 
-void finalize() {
+void MarsImpl::finalize() {
     d00011 = acc;               // nonzero if error
     bool force_tab = false;
     if (syncw != 0) {
@@ -405,12 +451,13 @@ void finalize() {
     save(force_tab);
 }
 
-void date() {
+void MarsImpl::date() {
     using namespace std::chrono;
     const year_month_day ymd{floor<days>(system_clock::now())};
     unsigned d{ymd.day()}, m{ymd.month()};
     int y{ymd.year()};
-    uint64_t stamp = mars_flags.zero_date ? 0 : (d/10*16+d%10) << 9 |
+
+    uint64_t stamp = mars.zero_date ? 0 : (d/10*16+d%10) << 9 |
         (m/10*16+m%10) << 4 |
         y % 10;
     work = loc14.d & (0777777LL << 15);
@@ -418,7 +465,7 @@ void date() {
 }
 
 // Prepare a metadata block
-void make_metablock() {
+void MarsImpl::make_metablock() {
     d00012 = loc20;
     mylen = 041;
     d00010 = 2;
@@ -430,7 +477,7 @@ void make_metablock() {
 }
 
 // Returns result in itmlen and acc
-uint64_t usable_space() {
+uint64_t MarsImpl::usable_space() {
     itmlen = 0;
     for (int i = dblen.d - 1; i >= 0; --i) {
         if (frebas[i].d != 0)
@@ -440,7 +487,7 @@ uint64_t usable_space() {
     return itmlen.d;
 }
 
-void find_item(uint64_t arg) {
+void MarsImpl::find_item(uint64_t arg) {
     d00040 = acc = arg;
     acc &= 01777;
     getzon();
@@ -481,7 +528,7 @@ void find_item(uint64_t arg) {
     m5 = ARBITRARY_NONZERO;     // clobbering the link register
 }
 
-void info(uint64_t arg) {
+void MarsImpl::info(uint64_t arg) {
     find_item(arg);
     acc = (*aitem).d;
     desc1 = acc;
@@ -490,7 +537,7 @@ void info(uint64_t arg) {
     curlen = 0;
 }
 
-void totext() {
+void MarsImpl::totext() {
     char buf[13];
     snprintf(buf, sizeof(buf), " %05o", int(acc & 077777));
     strncpy((char*)&endmrk.d, buf, 6);
@@ -502,12 +549,12 @@ void totext() {
     strncpy((char*)&desc2.d, buf+8, 8);
 }
 
-void set_header() {
+void MarsImpl::set_header() {
     *aitem = acc;
-    dirty(1);
+    setDirty(1);
 }
 
-void copy_words(word dst, word src) {
+void MarsImpl::copy_words(word dst, word src) {
     if (verbose)
         std::cerr << std::format("{:o}(8) words from {:o} to {:o}\n", m16.d, src.d, dst.d);
     // Using backwards store order to match the original binary for ease of debugging.
@@ -518,7 +565,7 @@ void copy_words(word dst, word src) {
 }
 
 // Copies chained extents to user memory (acc = length of the first extent)
-void copy_chained() {           // a01423
+void MarsImpl::copy_chained() {           // a01423
     for (;;) {
         m16 = acc;
         if (m16.d) {
@@ -535,7 +582,7 @@ void copy_chained() {           // a01423
 }
 
 // After cpyout must go to cmd0
-void cpyout() {
+void MarsImpl::cpyout() {
     info(acc);
     usrloc = myloc;
     if (mylen.d && mylen.d < itmlen.d)
@@ -548,7 +595,7 @@ void cpyout() {
 }
 
 // Not really a mutex
-void lock() {
+void MarsImpl::lock() {
     acc = bdtab.d << 20;
     work = acc |= IOpat.d;
     IOword = acc |= ONEBIT(40);
@@ -560,7 +607,7 @@ void lock() {
     IOcall(work);
 }
 
-void a00203() {
+void MarsImpl::a00203() {
     Array[idx.d-1] = acc;
     acc &= BITS(19);
     loc116 = acc;
@@ -575,25 +622,25 @@ void a00203() {
     copy_chained();
 }
 
-void a00213() {
+void MarsImpl::a00213() {
     acc = 02000;
     m16 = &loc54;
     a00203();
 }
 
-void pr202() {
+void MarsImpl::pr202() {
     m16 = &loc116;
     a00203();
 }
 
-void skip(Error e) {
+void MarsImpl::skip(Error e) {
     acc = curcmd.d >> 6;
     if (!acc || (acc & 077))
         throw e;
     acc = curcmd.d >> 30;
 }
 
-void setctl(uint64_t location) {
+void MarsImpl::setctl(uint64_t location) {
     IOpat = location & 0777777;
     dblen = dbdesc >> 18;
     IOword = bdtab.d << 20 | IOpat.d | ONEBIT(40);
@@ -611,17 +658,15 @@ void setctl(uint64_t location) {
     a00213();
 }
 
-void free_extent() {
+void MarsImpl::free_extent() {
     d00031 = curExtent.d & 01777;
     do {
         --m5;
         if (!m5.d)
             break;
-        acc = m16[m5+1].d & 01777;
-        if (acc >= d00031.d)
+        if ((m16[m5+1].d & 01777) >= d00031.d)
             continue;
-        acc = m16[m5+1].d + curpos.d;
-        m16[m5+1] = acc;
+        m16[m5+1] = m16[m5+1].d + curpos.d;
     } while (true);
     work = m16[1].d & 01777;
     if (work != d00031) {
@@ -636,11 +681,11 @@ void free_extent() {
     }
     m16[1] = m16[1].d - 02000 + curpos.d;
     frebas[curZone] = frebas[curZone].d + curpos.d + 1;
-    dirty(1);
+    setDirty(1);
     acc = curExtent.d;
 }
 
-void free() {
+void MarsImpl::free() {
     do {
         find_item(acc);
         work2 = (m16[1].d >> 10) & 077777;
@@ -652,14 +697,14 @@ void free() {
             acc = m5.d;
         };
         free_extent();
-        acc = (acc >> 20) & BITS(19);
+        acc = (curExtent >> 20) & BITS(19);
     } while (acc);
     dirty = dirty.d | 1;
 }
 
-void a00747() {
+void MarsImpl::a00747() {
     free_extent();
-    acc = (acc >> 20) & BITS(19);
+    acc = (curExtent >> 20) & BITS(19);
     if (acc) {
         free();
         return;
@@ -667,7 +712,7 @@ void a00747() {
     dirty = dirty.d | 1;
 }
 
-void find_end_mark() {
+void MarsImpl::find_end_mark() {
     // Searching for the end mark (originally 1 or 2 bytes)
     m16 = -mylen.d;
     work2 = myloc.d + mylen.d;
@@ -680,7 +725,7 @@ void find_end_mark() {
     mylen = (found - start) / 8 + 1;
 }
 
-bool proc270() {
+bool MarsImpl::proc270() {
     acc = temp.d;
     m16 = acc;
     acc = (acc - curpos.d) & BITS(41);
@@ -694,7 +739,7 @@ bool proc270() {
         copy_words(usrloc, aitem);
         break;
     case TOBASE:
-        dirty(1);
+        setDirty(1);
         copy_words(aitem, usrloc);
         break;
     case COMPARE:
@@ -716,7 +761,7 @@ bool proc270() {
     return false;
 }
 
-bool step() {
+bool MarsImpl::step() {
     acc = Array[idx.d].d;
     if (!acc)
         throw ERR_NO_CURR;
@@ -762,7 +807,7 @@ bool step() {
     return false;
 }
 
-bool a00334(word arg) {
+bool MarsImpl::a00334(word arg) {
     temp = arg;
     curlen = curlen.d + arg.d;
     usrloc = myloc;
@@ -792,13 +837,13 @@ bool a00334(word arg) {
     return false;
 }
 
-void a00340() {
+void MarsImpl::a00340() {
     find_item(acc);
     jmpoff = A00317;
     a00334(desc2);
 }
 
-void assign_and_incr() {
+void MarsImpl::assign_and_incr() {
     m16 = acc;
     m5 = (curcmd >> 6) & 077;
     curcmd = curcmd >> 6;
@@ -811,7 +856,7 @@ void assign_and_incr() {
 // Conditionally skips the next 4 instructions.
 // From the code is appears that the max expected
 // length of the datum was 017777.
-bool cmd46() {
+bool MarsImpl::cmd46() {
     acc = (myloc >> 18) & BITS(15);
     desc2 = acc -= curlen.d;
     acc = (myloc >> 33) & 017777;
@@ -823,7 +868,7 @@ bool cmd46() {
     return false;
 }
 
-Error eval() try {
+Error MarsImpl::eval() try {
     std::unordered_map<void*,int> jumptab;
     std::vector<void*> targets;
     acc = m16.d;
@@ -836,18 +881,22 @@ Error eval() try {
     switch (m5.d) {
     case 0:
         break;
-    case 1:
+    case 1:                     // FIRST
         temp = 0;
         jump(cmd1);
-    case 2:
+    case 2:                     // LAST
         acc = BITS(47);
         jump(find);
-    case 3:
+    case 3:                     // PREV
         m16 = 1;
-        jump(cmd4);
-    case 4:
+        if (step())
+            jump(next);
+        jump(cmd0);
+    case 4:                     // NEXT
         m16 = 0;
-        jump(cmd4);
+        if (step())
+            jump(next);
+        jump(cmd0);
     case 5:
         d00011 = 0;
         make_metablock();
@@ -893,8 +942,9 @@ Error eval() try {
     case 017:
         jump(cmd17);
     case 020:
-        acc = myloc.d;
-        jump(cmd20);
+        usrloc = myloc.d;
+        acc = adescr.d;
+        jump(a01311);
     case 021:
         acc = myloc.d;
         jump(alloc);
@@ -928,7 +978,7 @@ Error eval() try {
         break;
     case 032:
         *aitem = curDescr;
-        dirty(2);
+        setDirty(2);
         break;
     case 033:
         info(adescr.d);
@@ -940,11 +990,13 @@ Error eval() try {
     case 035:
         acc = dirty.d;
         save();
-        if (mars_flags.dump_diffs)
-            dump();
+        if (mars.dump_diffs)
+            mars.dump();
         return ERR_SUCCESS;
     case 036:
-        jump(cmd36);
+        m16 = element;
+        m16[Array[idx.d]+1] = curDescr;
+        jump(a01160);
     case 037:
         acc = curcmd >> 12;
         jump(next);
@@ -1013,8 +1065,8 @@ Error eval() try {
         *m13[m16] = curDescr;
         break;
     case 055:
-        if (mars_flags.dump_diffs)
-            dump();
+        if (mars.dump_diffs)
+            mars.dump();
         return ERR_SUCCESS;
     default:
         // In the original binary, loss of control ensued.
@@ -1050,8 +1102,8 @@ Error eval() try {
   next:
     if (!acc) {
         finalize();
-        if (mars_flags.dump_diffs)
-            dump();
+        if (mars.dump_diffs)
+            mars.dump();
         return ERR_SUCCESS;
     }
     curcmd = acc;
@@ -1082,19 +1134,15 @@ Error eval() try {
     if (verbose)
         std::cerr << "Comparing " << std::dec << acc/2 << " elements\n";
     while (m5.d) {
-        acc = m5[m16-2].d;
-        acc += temp.d;
+        acc = m5[m16-2].d + temp.d;
         acc = (acc + (acc >> 48)) & BITS(48);
         if (!(acc & ONEBIT(48)))
             break;
         m5.d -= 2;
     }
     m5.d -= 2;
-    acc = m5.d;
-    acc |= ONEBIT(31);
-    Array[idx.d] = acc;
-    acc = m16[1].d;
-    acc &= ONEBIT(48);
+    Array[idx.d] = m5.d | ONEBIT(31);
+    acc = m16[1].d & ONEBIT(48);
     if (!acc) {
         curkey = element[m5];
         adescr = element[m5+1];
@@ -1108,15 +1156,7 @@ Error eval() try {
     pr202();
     m16 = Loc120;
     jump(a00164);
-  cmd36:
-    m16 = element;
-    m16[Array[idx.d]+1] = curDescr;
-    jump(a01160);
     // pr376 (make_metablock) was here
-  cmd4:
-    if (step())
-        jump(next);
-    jump(cmd0);
   cmd17:
     // Searching for the end word
     m16 = -mylen.d;
@@ -1206,7 +1246,7 @@ Error eval() try {
         if (verbose)
             std::cerr << "mylen = " << mylen.d << " work = " << work.d << '\n';
         // If the datum is larger than MAXCHUNK, it will have to be split
-        if (mylen.d >= MAXCHUNK)
+        if (mylen.d >= Mars::MAXCHUNK)
             jump(split);
         // Find a zone with enough free space
         for (size_t i = 0; i < dblen.d; ++i) {
@@ -1273,10 +1313,10 @@ Error eval() try {
         std::cerr << "Got " << frebas[curZone].d << '\n';
     if (!m5.d) {
         work2[-1] = datlen;
-        dirty(2);
+        setDirty(2);
         indjump(m6);
     }
-    dirty(1);
+    setDirty(1);
     acc = d00024.d;
     acc <<= 20;
     acc &= BITS(48);
@@ -1469,17 +1509,13 @@ Error eval() try {
         m5 = 0;
     }
     jump(chunk);
-  cmd20:
-    usrloc = acc;
-    acc = adescr.d;
   a01311:
     d00012 = acc;
     m6 = target(drtnxt);
     find_item(d00012.d);
     --acc;
     m5 = acc;
-    acc ^= mylen.d;
-    if (!acc) {
+    if (acc == mylen.d) {
         // The new length of data matches the first extent length
         if (m5.d) {
             do {
@@ -1489,7 +1525,7 @@ Error eval() try {
         m5 = m16;
         date();
         *aitem = acc;
-        dirty(1);
+        setDirty(1);
         acc = curExtent.d & (BITS(19) << 20);
         if (!acc)
             jump(rtnext);       // No extents to free: done
@@ -1498,7 +1534,7 @@ Error eval() try {
         acc = curExtent.d;
         acc = (acc >> 20) & BITS(19);
         if (acc) {
-            free();
+            free();             // Free remaining extents
             indjump(m6);
         }
         dirty = dirty.d | 1;
@@ -1548,7 +1584,7 @@ Error eval() try {
     find_item(d00012.d);
     acc = (d00024.d << 20) & BITS(48);
     loc116[m16+1] = acc | curExtent.d;
-    dirty(2);
+    setDirty(2);
     jump(rtnext);
   mkctl: {
         curZone = 0;
@@ -1586,14 +1622,14 @@ Error eval() try {
     d00010 = *(uint64_t*)msg[m16.d-1];
     acc = *((uint64_t*)msg[m16.d-1]+1);
     finalize();
-    if (mars_flags.dump_diffs)
-        dump();
+    if (mars.dump_diffs)
+        mars.dump();
     return e;
 }
 
-void pasbdi() {
-    for (size_t i = 0; i < RAM_LENGTH; ++i) {
-        new (data+i) word(data, 0);
+void MarsImpl::pasbdi() {
+    for (size_t i = 0; i < Mars::RAM_LENGTH; ++i) {
+        new (data+i) word(mars, 0);
     }
     // Faking MARS words
     m16 = 04700;
@@ -1601,8 +1637,8 @@ void pasbdi() {
     m7 = 01603;
     m5 = 077770;
     m6 = 022731;
-    bdtab = BDTAB;
-    bdbuf = BDBUF;
+    bdtab = Mars::BDTAB;
+    bdbuf = Mars::BDBUF;
     data[BDSYS+0042] = 02300'0150'0000'0000;
     data[BDSYS+0043] = 02000'0027'2300'0160;
     data[BDSYS+0044] = 02010'1532'2300'0156;
@@ -1615,203 +1651,259 @@ void pasbdi() {
         data[FAKEBLK+i].d = ARBITRARY_NONZERO;
 }
 
-int to_lnuzzzz(int lun, int start, int len) {
+static int to_lnuzzzz(int lun, int start, int len) {
     if (lun > 077 || start > 01777 || len > 0777)
         std::cerr << std::oct << lun << ' ' << start << ' ' << len
                   << "out of valid range, truncated\n";
     return ((lun & 077) << 12) | (start & 01777) | ((len & 0777) << 18);
 }
 
-Error SetDB(int lun, int start, int len) {
-    pasbdi();
-    arch = to_lnuzzzz(lun, start, len);
+Error Mars::SetDB(int lun, int start, int len) {
+    impl.pasbdi();
+    impl.arch = to_lnuzzzz(lun, start, len);
     return root();
 }
 
-Error InitDB(int lun, int start, int len) {
-    pasbdi();
-    dbdesc = to_lnuzzzz(lun, start, len);
-    DBkey = ROOTKEY;
-    orgcmd = 010;
-    return eval();
+Error Mars::InitDB(int lun, int start, int len) {
+    impl.pasbdi();
+    impl.dbdesc = to_lnuzzzz(lun, start, len);
+    impl.DBkey = ROOTKEY;
+    impl.orgcmd = 010;
+    return impl.eval();
 }
 
 // Replicating what the NEWD option does in the PAIB Pascal API function
 // to match the sequence of store ops as close as possible
-Error newd(const char * k, int lun, int start, int len) {
+Error Mars::newd(const char * k, int lun, int start, int len) {
     int lnuzzzz = to_lnuzzzz(lun, start, len);
     if (verbose)
         std::cerr << "Running newd('" << k << "', " << std::oct << lnuzzzz << ")\n";
-    key = *reinterpret_cast<const uint64_t*>(k);
+    impl.key = *reinterpret_cast<const uint64_t*>(k);
     data[077776] = lnuzzzz;
-    data[077777] = (key.d << 10) & BITS(48);
-    key = *reinterpret_cast<const uint64_t*>(k);
-    mylen = 1;
-    myloc = ARBITRARY_NONZERO;
-    orgcmd = 0;
-    myloc = 077776;
-    mylen = 2;
-    orgcmd = 02621151131LL;
-    eval();
-    orgcmd = 010121411;
-    return eval();
+    data[077777] = (impl.key.d << 10) & BITS(48);
+    impl.key = *reinterpret_cast<const uint64_t*>(k);
+    impl.mylen = 1;
+    impl.myloc = ARBITRARY_NONZERO;
+    impl.orgcmd = 0;
+    impl.myloc = 077776;
+    impl.mylen = 2;
+    impl.orgcmd = 02621151131LL;
+    impl.eval();
+    impl.orgcmd = 010121411;
+    return impl.eval();
 }
 
-Error opend(const char * k) {
+Error Mars::opend(const char * k) {
     if (verbose)
         std::cerr << "Running opend('" << k << "')\n";
-    key = *reinterpret_cast<const uint64_t*>(k);
-    orgcmd = 02512141131;
-    return eval();
+    impl.key = *reinterpret_cast<const uint64_t*>(k);
+    impl.orgcmd = 02512141131;
+    return impl.eval();
 }
 
-Error putd(const char * k, int loc, int len) {
+Error Mars::putd(const char * k, int loc, int len) {
     if (verbose)
         std::cerr << std::format("Running putd('{}', '{}':{})\n", k,
                                  reinterpret_cast<char*>(data+loc), len);
-    key = *reinterpret_cast<const uint64_t*>(k);
-    mylen = len;
-    myloc = loc;
-    orgcmd = 026211511;
-    return eval();
+    impl.key = *reinterpret_cast<const uint64_t*>(k);
+    impl.mylen = len;
+    impl.myloc = loc;
+    impl.orgcmd = 026211511;
+    return impl.eval();
 }
 
-Error putd(uint64_t k, int loc, int len) {
+Error Mars::putd(uint64_t k, int loc, int len) {
     if (verbose) {
         std::cerr << std::format("Running putd({:016o}, {:05o}, {})\n", k, loc, len);
     }
-    key = k;
-    mylen = len;
-    myloc = loc;
-    orgcmd = 026211511;
-    return eval();
+    impl.key = k;
+    impl.mylen = len;
+    impl.myloc = loc;
+    impl.orgcmd = 026211511;
+    return impl.eval();
 }
 
-Error putd(const char * k, const char * v) {
+Error Mars::putd(const char * k, const char * v) {
     size_t len = (strlen(v)+7)/8;
     if (verbose)
         std::cerr << "Running putd('" << k << "', '"
                   << v << "':" << len << ")\n";
-    key = *reinterpret_cast<const uint64_t*>(k);
-    strcpy((char*)(data+02000), v);
-    mylen = len;
-    myloc = 02000;
-    orgcmd = 026211511;
-    return eval();
+    impl.key = *reinterpret_cast<const uint64_t*>(k);
+    strcpy((char*)(data+RAM_LENGTH-len), v);
+    impl.mylen = len;
+    impl.myloc = RAM_LENGTH-len;
+    impl.orgcmd = 026211511;
+    return impl.eval();
 }
 
-Error modd(const char * k, int loc, int len) {
-    key = *reinterpret_cast<const uint64_t*>(k);
-    mylen = len;
-    myloc = loc;
-    orgcmd = 020402621001511;
-    return eval();
+Error Mars::modd(const char * k, int loc, int len) {
+    impl.key = *reinterpret_cast<const uint64_t*>(k);
+    impl.mylen = len;
+    impl.myloc = loc;
+    impl.orgcmd = 020402621001511;
+    return impl.eval();
 }
 
-Error modd(uint64_t k, int loc, int len) {
-    key = k;
-    mylen = len;
-    myloc = loc;
-    orgcmd = 020402621001511;
-    return eval();
+Error Mars::modd(uint64_t k, int loc, int len) {
+    impl.key = k;
+    impl.mylen = len;
+    impl.myloc = loc;
+    impl.orgcmd = 020402621001511;
+    return impl.eval();
 }
 
-Error getd(const char * k, int loc, int len) {
-    key = *reinterpret_cast<const uint64_t*>(k);
-    mylen = len;
-    myloc = loc;
-    orgcmd = 0221411;
-    return eval();
+Error Mars::getd(const char * k, int loc, int len) {
+    impl.key = *reinterpret_cast<const uint64_t*>(k);
+    impl.mylen = len;
+    impl.myloc = loc;
+    impl.orgcmd = 0221411;
+    return impl.eval();
 }
 
-Error getd(uint64_t k, int loc, int len) {
+Error Mars::getd(uint64_t k, int loc, int len) {
     if (verbose) {
         std::cerr << "Running getd(" << std::oct << std::setw(16) << std::setfill('0') << k << ", ";
         std::cerr << std::setw(5) << loc << ":" << std::setw(0) << std::dec << len << ")\n";
         std::cerr.copyfmt(std::ios(nullptr));
     }
-    key = k;
-    mylen = len;
-    myloc = loc;
-    orgcmd = 0221411;
-    return eval();
+    impl.key = k;
+    impl.mylen = len;
+    impl.myloc = loc;
+    impl.orgcmd = 0221411;
+    return impl.eval();
 }
 
-Error deld(const char * k) {
-    key = *reinterpret_cast<const uint64_t*>(k);
-    orgcmd = 027231411;
-    return eval();
+Error Mars::deld(const char * k) {
+    impl.key = *reinterpret_cast<const uint64_t*>(k);
+    impl.orgcmd = 027231411;
+    return impl.eval();
 }
 
-Error deld(uint64_t k) {
-    idx = 0;
-    key = k;
-    orgcmd = 027231411;
-    return eval();
+Error Mars::deld(uint64_t k) {
+    impl.idx = 0;
+    impl.key = k;
+    impl.orgcmd = 027231411;
+    return impl.eval();
 }
 
-Error root() {
-    orgcmd = 031;
-    return eval();
+Error Mars::root() {
+    impl.orgcmd = 031;
+    return impl.eval();
 }
 
-uint64_t first() {
-    orgcmd = 0401;
-    eval();
-    return curkey.d;
+uint64_t Mars::first() {
+    impl.orgcmd = 0401;
+    impl.eval();
+    return impl.curkey.d;
 }
 
-uint64_t last() {
-    orgcmd = 02;
-    eval();
-    return curkey.d;
+uint64_t Mars::last() {
+    impl.orgcmd = 02;
+    impl.eval();
+    return impl.curkey.d;
 }
 
-uint64_t prev() {
-    orgcmd = 03;
-    eval();
-    return curkey.d;
+uint64_t Mars::prev() {
+    impl.orgcmd = 03;
+    impl.eval();
+    return impl.curkey.d;
 }
 
-uint64_t next() {
-    orgcmd = 04;
-    eval();
-    return curkey.d;
+uint64_t Mars::next() {
+    impl.orgcmd = 04;
+    impl.eval();
+    return impl.curkey.d;
 }
 
-uint64_t find(const char * k) {
-    key = *reinterpret_cast<const uint64_t*>(k);
-    orgcmd = 011;
-    eval();
-    return curkey.d;
+uint64_t Mars::find(const char * k) {
+    impl.key = *reinterpret_cast<const uint64_t*>(k);
+    impl.orgcmd = 011;
+    impl.eval();
+    return impl.curkey.d;
 }
 
-uint64_t find(uint64_t k) {
-    key = k;
-    orgcmd = 011;
-    eval();
-    return curkey.d;
+uint64_t Mars::find(uint64_t k) {
+    impl.key = k;
+    impl.orgcmd = 011;
+    impl.eval();
+    return impl.curkey.d;
 }
 
-int getlen() {
-    orgcmd = 033;
-    if (eval())
+int Mars::getlen() {
+    impl.orgcmd = 033;
+    if (impl.eval())
         return -1;
-    return itmlen.d;
+    return impl.itmlen.d;
 }
 
-Error cleard(bool forward) {
-    key = 0;
+Error Mars::cleard(bool forward) {
+    impl.key = 0;
     if (forward)
-        orgcmd = 0302723000401;
+        impl.orgcmd = 0302723000401;
     else
-        orgcmd = 030272302;
-    return eval();
+        impl.orgcmd = 030272302;
+    return impl.eval();
 }
 
-int avail() {
-    orgcmd = 013;
-    itmlen = 0;
-    eval();
-    return itmlen.d;
+int Mars::avail() {
+    impl.orgcmd = 013;
+    impl.itmlen = 0;
+    impl.eval();
+    return impl.itmlen.d;
 }
+
+Error Mars::eval(uint64_t microcode) {
+    impl.orgcmd = microcode;
+    return impl.eval();
+}
+#if 0
+<<<<<<< Updated upstream
+// struct Bdvect
+word & outadr = data[BDVECT+1];
+word & orgcmd = data[BDVECT+3];
+word & curcmd = data[BDVECT+5];
+word & syncw = data[BDVECT+6];
+word & givenp = data[BDVECT+7];
+word & key = data[BDVECT+010];
+word & erhndl = data[BDVECT+011];
+word & curDescr = data[BDVECT+012];
+word & myloc = data[BDVECT+013];
+word & loc14 = data[BDVECT+014];
+word & mylen = data[BDVECT+015];
+word & bdbuf = data[BDVECT+016];
+word & bdtab = data[BDVECT+017];
+word & loc20 = data[BDVECT+020];
+word * const Array = data+BDVECT+021;
+word & dbdesc = data[BDVECT+030];
+word & DBkey = data[BDVECT+031];
+word & savedp = data[BDVECT+032];
+word & frebas = data[BDVECT+034];
+word & adescr = data[BDVECT+035];
+word & limit = data[BDVECT+036];
+word & curkey = data[BDVECT+037];
+word & endmrk = data[BDVECT+040];
+word & desc1 = data[BDVECT+041];
+word & desc2 = data[BDVECT+042];
+word & IOpat = data[BDVECT+044];
+word & curpos = data[BDVECT+045];
+word & aitem = data[BDVECT+046];
+word & itmlen = data[BDVECT+047];
+word & element = data[BDVECT+050];
+word & dblen = data[BDVECT+051];
+word & curlen = data[BDVECT+053];
+word & loc54 = data[BDVECT+054];
+// Metadata[-1] (loc55) is also used
+word * const Metadata = data+BDVECT+056;
+word & loc116 = data[BDVECT+0116];
+word & loc117 = data[BDVECT+0117];
+word * Loc120 = data+BDVECT+0120;
+word & loc157 = data[BDVECT+0157];
+word & loc160 = data[BDVECT+0160];
+word & curExtent = data[BDVECT+0220];
+word & curbuf = data[BDVECT+0241];
+word & idx = data[BDVECT+0242];
+word & curZone = data[BDVECT+0244];
+word & loc246 = data[BDVECT+0246];
+word & dirty = data[BDVECT+0247];
+=======
+#endif

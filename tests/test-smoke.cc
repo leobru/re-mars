@@ -25,33 +25,27 @@ static void run_command(std::string &result, const std::string &cmd)
 
 TEST(mars, diagnostics)
 {
+    Mars mars(false);
     uint64_t zero = 0, one = 1;
-    InitDB(0, 0, 1);
-    root();
-    ASSERT_EQ(getd(zero, 0, 0), ERR_INV_NAME);
-    ASSERT_EQ(getd(one, 0, 0), ERR_NO_NAME);
-    ASSERT_EQ(putd(one, 0, 0), ERR_SUCCESS);
-    ASSERT_EQ(putd(one, 0, 0), ERR_EXISTS);
-    ASSERT_EQ(getd(one, 0, 0), ERR_SUCCESS);
-    ASSERT_EQ(deld(one), ERR_SUCCESS);
-    IOdiscard();
+    mars.InitDB(0, 0, 1);
+    mars.root();
+    ASSERT_EQ(mars.getd(zero, 0, 0), ERR_INV_NAME);
+    ASSERT_EQ(mars.getd(one, 0, 0), ERR_NO_NAME);
+    ASSERT_EQ(mars.putd(one, 0, 0), ERR_SUCCESS);
+    ASSERT_EQ(mars.putd(one, 0, 0), ERR_EXISTS);
+    ASSERT_EQ(mars.getd(one, 0, 0), ERR_SUCCESS);
+    ASSERT_EQ(mars.deld(one), ERR_SUCCESS);
 }
 
-static void zeromem() {
-    for (int i = 0; i < RAM_LENGTH; ++i) {
-        data[i] = 0;
+static void init(Mars & mars, int start, int len) {
+    for (int i = 0; i < len; ++i) {
+      mars.data[start+i] = (064LL << 42) + i;
     }
 }
 
-static void init(int start, int len) {
+static bool compare(Mars & mars, int start1, int start2, int len) {
     for (int i = 0; i < len; ++i) {
-      data[start+i] = (064LL << 42) + i;
-    }
-}
-
-static bool compare(int start1, int start2, int len) {
-    for (int i = 0; i < len; ++i) {
-        if (data[start1+i] != data[start2+i]) {
+        if (mars.data[start1+i] != mars.data[start2+i]) {
             return false;
         }
     }
@@ -60,13 +54,13 @@ static bool compare(int start1, int start2, int len) {
 
 TEST(mars, initdb)
 {
+    Mars & mars = *new Mars;
     std::string result;
     run_command(result, "rm -f 52000[0-2]");
     ASSERT_EQ(result, "");
-    mars_flags.zero_date = true;
-    zeromem();
-    InitDB(052, 0, 3);
-    IOflush();
+    mars.zero_date = true;
+    mars.InitDB(052, 0, 3);
+    delete &mars;
     run_command(result, "sha1sum 52000[0-2]");
     const std::string expect = R"(76948c7d9cf5a68f7ba3b9c804c317d2ce904424  520000
 3ada2ada7dc333451e34e7641d8190d55bbcca46  520001
@@ -77,54 +71,54 @@ TEST(mars, initdb)
 
 TEST(mars, coverage)
 {
+    Mars & mars = *new Mars;
     std::string result;
     run_command(result, "rm -f 52000[0-2]");
     ASSERT_EQ(result, "");
-    mars_flags.zero_date = true;
-    zeromem();
-    InitDB(052, 0, 1);
-    SetDB(052, 0, 1);
+    mars.zero_date = true;
+    mars.InitDB(052, 0, 1);
+    mars.SetDB(052, 0, 1);
     std::string fname = tobesm("TEST");
-    ASSERT_EQ(newd(fname.c_str(), 052, 1, 2), ERR_SUCCESS);
-    ASSERT_EQ(opend(fname.c_str()), ERR_SUCCESS);
+    ASSERT_EQ(mars.newd(fname.c_str(), 052, 1, 2), ERR_SUCCESS);
+    ASSERT_EQ(mars.opend(fname.c_str()), ERR_SUCCESS);
 
     const int PAGE1 = 010000;
     const int PAGE2 = 012000;
 
     // Initializing an array of 1024 words
-    init(PAGE1, 1024);
+    init(mars, PAGE1, 1024);
 
     std::string elt = "A";
     elt.resize(8);
     // Putting one half of it to the DB
-    ASSERT_EQ(modd(elt.c_str(), PAGE1, 512), ERR_SUCCESS);
+    ASSERT_EQ(mars.modd(elt.c_str(), PAGE1, 512), ERR_SUCCESS);
     // Putting all of it (will be split: max usable words in a zone = 01775)
-    ASSERT_EQ(modd(elt.c_str(), PAGE1, 1024), ERR_SUCCESS);
+    ASSERT_EQ(mars.modd(elt.c_str(), PAGE1, 1024), ERR_SUCCESS);
     // Again (exact match of length)
-    ASSERT_EQ(modd(elt.c_str(), PAGE1, 1024), ERR_SUCCESS);
+    ASSERT_EQ(mars.modd(elt.c_str(), PAGE1, 1024), ERR_SUCCESS);
     // With smaller length (reusing the block)
-    ASSERT_EQ(modd(elt.c_str(), PAGE1+1, 1023), ERR_SUCCESS);
+    ASSERT_EQ(mars.modd(elt.c_str(), PAGE1+1, 1023), ERR_SUCCESS);
     // Getting back
-    ASSERT_EQ(getd(elt.c_str(), PAGE2, 1023), ERR_SUCCESS);
-    EXPECT_TRUE(compare(PAGE2, PAGE1+1, 1023));
-    EXPECT_EQ(cleard(true), ERR_SUCCESS);
+    ASSERT_EQ(mars.getd(elt.c_str(), PAGE2, 1023), ERR_SUCCESS);
+    EXPECT_TRUE(compare(mars, PAGE2, PAGE1+1, 1023));
+    EXPECT_EQ(mars.cleard(true), ERR_SUCCESS);
 
     // Putting 59 elements of varying sizes with numerical keys (key 0 is invalid)
     for (int i = 0; i <= 59; ++i) {
-        auto e = putd(i+1, PAGE1+1, i);
+        auto e = mars.putd(i+1, PAGE1+1, i);
         EXPECT_EQ(e, i < 59 ? ERR_SUCCESS : ERR_OVERFLOW);
     }
 
-    uint64_t k = last();
+    uint64_t k = mars.last();
     while (k) {
-        int len = getlen();
-        EXPECT_EQ(getd(k, PAGE2, 100), ERR_SUCCESS);
-        EXPECT_TRUE(compare(PAGE2, PAGE1+1, len));
-        k = prev();
+        int len = mars.getlen();
+        EXPECT_EQ(mars.getd(k, PAGE2, 100), ERR_SUCCESS);
+        EXPECT_TRUE(compare(mars, PAGE2, PAGE1+1, len));
+        k = mars.prev();
     }
 
-    EXPECT_EQ(cleard(false), ERR_NO_RECORD);
-    IOflush();
+    EXPECT_EQ(mars.cleard(false), ERR_NO_RECORD);
+    delete &mars;
 
     run_command(result, "sha1sum 52000[0-2]");
     const std::string expect =

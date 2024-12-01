@@ -9,14 +9,15 @@
 
 TEST(mars, thrash)
 {
+    Mars mars(false);
     const int repeats = 2;
     const int numrec = 1888;
     const int maxsize = 100;
     std::string result;
-    InitDB(0, 0, 0100);
-    SetDB(0, 0, 0100);
-    root();
-    int space = avail();
+    mars.InitDB(0, 0, 0100);
+    mars.SetDB(0, 0, 0100);
+    mars.root();
+    int space = mars.avail();
     result = std::format("Initially: {}\n", space);
 
     for (int rep = 0; rep < repeats; rep++) {
@@ -25,23 +26,23 @@ TEST(mars, thrash)
         for (int i = 1; i <= numrec; ++i) {
             int k = (random() % numrec) + 1;
             int size = random() % maxsize;
-            if (modd(k | 024LL << 42, 010000, size)) {
+            if (mars.modd(k | 024LL << 42, 010000, size)) {
                 // An overflow error is possible
                 result += std::format("Overflow when attempting to put record #{}\n", i);
                 break;
             }
         }
 
-        space = avail();
+        space = mars.avail();
         result += std::format("Remaining: {}\n", space);
 
-        while (uint64_t k = last()) {
-            if (deld(k)) {
+        while (uint64_t k = mars.last()) {
+            if (mars.deld(k)) {
                 std::cerr << std::format("Unexpected error at {:o}, stopping clearing\n", k);
                 break;
             }
         }
-        space = avail();
+        space = mars.avail();
         result += std::format("After clearing: {}\n", space);
     }
     const std::string expect =
@@ -54,5 +55,4 @@ Remaining: 1
 After clearing: 65184
 )";
     EXPECT_EQ(result, expect);
-    IOdiscard();
 }
