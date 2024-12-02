@@ -218,8 +218,8 @@ struct MarsImpl {
     void totext();
     void set_header();
     void copy_words(word dst, word src, int len);
-    void copy_chained();
-    void cpyout();
+    void copy_chained(int len);
+    void cpyout(uint64_t);
     void lock();
     void a00203(), a00213(), pr202(), free_from_current_extent(), a00340();
     void skip(Error);
@@ -566,32 +566,31 @@ void MarsImpl::copy_words(word dst, word src, int len) {
 }
 
 // Copies chained extents to user memory (acc = length of the first extent)
-void MarsImpl::copy_chained() {           // a01423
+void MarsImpl::copy_chained(int len) { // a01423
     for (;;) {
-        m16 = acc;
-        if (m16.d) {
+        if (len) {
             if (verbose)
                 std::cerr << "From DB: ";
-            copy_words(usrloc, aitem, m16.d);
+            copy_words(usrloc, aitem, len);
         }
-        usrloc = usrloc.d + curExtLength.d;
+        usrloc = usrloc + curExtLength;
         if (!next_extent(curExtent))
             return;
         find_item(next_extent(curExtent));
+        len = curExtLength.d;
     }
 }
 
 // After cpyout must go to cmd0
-void MarsImpl::cpyout() {
-    info(acc);
+void MarsImpl::cpyout(uint64_t descr) {
+    info(descr);
     usrloc = myloc;
     if (mylen.d && mylen.d < itmlen.d)
         throw ERR_TOO_LONG;
     // Skip the first word ot the found item
     ++aitem;
     --curExtLength;
-    acc = curExtLength.d;
-    copy_chained();
+    copy_chained(curExtLength.d);
 }
 
 // Not really a mutex
@@ -609,17 +608,15 @@ void MarsImpl::lock() {
 
 void MarsImpl::a00203() {
     Array[idx.d-1] = acc;
-    acc &= BITS(19);
-    loc116 = acc;
+    loc116 = acc & BITS(19);
     acc = m16.d;
     usrloc = acc;
-    acc += 2;
-    element = acc;
+    element = acc + 2;
     if (loc116 == loc246)
         return;
     loc246 = loc116;
     find_item(loc246.d);
-    copy_chained();
+    copy_chained(curExtLength.d);
 }
 
 void MarsImpl::a00213() {
@@ -921,8 +918,7 @@ Error MarsImpl::eval() try {
     case 012:
         myloc = &dbdesc;
         mylen = 3;
-        acc = adescr.d;
-        cpyout();
+        cpyout(adescr.d);
         break;
     case 013:
         usable_space();
@@ -950,8 +946,7 @@ Error MarsImpl::eval() try {
         acc = myloc.d;
         jump(alloc);
     case 022:
-        acc = adescr.d;
-        cpyout();
+        cpyout(adescr.d);
         break;
     case 023:
         free(adescr.d);
