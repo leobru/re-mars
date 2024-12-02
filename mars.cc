@@ -231,6 +231,8 @@ struct MarsImpl {
     void assign_and_incr();
     void pasbdi();
     Error eval();
+    void overflow();
+    void prepare_chunk();
     void setDirty(int x) {
         dirty = dirty.d | ((curZone.d ? x : 0) + 1);
     }
@@ -866,6 +868,36 @@ bool MarsImpl::cmd46() {
     return false;
 }
 
+void MarsImpl::overflow() {
+    acc = next_extent(d00030);
+    if (acc) {
+        free(acc);
+        throw ERR_OVERFLOW;
+    }
+    dirty = dirty.d | 1;
+    throw ERR_OVERFLOW;
+}
+
+void MarsImpl::prepare_chunk() {
+    acc = freeSpace[m5-1].d - 1;
+    work = acc;
+    --m5;
+    if (acc < mylen.d) {
+        remlen = mylen.d - work.d;
+        mylen = work.d;
+        usrloc = usrloc.d - work.d;
+        acc = m5.d;
+        ++m5;
+    } else {
+        acc = usrloc.d;
+        acc -= mylen.d;
+        acc += 1;
+        usrloc = acc;
+        acc = m5.d;
+        m5 = 0;
+    }
+}
+
 Error MarsImpl::eval() try {
     std::unordered_map<void*,int> jumptab;
     std::vector<void*> targets;
@@ -1306,16 +1338,16 @@ Error MarsImpl::eval() try {
     acc &= BITS(48);
     d00030 = acc;
     mylen = remlen;
-  a01105:
-    if (--m5.d)
-        jump(a01264);
-    acc = next_extent(d00030);
-    if (acc) {
-        free(acc);
-        throw ERR_OVERFLOW;
+    if (--m5.d) {
+        while (freeSpace[m5-1].d < 2) {
+            if (--m5.d)
+                continue;
+            overflow();
+        }
+        prepare_chunk();
+        jump(chunk);
     }
-    dirty = dirty.d | 1;
-    throw ERR_OVERFLOW;
+    overflow();
   inskey:
     d00011 = key;
     acc = curDescr.d;
@@ -1468,25 +1500,12 @@ Error MarsImpl::eval() try {
     usrloc = usrloc.d + mylen.d - 1;
     m5 = dblen;
   a01264:
-    if (freeSpace[m5-1].d < 2)
-        jump(a01105);
-    acc = freeSpace[m5-1].d - 1;
-    work = acc;
-    --m5;
-    if (acc < mylen.d) {
-        remlen = mylen.d - work.d;
-        mylen = work.d;
-        usrloc = usrloc.d - work.d;
-        acc = m5.d;
-        ++m5;
-    } else {
-        acc = usrloc.d;
-        acc -= mylen.d;
-        acc += 1;
-        usrloc = acc;
-        acc = m5.d;
-        m5 = 0;
+    while (freeSpace[m5-1].d < 2) {
+        if (--m5.d)
+            continue;
+        overflow();
     }
+    prepare_chunk();
     jump(chunk);
   a01311:
     d00012 = acc;
