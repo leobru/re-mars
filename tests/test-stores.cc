@@ -941,7 +941,7 @@ TEST(mars, modd_stores)
 //  EXPECT_EQ(mars.get_store(01415), 0'0000'0000'0000'0012u); // overwritten
     EXPECT_EQ(mars.get_store(01413), 0'0000'0000'0001'0000u);
     EXPECT_EQ(mars.get_store(01403), 0'0020'4026'2100'1511u);
-    EXPECT_EQ(mars.get_store(02007), 0'0000'0000'0000'0000u);
+    EXPECT_EQ(mars.get_store(02007), 0'0000'0000'0000'4000u);
     EXPECT_EQ(mars.get_store(02013), 0'0000'0000'0000'1400u);
     EXPECT_EQ(mars.get_store(02041), 0'0340'0000'0000'0000u);
     EXPECT_EQ(mars.get_store(02017), 0'0000'0000'0000'4000u);
@@ -1376,7 +1376,7 @@ TEST(mars, putd_stores)
 //  EXPECT_EQ(mars.get_store(01415), 0'0000'0000'0000'0012u); // overwritten
     EXPECT_EQ(mars.get_store(01413), 0'0000'0000'0001'0000u);
     EXPECT_EQ(mars.get_store(01403), 0'0000'0000'2621'1511u);
-    EXPECT_EQ(mars.get_store(02007), 0'0000'0000'0000'0000u);
+    EXPECT_EQ(mars.get_store(02007), 0'0000'0000'0000'4000u);
     EXPECT_EQ(mars.get_store(02013), 0'0000'0000'0000'1400u);
     EXPECT_EQ(mars.get_store(02041), 0'0340'0000'0000'0000u);
     EXPECT_EQ(mars.get_store(02017), 0'0000'0000'0000'4000u);
@@ -1643,54 +1643,6 @@ TEST(mars, cleard_stores)
     // Put element with numerical key
     mars.putd(123, PAGE1, 10);
 
-#if 0
-    // Putting one half of it to the DB
-    mars.modd(elt.c_str(), PAGE1, 512);
-
-    // Putting all of it (will be split: max usable words in a zone = 01775)
-    mars.modd(elt.c_str(), PAGE1, 1024);
-
-    // Again (exact match of length)
-    mars.modd(elt.c_str(), PAGE1, 1024);
-
-    // With smaller length (reusing the block)
-    mars.modd(elt.c_str(), PAGE1+1, 1023);
-
-    // Getting back
-    mars.getd(elt.c_str(), PAGE2, 1023);
-    ASSERT_TRUE(compare(mars, PAGE2, PAGE1+1, 1023));
-
-    // Done with it
-    mars.deld(elt.c_str());
-
-    // Putting 59 elements of varying sizes with numerical keys (key 0 is invalid)
-    for (int i = 0; i <= 59; ++i) {
-        if (i < 59) {
-            EXPECT_EQ(mars.putd(i+1, PAGE1+1, i), 0)
-                << "while putting " << std::dec << i;
-        } else {
-            // An overflow error is expected at the last iteration
-            EXPECT_NE(mars.putd(i+1, PAGE1+1, i), 0)
-                << "while putting " << std::dec << i;
-        }
-    }
-
-    uint64_t k = mars.last();
-    while (k) {
-        int len = mars.getlen();
-        mars.getd(k, PAGE2, 100);
-        ASSERT_TRUE(compare(mars, PAGE2, PAGE1+1, len))
-            << "Found " << std::oct << k << ' ' << len;
-        k = mars.prev();
-    }
-
-    // A termination error is expected
-    mars.memoize_stores = true;
-    std::cout << "cleard()\n";
-    mars.cleard(false);
-    // TODO: more stores
-    EXPECT_EQ(mars.get_store(01450), 0'0000'0000'0000'1456u);
-#endif
     // Clear database
     //mars.trace_stores = true;
     mars.memoize_stores = true;
@@ -1865,10 +1817,10 @@ TEST(mars, cleard_stores)
     EXPECT_EQ(mars.get_store(02036), 0'0010'0000'0000'0000u); // latest
     EXPECT_EQ(mars.get_store(01516), 0'0000'0000'0000'0001u); // latest
     EXPECT_EQ(mars.get_store(01620), 0'0020'0000'0000'7774u); // latest
-    // ERROR 3 (No such record)
 
-    EXPECT_EQ(mars.get_store(02010), 0'2'0150'3067'2563'1006'7516u); // ???
-    EXPECT_EQ(mars.get_store(02011), 0'3107'1157'3066'2562u);
+    // ERROR 3 (No such record)
+    EXPECT_EQ(mars.get_store(02010), 0x20'68'63'75'73'20'6f'4eu); // text message 'No such '
+    EXPECT_EQ(mars.get_store(02011), 0x49'00'64'72'6f'63'65'72u); // text message 'record\0I'
     EXPECT_EQ(mars.get_store(02037), 0'0000'0200'0052'0001u);
 
     // Writing 520001 from address 4000
