@@ -1281,7 +1281,17 @@ Error MarsImpl::eval() try {
                 jump(chunk);
             }
         }
-        jump(split); // End reached, must split
+        // End reached, must split
+      split:
+        usrloc = usrloc.d + mylen.d - 1;
+        m5 = dblen;
+        while (freeSpace[m5-1].d < 2) {
+            if (--m5.d)
+                continue;
+            overflow();
+        }
+        prepare_chunk();
+        jump(chunk);
     }
     acc = curZone.d;
   chunk:
@@ -1496,17 +1506,6 @@ Error MarsImpl::eval() try {
     mylen = 041;
     acc = loc20.d;
     jump(a01311);
-  split:
-    usrloc = usrloc.d + mylen.d - 1;
-    m5 = dblen;
-  a01264:
-    while (freeSpace[m5-1].d < 2) {
-        if (--m5.d)
-            continue;
-        overflow();
-    }
-    prepare_chunk();
-    jump(chunk);
   a01311:
     d00012 = acc;
     m6 = target(drtnxt);
