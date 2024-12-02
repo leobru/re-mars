@@ -14,6 +14,9 @@
 
 #include "mars.h"
 
+using word = Mars::word;
+using Error = Mars::Error;
+
 const uint64_t rk = 7LL << 41;
 
 #define FAKEBLK 020
@@ -435,7 +438,7 @@ void MarsImpl::get_zone(uint64_t arg) {
     if (m16[0] == zoneKey)
         return;
     std::cerr << std::format("Corruption: zoneKey = {:o}, data = {:o}\n", zoneKey.d, (*m16).d);
-    throw ERR_BAD_PAGE;
+    throw Mars::ERR_BAD_PAGE;
 }
 
 void MarsImpl::save(bool force_tab = false) {
@@ -510,11 +513,11 @@ void MarsImpl::find_item(uint64_t arg) {
     // now m16 points to the current page
     work = arg & 03776000;
     if (!work.d)
-        throw ERR_ZEROKEY;      // Attempting to find a placeholder?
+        throw Mars::ERR_ZEROKEY;      // Attempting to find a placeholder?
     work2 = work.d << 29;
     acc = m16[1] & 03776000;
     if (!acc)
-        throw ERR_NO_RECORD;    // Attempting to find a deleted record?
+        throw Mars::ERR_NO_RECORD;    // Attempting to find a deleted record?
     if (acc >= work.d)
         acc = work.d;
     loc116 = acc >> 10;
@@ -524,7 +527,7 @@ void MarsImpl::find_item(uint64_t arg) {
             break;
         }
         if (--loc116.d == 0) {
-            throw ERR_NO_RECORD;
+            throw Mars::ERR_NO_RECORD;
         }
     }
     aitem = curbuf.d + (curExtent.d & 01777) + 1;
@@ -588,7 +591,7 @@ void MarsImpl::cpyout(uint64_t descr) {
     info(descr);
     usrloc = myloc;
     if (mylen.d && mylen.d < itmlen.d)
-        throw ERR_TOO_LONG;
+        throw Mars::ERR_TOO_LONG;
     // Skip the first word ot the found item
     ++aitem;
     --curExtLength;
@@ -603,7 +606,7 @@ void MarsImpl::lock() {
     IOcall(IOword);
     bdtab[1] = acc = bdtab[1].d ^ LOCKKEY;
     if (!(acc & LOCKKEY))
-        throw ERR_LOCKED;
+        throw Mars::ERR_LOCKED;
     bdbuf[0] = acc;
     IOcall(work);
 }
@@ -647,7 +650,7 @@ void MarsImpl::setctl(uint64_t location) {
     m16 = curbuf = bdtab;
     acc = (*m16).d;
     if (acc != DBkey.d)
-        throw ERR_BAD_CATALOG;
+        throw Mars::ERR_BAD_CATALOG;
     idx = 0;
     loc246 = 0;
     curZone = 0;
@@ -671,7 +674,7 @@ void MarsImpl::free_extent() {
     work = m16[1].d & 01777;
     if (work != d00031) {
         if (d00031.d < work.d)
-            throw ERR_INTERNAL;
+            throw Mars::ERR_INTERNAL;
         m5 = (d00031.d - work.d) & 077777;
         work = work.d + curbuf.d;
         d00031 = work.d + curExtLength.d;
@@ -721,7 +724,7 @@ void MarsImpl::find_end_mark() {
     char * end = (char*)&(work2[0].d);
     char * found = (char*)memchr(start, endmrk.d & 0xFF, end-start);
     if (!found)
-        throw ERR_NO_END_MARK;
+        throw Mars::ERR_NO_END_MARK;
     mylen = (found - start) / 8 + 1;
 }
 
@@ -764,7 +767,7 @@ bool MarsImpl::proc270() {
 bool MarsImpl::step() {
     acc = Array[idx.d].d;
     if (!acc)
-        throw ERR_NO_CURR;
+        throw Mars::ERR_NO_CURR;
     m5 = acc;
     if (!m16.d) {
         // Step forward
@@ -775,7 +778,7 @@ bool MarsImpl::step() {
             acc = element[-1].d;
             acc &= BITS(19) << 10;
             if (!acc) {
-                skip(ERR_NO_NEXT);
+                skip(Mars::ERR_NO_NEXT);
                 return true;
             }
             acc >>= 10;
@@ -788,7 +791,7 @@ bool MarsImpl::step() {
         if (!m5.d) {
             acc = element[-1] >> 29;
             if (!acc) {
-                skip(ERR_NO_PREV);
+                skip(Mars::ERR_NO_PREV);
                 return true;
             }
             pr202();
@@ -830,7 +833,7 @@ bool MarsImpl::a00334(word arg) {
         if (jmpoff.d == DONE
             // impossible? should compare with A00317, or deliberate as a binary patch?
             || temp.d) {
-            skip(ERR_STEP);
+            skip(Mars::ERR_STEP);
             return true;
         }
     }
@@ -872,10 +875,10 @@ void MarsImpl::overflow() {
     acc = next_extent(d00030);
     if (acc) {
         free(acc);
-        throw ERR_OVERFLOW;
+        throw Mars::ERR_OVERFLOW;
     }
     dirty = dirty.d | 1;
-    throw ERR_OVERFLOW;
+    throw Mars::ERR_OVERFLOW;
 }
 
 void MarsImpl::prepare_chunk() {
@@ -958,12 +961,12 @@ Error MarsImpl::eval() try {
     case 014:
         if (curkey == key)
             break;
-        skip(ERR_NO_NAME);
+        skip(Mars::ERR_NO_NAME);
         jump(next);
     case 015:
         if (curkey != key)
             break;
-        skip(ERR_EXISTS);
+        skip(Mars::ERR_EXISTS);
         jump(next);
     case 016:
         find_end_mark();
@@ -985,7 +988,7 @@ Error MarsImpl::eval() try {
         break;
     case 024:
         if (givenp != savedp)
-            throw ERR_WRONG_PASSWORD;
+            throw Mars::ERR_WRONG_PASSWORD;
         break;
     case 025:
         setctl(dbdesc.d);
@@ -1019,7 +1022,7 @@ Error MarsImpl::eval() try {
         save();
         if (mars.dump_diffs)
             mars.dump();
-        return ERR_SUCCESS;
+        return Mars::ERR_SUCCESS;
     case 036:
         m16 = element;
         m16[Array[idx.d]+1] = curDescr;
@@ -1094,7 +1097,7 @@ Error MarsImpl::eval() try {
     case 055:
         if (mars.dump_diffs)
             mars.dump();
-        return ERR_SUCCESS;
+        return Mars::ERR_SUCCESS;
     default:
         // In the original binary, loss of control ensued.
         std::cerr << std::format("Invalid micro-operation {:o} encountered\n", m5.d);
@@ -1131,7 +1134,7 @@ Error MarsImpl::eval() try {
         finalize(0);
         if (mars.dump_diffs)
             mars.dump();
-        return ERR_SUCCESS;
+        return Mars::ERR_SUCCESS;
     }
     curcmd = acc;
     m5 = acc & BITS(6);
@@ -1142,7 +1145,7 @@ Error MarsImpl::eval() try {
   find:
     temp = acc;
     if (!acc || acc & ONEBIT(48))
-        throw ERR_INV_NAME;
+        throw Mars::ERR_INV_NAME;
     acc = 0;
   cmd1:
     idx = acc;
@@ -1198,7 +1201,7 @@ Error MarsImpl::eval() try {
         ++m16;
         jump(cmd17);            // Possibly a typo/oversight, ought to be loop_here
     }
-    throw ERR_INTERNAL;         // Originally "no end word"
+    throw Mars::ERR_INTERNAL;         // Originally "no end word"
   a00667:
     acc = idx.d;
     if (!acc)
@@ -1414,7 +1417,7 @@ Error MarsImpl::eval() try {
     if (usable_space() < work.d) {
         loc20 = 0;
         free(curDescr.d);
-        throw ERR_OVERFLOW;
+        throw Mars::ERR_OVERFLOW;
     }
     d00025 = loc157;
     loc157 = (loc246.d << 29) & BITS(48);
@@ -1496,7 +1499,7 @@ Error MarsImpl::eval() try {
     if (usable_space() < 0101) {
         loc20 = 0;
         free(curDescr.d);
-        throw ERR_OVERFLOW;
+        throw Mars::ERR_OVERFLOW;
     }
     acc -= 0101;
     call(pr1022,m6);
@@ -1566,7 +1569,7 @@ Error MarsImpl::eval() try {
     acc = (*aitem).d & 077777;
     acc += itmlen.d;
     if (acc < mylen.d) {
-        throw ERR_OVERFLOW;
+        throw Mars::ERR_OVERFLOW;
     }
     m16 = curbuf;
     mylen = work.d;

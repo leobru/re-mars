@@ -14,12 +14,11 @@ static std::string tobesm(std::string s) {
 
 static bool compare(Mars & mars, int start1, int start2, int len) {
     bool match = true;
-    word * data = mars.data;
     for (int i = 0; i < len; ++i) {
-        if (data[start1+i] != data[start2+i]) {
+        if (mars.data[start1+i] != mars.data[start2+i]) {
             match = false;
             std::cout << "Element " << std::dec << i << " does not match ("
-                      << data[start1+i].d << " vs " << data[start2+i].d << ")\n";
+                      << mars.data[start1+i].d << " vs " << mars.data[start2+i].d << ")\n";
         }
     }
     if (match && mars.verbose)
