@@ -3,30 +3,30 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <format>
 #include <algorithm>
 #include <ctime>
 #include <getopt.h>
 
 #include "mars.h"
 
-void init(int start, int len) {
+void init(Mars & mars, int start, int len) {
     for (int i = 0; i < len; ++i) {
-      data[start+i] = (064LL << 42) + i;
+      mars.data[start+i] = (064LL << 42) + i;
     }
 }
 
-bool compare(int start1, int start2, int len) {
+bool compare(Mars & mars, int start1, int start2, int len) {
     bool match = true;
     for (int i = 0; i < len; ++i) {
-        if (data[start1+i] != data[start2+i]) {
+        if (mars.data[start1+i] != mars.data[start2+i]) {
             match = false;
-            std::cerr << "Element " << std::dec << i << " does not match ("
-                      << data[start1+i].d << " vs " << data[start2+i].d << ")\n";
+            std::cerr << std::format("Element {} does not match ({:016o} vs {:016o})\n",
+                                     i, mars.data[start1+i].d, mars.data[start2+i].d);
         }
     }
-    if (match && mars_flags.verbose)
-        std::cerr << std::dec << len << " elements match between "
-                  << std::oct << start1 << " and " << start2 << '\n';
+    if (match && mars.verbose)
+        std::cerr << std::format("{} elements match between {:o} and {:o}\n", len, start1, start2);
     return match;
 }
 
@@ -133,7 +133,7 @@ int main(int argc, char ** argv) {
     const int PAGE1 = 010000;
     const int PAGE2 = 012000;
 
-    init(PAGE1, 1024);
+    init(mars, PAGE1, 1024);
 
     // Initializing an array of 1024 words
 
@@ -149,7 +149,7 @@ int main(int argc, char ** argv) {
     mars.modd(elt.c_str(), PAGE1+1, 1023);
     // Getting back
     mars.getd(elt.c_str(), PAGE2, 1023);
-    if (!compare(PAGE2, PAGE1+1, 1023))
+    if (!compare(mars, PAGE2, PAGE1+1, 1023))
         exit(1);
     // Done with it
     mars.deld(elt.c_str());
@@ -160,7 +160,7 @@ int main(int argc, char ** argv) {
             std::cerr << "Putting " << i << '\n';
         if (mars.putd(i+1, PAGE1+1, i)) {
             // An overflow error is expected at the last iteration
-            std::cerr << "\twhile putting " << std::dec << i << '\n';
+            std::cerr << "\twhile putting " << i << '\n';
         }
     }
 
@@ -168,13 +168,12 @@ int main(int argc, char ** argv) {
     while (k) {
         int len = mars.getlen();
         if (mars.verbose)
-            std::cout << "Found " << std::oct << k << ' ' << len << '\n';
+            std::cout << std::format("Found {:o} {:o}\n", k, len);
         mars.getd(k, PAGE2, 100);
-        if (!compare(PAGE2, PAGE1+1, len))
+        if (!compare(mars, PAGE2, PAGE1+1, len))
             exit(1);
         k = mars.prev();
     }
 
-    cleard(false);              // A termination error is expected
-    IOflush();
+    mars.cleard(false);              // A termination error is expected
 }
