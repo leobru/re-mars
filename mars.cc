@@ -14,6 +14,9 @@
 
 #include "mars.h"
 
+using word = Mars::word;
+using Error = Mars::Error;
+
 const uint64_t rk = 7LL << 41;
 
 #define FAKEBLK 020

@@ -29,12 +29,12 @@ TEST(mars, diagnostics)
     uint64_t zero = 0, one = 1;
     mars.InitDB(0, 0, 1);
     mars.root();
-    ASSERT_EQ(mars.getd(zero, 0, 0), ERR_INV_NAME);
-    ASSERT_EQ(mars.getd(one, 0, 0), ERR_NO_NAME);
-    ASSERT_EQ(mars.putd(one, 0, 0), ERR_SUCCESS);
-    ASSERT_EQ(mars.putd(one, 0, 0), ERR_EXISTS);
-    ASSERT_EQ(mars.getd(one, 0, 0), ERR_SUCCESS);
-    ASSERT_EQ(mars.deld(one), ERR_SUCCESS);
+    ASSERT_EQ(mars.getd(zero, 0, 0), Mars::ERR_INV_NAME);
+    ASSERT_EQ(mars.getd(one, 0, 0), Mars::ERR_NO_NAME);
+    ASSERT_EQ(mars.putd(one, 0, 0), Mars::ERR_SUCCESS);
+    ASSERT_EQ(mars.putd(one, 0, 0), Mars::ERR_EXISTS);
+    ASSERT_EQ(mars.getd(one, 0, 0), Mars::ERR_SUCCESS);
+    ASSERT_EQ(mars.deld(one), Mars::ERR_SUCCESS);
 }
 
 static void init(Mars & mars, int start, int len) {
@@ -79,8 +79,8 @@ TEST(mars, coverage)
     mars.InitDB(052, 0, 1);
     mars.SetDB(052, 0, 1);
     std::string fname = tobesm("TEST");
-    ASSERT_EQ(mars.newd(fname.c_str(), 052, 1, 2), ERR_SUCCESS);
-    ASSERT_EQ(mars.opend(fname.c_str()), ERR_SUCCESS);
+    ASSERT_EQ(mars.newd(fname.c_str(), 052, 1, 2), Mars::ERR_SUCCESS);
+    ASSERT_EQ(mars.opend(fname.c_str()), Mars::ERR_SUCCESS);
 
     const int PAGE1 = 010000;
     const int PAGE2 = 012000;
@@ -91,33 +91,33 @@ TEST(mars, coverage)
     std::string elt = "A";
     elt.resize(8);
     // Putting one half of it to the DB
-    ASSERT_EQ(mars.modd(elt.c_str(), PAGE1, 512), ERR_SUCCESS);
+    ASSERT_EQ(mars.modd(elt.c_str(), PAGE1, 512), Mars::ERR_SUCCESS);
     // Putting all of it (will be split: max usable words in a zone = 01775)
-    ASSERT_EQ(mars.modd(elt.c_str(), PAGE1, 1024), ERR_SUCCESS);
+    ASSERT_EQ(mars.modd(elt.c_str(), PAGE1, 1024), Mars::ERR_SUCCESS);
     // Again (exact match of length)
-    ASSERT_EQ(mars.modd(elt.c_str(), PAGE1, 1024), ERR_SUCCESS);
+    ASSERT_EQ(mars.modd(elt.c_str(), PAGE1, 1024), Mars::ERR_SUCCESS);
     // With smaller length (reusing the block)
-    ASSERT_EQ(mars.modd(elt.c_str(), PAGE1+1, 1023), ERR_SUCCESS);
+    ASSERT_EQ(mars.modd(elt.c_str(), PAGE1+1, 1023), Mars::ERR_SUCCESS);
     // Getting back
-    ASSERT_EQ(mars.getd(elt.c_str(), PAGE2, 1023), ERR_SUCCESS);
+    ASSERT_EQ(mars.getd(elt.c_str(), PAGE2, 1023), Mars::ERR_SUCCESS);
     EXPECT_TRUE(compare(mars, PAGE2, PAGE1+1, 1023));
-    EXPECT_EQ(mars.cleard(true), ERR_SUCCESS);
+    EXPECT_EQ(mars.cleard(true), Mars::ERR_SUCCESS);
 
     // Putting 59 elements of varying sizes with numerical keys (key 0 is invalid)
     for (int i = 0; i <= 59; ++i) {
         auto e = mars.putd(i+1, PAGE1+1, i);
-        EXPECT_EQ(e, i < 59 ? ERR_SUCCESS : ERR_OVERFLOW);
+        EXPECT_EQ(e, i < 59 ? Mars::ERR_SUCCESS : Mars::ERR_OVERFLOW);
     }
 
     uint64_t k = mars.last();
     while (k) {
         int len = mars.getlen();
-        EXPECT_EQ(mars.getd(k, PAGE2, 100), ERR_SUCCESS);
+        EXPECT_EQ(mars.getd(k, PAGE2, 100), Mars::ERR_SUCCESS);
         EXPECT_TRUE(compare(mars, PAGE2, PAGE1+1, len));
         k = mars.prev();
     }
 
-    EXPECT_EQ(mars.cleard(false), ERR_NO_RECORD);
+    EXPECT_EQ(mars.cleard(false), Mars::ERR_NO_RECORD);
     delete &mars;
 
     run_command(result, "sha1sum 52000[0-2]");
