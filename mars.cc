@@ -228,7 +228,7 @@ struct MarsImpl {
     void skip(Error);
     void setctl(uint64_t);
     void free_extent(), free(uint64_t);
-    void find_end_mark();
+    void find_end_mark(), find_end_word();
     bool proc270(), step(), a00334(word);
     bool cmd46();
     void assign_and_incr();
@@ -236,6 +236,9 @@ struct MarsImpl {
     Error eval();
     void overflow();
     void prepare_chunk();
+    void allocator(int);
+    void mkctl(), find(word);
+    void a01346(), a00164(), a01311();
     void setDirty(int x) {
         dirty = dirty.d | ((curZone.d ? x : 0) + 1);
     }
@@ -901,6 +904,272 @@ void MarsImpl::prepare_chunk() {
     }
 }
 
+// The 3 entry points are disambiguated by the original code addresses
+// for lack of a better understanding of their semantics.
+void MarsImpl::allocator(int addr) {
+    switch (addr) {
+    case 01022:
+        date();
+        // FALL THROUGH
+    case 01023:
+        m5 = 0;
+        d00030 = 0;
+        m16 = freeSpace;
+        work = freeSpace[curZone];
+        ++mylen;
+        if (mylen.d >= work.d) {
+            if (verbose)
+                std::cerr << "mylen = " << mylen.d << " work = " << work.d << '\n';
+            // If the datum is larger than MAXCHUNK, it will have to be split
+            if (mylen.d >= Mars::MAXCHUNK)
+                jump(split);
+            // Find a zone with enough free space
+            for (size_t i = 0; i < dblen.d; ++i) {
+                if (mylen.d < freeSpace[i].d) {
+                    acc = i;
+                    jump(chunk);
+                }
+            }
+            // End reached, must split
+          split:
+            usrloc = usrloc.d + mylen.d - 1;
+            m5 = dblen;
+            while (freeSpace[m5-1].d < 2) {
+                if (--m5.d)
+                    continue;
+                overflow();
+            }
+            prepare_chunk();
+            jump(chunk);
+        }
+        acc = curZone.d;
+    chunk:
+        get_zone(acc);
+        m7 = m16;
+        m16 = m7[1] >> 10;
+        do {
+            if (m16 == get_id(curbuf[m16+1]))
+                break;
+            curbuf[m16+2] = curbuf[m16+1];
+            --m16;
+        } while (m16.d);
+        ++m16;
+        loc116 = acc = m16.d;
+        acc <<= 39;
+        acc &= BITS(48);
+        acc |= d00030.d;
+    case 01047:                 // acc has the extent id in bits 48-40
+        d00030 = acc;
+        d00024 = (get_id(acc) << 10) | curZone.d;
+        m16 = mylen;
+        acc = m7[1].d - m16.d;
+        acc += 02000;
+        m7[1] = acc;
+        acc &= 01777;
+        work = acc;
+        acc += 1 + curbuf.d;
+        work2 = acc;
+        if (!m5.d) {
+            --m16;
+            ++work2;
+        }
+        if (m16.d) {
+            if (verbose)
+                std::cerr << "To DB: ";
+            copy_words(work2, usrloc, m16.d);
+        }
+        loc116[m7+1] = (mylen.d << 10) | work.d | d00030.d;
+        m16 = freeSpace;
+        if (verbose)
+            std::cerr << "Reducing free " << std::oct << freeSpace[curZone].d
+                      << " by len " << mylen.d << " + 1\n";
+        freeSpace[curZone] = freeSpace[curZone].d - (mylen.d+1);
+        if (verbose)
+            std::cerr << "Got " << freeSpace[curZone].d << '\n';
+        if (!m5.d) {
+            work2[-1] = extentHeader;
+            setDirty(2);
+            return;
+        }
+        setDirty(1);
+        acc = d00024.d;
+        acc <<= 20;
+        acc &= BITS(48);
+        d00030 = acc;
+        mylen = remlen;
+        if (--m5.d) {
+            while (freeSpace[m5-1].d < 2) {
+                if (--m5.d)
+                    continue;
+                overflow();
+            }
+            prepare_chunk();
+            jump(chunk);
+        }
+        overflow();             // will throw
+    }
+}
+
+void MarsImpl::mkctl() {
+    curZone = 0;
+    m5 = dblen = dbdesc >> 18;
+    IOpat = dbdesc.d & 0777777;
+    curbuf = bdtab;
+    work2 = IOpat.d | bdtab.d << 20;
+    bdtab[1] = 01777;
+    do {
+        --m5;
+        bdbuf[m5] = 01776;
+        bdtab[0] = DBkey.d | m5.d;
+        IOword = work2.d + m5.d;
+        IOcall(IOword);
+    } while (m5.d);
+    myloc = freeSpace = bdbuf; // freeSpace[0] is now the same as bdbuf[0]
+    loc20 = 02000;
+    d00011 = 0;
+    make_metablock();
+    allocator(01022);
+    mylen = dblen.d;
+    // This trick results in max possible DB length = 753 zones.
+    bdbuf[0] = 01731 - mylen.d;
+}
+
+void MarsImpl::a01346() {
+    d00026 = curExtent;
+    curExtent = curExtent.d & 01777;
+    free_from_current_extent();
+    ++mylen;
+    m5 = 0;
+    m7 = curbuf;
+    acc = d00026.d & (0777LL << 39);
+    allocator(01047);
+    acc = next_extent(d00026);
+    if (acc) {
+        free(acc);
+    } else {
+        dirty = dirty.d | 1;
+    }
+}
+
+void MarsImpl::find_end_word() {
+  cmd17:
+    m16 = -mylen.d;
+    work2 = myloc + mylen;
+    // loop_here:
+    if (work2[m16] == endmrk) {
+        m16 = m16 + mylen + 1;
+        mylen = m16;
+        return;
+    }
+    if (m16 != 0) {
+        ++m16;
+        jump(cmd17);            // Possibly a typo/oversight, ought to be loop_here
+    }
+    throw Mars::ERR_INTERNAL;         // Originally "no end word"
+}
+
+void MarsImpl::a00164() {
+    acc = m16[-1].d & 01777;
+    m5 = acc;
+    if (verbose)
+        std::cerr << "Comparing " << std::dec << acc/2 << " elements\n";
+    while (m5.d) {
+        acc = m5[m16-2].d + temp.d;
+        acc = (acc + (acc >> 48)) & BITS(48);
+        if (!(acc & ONEBIT(48)))
+            break;
+        m5.d -= 2;
+    }
+    m5.d -= 2;
+    Array[idx.d] = m5.d | ONEBIT(31);
+    acc = m16[1].d & ONEBIT(48);
+    if (!acc) {
+        curkey = element[m5];
+        adescr = element[m5+1];
+        return;
+    }
+    idx = idx.d + 2;
+    if (idx.d > 7) {
+        std::cerr << "Idx = " << idx.d << ": DB will be corrupted\n";
+    }
+    acc = m16[m5+1].d;
+    pr202();
+    m16 = Loc120;
+    a00164();
+}
+
+void MarsImpl::find(word k) {
+    temp = k;
+    idx = 0;
+    temp = temp.d ^ BITS(47);
+    while (true) {
+        m16 = Metadata;
+        if (loc20.d)
+            break;
+        if (verbose)
+            std::cerr << "Loc20 == 0, nothing to compare\n";
+        a00213();
+    }
+    a00164();
+}
+
+void MarsImpl::a01311() {
+    d00012 = acc;
+    find_item(d00012.d);
+    --acc;
+    m5 = acc;
+    if (acc == mylen.d) {
+        // The new length of data matches the first extent length
+        if (m5.d) {
+            do {
+                aitem[m5] = usrloc[m5-1].d;
+            } while (--m5.d);
+        }
+        m5 = m16;
+        date();
+        *aitem = extentHeader;
+        setDirty(1);
+        if (!next_extent(curExtent))
+            return;       // No extents to free: done
+        loc116[m5+1] = curExtent & ~(BITS(19) << 20); // dropping the extent chain
+        acc = next_extent(curExtent);
+        free(acc);          // Free remaining extents
+        dirty = dirty.d | 1;
+        return;
+    }
+    date();
+    m16 = curbuf;
+    acc = m16[1] >> 10;
+    m5 = acc + 1;
+    acc = (m16[1].d - acc) & 01777;
+    acc += curExtLength.d - 2;
+    work = acc;
+    if (acc >= mylen.d) {
+        a01346();
+        dirty = dirty.d | 1;
+        return;
+    }
+    usable_space();
+    acc = (*aitem).d & 077777;
+    acc += itmlen.d;
+    if (acc < mylen.d) {
+        throw Mars::ERR_OVERFLOW;
+    }
+    m16 = curbuf;
+    mylen = work.d;
+    a01346();
+    usrloc = usrloc.d + mylen.d;
+    mylen = (extentHeader.d & 077777) - mylen.d;
+    extentHeader = usrloc[-1];
+    allocator(01023);
+    find_item(d00012.d);
+    // This is likely chaining the extents
+    acc = (d00024.d << 20) & BITS(48);
+    loc116[m16+1] = acc | curExtent.d;
+    setDirty(2);
+    return;
+}
+
 Error MarsImpl::eval() try {
     std::unordered_map<void*,int> jumptab;
     std::vector<void*> targets;
@@ -915,25 +1184,28 @@ Error MarsImpl::eval() try {
     case 0:
         break;
     case 1:                     // FIRST
-        temp = 0;
-        jump(cmd1);
+        find(0);
+        break;
     case 2:                     // LAST
-        acc = BITS(47);
-        jump(find);
+        find(BITS(47));
+        break;
     case 3:                     // PREV
         m16 = 1;
         if (step())
             jump(next);
-        jump(cmd0);
+        break;
     case 4:                     // NEXT
         m16 = 0;
         if (step())
             jump(next);
-        jump(cmd0);
+        break;
     case 5:
         d00011 = 0;
         make_metablock();
-        jump(alloc);
+        usrloc = acc;
+        allocator(01022);
+        curDescr = d00024;
+        break;
     case 6:
         idx = 0;
         itmlen = 041;
@@ -946,10 +1218,17 @@ Error MarsImpl::eval() try {
         a00334(desc2);
         break;
     case 010:
-        jump(mkctl);
+        mkctl();
+        // Invoking command 21 for the freeSpace array
+        usrloc = myloc;
+        allocator(01022);
+        curDescr = d00024;
+        break;
     case 011:
-        acc = key.d;
-        jump(find);
+        if (key == 0 || key.d & ONEBIT(48))
+            throw Mars::ERR_INV_NAME;
+        find(key);
+        break;
     case 012:
         myloc = &dbdesc;
         mylen = 3;
@@ -972,14 +1251,18 @@ Error MarsImpl::eval() try {
         find_end_mark();
         break;
     case 017:
-        jump(cmd17);
+        find_end_word();
+        break;
     case 020:
         usrloc = myloc.d;
         acc = adescr.d;
-        jump(a01311);
+        a01311();
+        break;
     case 021:
-        acc = myloc.d;
-        jump(alloc);
+        usrloc = myloc;
+        allocator(01022);
+        curDescr = d00024;
+        break;
     case 022:
         cpyout(adescr.d);
         break;
@@ -994,7 +1277,9 @@ Error MarsImpl::eval() try {
         setctl(dbdesc.d);
         break;
     case 026:
-        jump(inskey);
+        d00011 = key;
+        adescr = acc = curDescr.d;
+        jump(a01140);
     case 027:
         limit = 0;              // looks dead
         jump(delkey);
@@ -1119,8 +1404,6 @@ Error MarsImpl::eval() try {
     // enter2:                       // continue execution after a callback?
     acc = orgcmd.d;
     jump(next);
-  drtnxt:
-    dirty = dirty.d | 1;
   rtnext:
     if (goto_.d) {
         word to = goto_;
@@ -1138,70 +1421,9 @@ Error MarsImpl::eval() try {
     }
     curcmd = acc;
     m5 = acc & BITS(6);
-  a00153:
     m6 = target(cmd0);
     goto_ = 0;
     jump(switch_);
-  find:
-    temp = acc;
-    if (!acc || acc & ONEBIT(48))
-        throw Mars::ERR_INV_NAME;
-    acc = 0;
-  cmd1:
-    idx = acc;
-    temp = temp.d ^ BITS(47);
-    while (true) {
-        m16 = Metadata;
-        if (loc20.d)
-            break;
-        if (verbose)
-            std::cerr << "Loc20 == 0, nothing to compare\n";
-        a00213();
-    }
-  a00164:
-    acc = m16[-1].d & 01777;
-    m5 = acc;
-    if (verbose)
-        std::cerr << "Comparing " << std::dec << acc/2 << " elements\n";
-    while (m5.d) {
-        acc = m5[m16-2].d + temp.d;
-        acc = (acc + (acc >> 48)) & BITS(48);
-        if (!(acc & ONEBIT(48)))
-            break;
-        m5.d -= 2;
-    }
-    m5.d -= 2;
-    Array[idx.d] = m5.d | ONEBIT(31);
-    acc = m16[1].d & ONEBIT(48);
-    if (!acc) {
-        curkey = element[m5];
-        adescr = element[m5+1];
-        jump(rtnext);
-    }
-    idx = idx.d + 2;
-    if (idx.d > 7) {
-        std::cerr << "Idx = " << idx.d << ": DB will be corrupted\n";
-    }
-    acc = m16[m5+1].d;
-    pr202();
-    m16 = Loc120;
-    jump(a00164);
-    // pr376 (make_metablock) was here
-  cmd17:
-    // Searching for the end word
-    m16 = -mylen.d;
-    work2 = myloc.d + mylen.d;
-    // loop_here:
-    if (work2[m16] == endmrk) {
-        m16 = m16.d + mylen.d + 1;
-        mylen = m16;
-        jump(cmd0);
-    }
-    if (m16 != 0) {
-        ++m16;
-        jump(cmd17);            // Possibly a typo/oversight, ought to be loop_here
-    }
-    throw Mars::ERR_INTERNAL;         // Originally "no end word"
   a00667:
     acc = idx.d;
     if (!acc)
@@ -1246,126 +1468,16 @@ Error MarsImpl::eval() try {
         acc &= 077777;
         if (!acc) {
             d00011 = m16[0];
-            goto_ = target(a00730);
+            goto_ = target(a01242);
             d00033 = target(a00731);
         }
         jump(a01160);
-      a00730:
-        jump(a01242);
       a00731:
         acc = d00011.d;
         m16 = element;
         m16[Array[idx.d]] = acc;
         acc = Array[idx.d].d;
     }
-  alloc:
-    usrloc = acc;
-    call(pr1022,m6);
-    curDescr = d00024;
-    jump(cmd0);
-  pr1022:
-    date();
-  a01023:
-    m5 = 0;
-    d00030 = 0;
-    m16 = freeSpace;
-    work = freeSpace[curZone];
-    ++mylen;
-    if (mylen.d >= work.d) {
-        if (verbose)
-            std::cerr << "mylen = " << mylen.d << " work = " << work.d << '\n';
-        // If the datum is larger than MAXCHUNK, it will have to be split
-        if (mylen.d >= Mars::MAXCHUNK)
-            jump(split);
-        // Find a zone with enough free space
-        for (size_t i = 0; i < dblen.d; ++i) {
-            if (mylen.d < freeSpace[i].d) {
-                acc = i;
-                jump(chunk);
-            }
-        }
-        // End reached, must split
-      split:
-        usrloc = usrloc.d + mylen.d - 1;
-        m5 = dblen;
-        while (freeSpace[m5-1].d < 2) {
-            if (--m5.d)
-                continue;
-            overflow();
-        }
-        prepare_chunk();
-        jump(chunk);
-    }
-    acc = curZone.d;
-  chunk:
-    get_zone(acc);
-    m7 = m16;
-    m16 = m7[1] >> 10;
-    do {
-        if (m16 == get_id(curbuf[m16+1]))
-            break;
-        curbuf[m16+2] = curbuf[m16+1];
-        --m16;
-    } while (m16.d);
-    ++m16;
-    loc116 = acc = m16.d;
-    acc <<= 39;
-    acc &= BITS(48);
-    acc |= d00030.d;
-  pr1047:                       // acc has the extent id in bits 48-40
-    d00030 = acc;
-    d00024 = (get_id(acc) << 10) | curZone.d;
-    m16 = mylen;
-    acc = m7[1].d - m16.d;
-    acc += 02000;
-    m7[1] = acc;
-    acc &= 01777;
-    work = acc;
-    acc += 1 + curbuf.d;
-    work2 = acc;
-    if (!m5.d) {
-        --m16;
-        ++work2;
-    }
-    if (m16.d) {
-        if (verbose)
-            std::cerr << "To DB: ";
-        copy_words(work2, usrloc, m16.d);
-    }
-    loc116[m7+1] = (mylen.d << 10) | work.d | d00030.d;
-    m16 = freeSpace;
-    if (verbose)
-        std::cerr << "Reducing free " << std::oct << freeSpace[curZone].d
-                  << " by len " << mylen.d << " + 1\n";
-    freeSpace[curZone] = freeSpace[curZone].d - (mylen.d+1);
-    if (verbose)
-        std::cerr << "Got " << freeSpace[curZone].d << '\n';
-    if (!m5.d) {
-        work2[-1] = extentHeader;
-        setDirty(2);
-        indjump(m6);
-    }
-    setDirty(1);
-    acc = d00024.d;
-    acc <<= 20;
-    acc &= BITS(48);
-    d00030 = acc;
-    mylen = remlen;
-    if (--m5.d) {
-        while (freeSpace[m5-1].d < 2) {
-            if (--m5.d)
-                continue;
-            overflow();
-        }
-        prepare_chunk();
-        jump(chunk);
-    }
-    overflow();
-  inskey:
-    d00011 = key;
-    acc = curDescr.d;
-    adescr = acc;
-    jump(a01140);
   a01136:
     acc = d00032.d;
     acc >>= 29;
@@ -1382,7 +1494,7 @@ Error MarsImpl::eval() try {
     acc &= 01777;
     m6 = acc + m16.d;
     if (verbose)
-        std::cerr << "Expanding " << std::dec << (m6.d-limit.d)/2 << " elements\n";
+        std::cerr << std::format("Expanding {}  elements\n", (m6.d-limit.d)/2);
     while (m6 != limit) {
         m6[0] = m6[-2];
         m6[1] = m6[-1];
@@ -1397,17 +1509,33 @@ Error MarsImpl::eval() try {
     acc = idx.d;
     if (!acc) {
         mylen = 041;
-        if (m16[-1].d == 040)
-            jump(a01252);
+        if (m16[-1].d == 040) {
+            if (usable_space() < 0101) {
+                loc20 = 0;
+                free(curDescr.d);
+                throw Mars::ERR_OVERFLOW;
+            }
+            acc -= 0101;
+            allocator(01022);
+            m16 = Metadata;
+            m16[1] = d00024.d | ONEBIT(48);
+            m16[-1] = 2;
+            mylen = 041;
+            acc = loc20.d;
+            a01311();
+            jump(rtnext);
+        }
         acc = loc20.d;
-        jump(a01311);
+        a01311();
+        jump(rtnext);
     }
     acc = m16[-1].d & 01777;
     if (acc != 0100) {
         acc = m16[-1].d & 01777;
         mylen = ++acc;
         acc = loc246.d;
-        jump(a01311);
+        a01311();
+        jump(rtnext);
     }
     work = (idx.d * 2) + 041;
     if (Metadata[-1].d == 036) {
@@ -1427,7 +1555,7 @@ Error MarsImpl::eval() try {
     loc157 = acc;
     usrloc.d += 040;
     mylen = 041;
-    call(pr1022,m6);
+    allocator(01022);
     loc157 = d00025;
     d00011 = loc160;
     acc = (d00025 = loc117).d;
@@ -1439,19 +1567,17 @@ Error MarsImpl::eval() try {
     acc &= BITS(19) << 10;
     d00032 = (acc << 19) & BITS(48);
     m16 = Loc120;
-    goto_ = target(a01231);
     usrloc = m16.d - 1;
     acc = m16[-1].d & 01777;
     mylen = ++acc;
     acc = loc246.d;
-    jump(a01311);
-  a01231:
+    a01311();
     m5 = target(a01136);
     // pr1232 can return in 3 ways:
-    // - back to the caller
+    // - back to the immediate caller
     // - terminating execution of the instruction (next)
     // - potential termination of the execution
-    //   with setting the dirty flag (drtnxt)
+    //   returning to the upper level caller if goto_ is not 0 (rtnext)
   pr1232:
     d00033 = m5.d;
     desc2 = 1;
@@ -1467,7 +1593,8 @@ Error MarsImpl::eval() try {
     if (!acc) {
         if (goto_.d)
             std::cerr << "Returning from pr1232 with non-0 goto_\n";
-        jump(drtnxt);
+        dirty = dirty.d | 1;
+        jump(rtnext);
     }
     acc -= 2;
     idx = acc;
@@ -1495,121 +1622,20 @@ Error MarsImpl::eval() try {
             jump(next);
         acc = d00012.d;
     }
-  a01252:
     if (usable_space() < 0101) {
         loc20 = 0;
         free(curDescr.d);
         throw Mars::ERR_OVERFLOW;
     }
     acc -= 0101;
-    call(pr1022,m6);
+    allocator(01022);
     m16 = Metadata;
     m16[1] = d00024.d | ONEBIT(48);
     m16[-1] = 2;
     mylen = 041;
     acc = loc20.d;
-    jump(a01311);
-  a01311:
-    d00012 = acc;
-    m6 = target(drtnxt);
-    find_item(d00012.d);
-    --acc;
-    m5 = acc;
-    if (acc == mylen.d) {
-        // The new length of data matches the first extent length
-        if (m5.d) {
-            do {
-                aitem[m5] = usrloc[m5-1].d;
-            } while (--m5.d);
-        }
-        m5 = m16;
-        date();
-        *aitem = extentHeader;
-        setDirty(1);
-        if (!next_extent(curExtent))
-            jump(rtnext);       // No extents to free: done
-        loc116[m5+1] = curExtent & ~(BITS(19) << 20); // dropping the extent chain
-        acc = next_extent(curExtent);
-        if (acc) {              // This check is redundant
-            free(acc);          // Free remaining extents
-            indjump(m6);
-        }
-        dirty = dirty.d | 1;
-        indjump(m6);
-    }
-    date();
-    m16 = curbuf;
-    acc = m16[1] >> 10;
-    m5 = acc + 1;
-    acc = (m16[1].d - acc) & 01777;
-    acc += curExtLength.d - 2;
-    work = acc;
-    if (acc >= mylen.d) {
-      a01346:
-        d00010 = m6;            // saving return address
-        d00026 = curExtent;
-        curExtent = curExtent.d & 01777;
-        free_from_current_extent();
-        ++mylen;
-        m5 = 0;
-        m7 = curbuf;
-        acc = d00026.d & (0777LL << 39);
-        call(pr1047,m6);
-        acc = d00026.d;
-        m6 = d00010;            // restoring return address
-        acc = next_extent(acc);
-        if (acc) {
-            free(acc);
-            indjump(m6);
-        }
-        dirty = dirty.d | 1;
-        indjump(m6);
-    }
-    usable_space();
-    acc = (*aitem).d & 077777;
-    acc += itmlen.d;
-    if (acc < mylen.d) {
-        throw Mars::ERR_OVERFLOW;
-    }
-    m16 = curbuf;
-    mylen = work.d;
-    call(a01346,m6);
-    usrloc = usrloc.d + mylen.d;
-    mylen = (extentHeader.d & 077777) - mylen.d;
-    extentHeader = usrloc[-1];
-    call(a01023,m6);
-    find_item(d00012.d);
-    // This is likely chaining the extents
-    acc = (d00024.d << 20) & BITS(48);
-    loc116[m16+1] = acc | curExtent.d;
-    setDirty(2);
+    a01311();
     jump(rtnext);
-  mkctl: {
-        curZone = 0;
-        m5 = dblen = dbdesc >> 18;
-        IOpat = dbdesc.d & 0777777;
-        m6 = bdtab;
-        curbuf = m6;
-        work2 = IOpat.d | bdtab.d << 20;
-        bdtab[1] = 01777;
-        do {
-            --m5;
-            bdbuf[m5] = 01776;
-            bdtab[0] = DBkey.d | m5.d;
-            IOword = work2.d + m5.d;
-            IOcall(IOword);
-        } while (m5.d);
-        myloc = freeSpace = bdbuf; // freeSpace[0] is now the same as bdbuf[0]
-        loc20 = 02000;
-        d00011 = 0;
-        make_metablock();
-        call(pr1022, m6);
-        mylen = dblen.d;
-        // This trick results in max possible DB length = 753 zones.
-        bdbuf[0] = 01731 - mylen.d;
-        m5 = 021;
-        jump(a00153);
-    }
 } catch (Error e) {
     m16 = e;
     acc = erhndl.d;
