@@ -112,7 +112,7 @@ writeln(' after pasacd');
               besm(0770000b);
         end;
             bderrn := 0c;
-        bdvect[3].i := 3027230002c;
+        bdvect[3].i := 302723001502c;
         bdvect[8].i := 0c;
         pasbd;
 END.

@@ -117,13 +117,13 @@ TEST(mars, coverage)
         k = mars.prev();
     }
 
-    EXPECT_EQ(mars.cleard(false), Mars::ERR_NO_RECORD);
+    EXPECT_EQ(mars.cleard(false), Mars::ERR_SUCCESS);
     delete &mars;
 
     run_command(result, "sha1sum 52000[0-2]");
     const std::string expect =
         R"(484f08dd503bb5a4a2757ce6be3e18dfdb23ca99  520000
-eddc535b966c84800da223dbe086df9024f52014  520001
+038c042a23b75e82e659ab806b4f92089a7b6991  520001
 0ab4c4f30aae195bc33691b6465dd3f2f9ddce61  520002
 )";
     EXPECT_EQ(result, expect);

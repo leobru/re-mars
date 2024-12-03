@@ -1424,25 +1424,6 @@ Error MarsImpl::eval() try {
     m6 = target(cmd0);
     goto_ = 0;
     jump(switch_);
-  a00667:
-    acc = idx.d;
-    if (!acc)
-        jump(a01160);
-    free(loc246.d);
-    desc2 = 1;
-    acc = loc117.d;
-    d00025 = acc;
-    acc &= BITS(19) << 29;
-    d00032 = acc;
-    acc >>= 29;
-    if (acc) {
-        a00340();
-        acc &= ~(BITS(19) << 10);
-        loc117 = acc;
-        acc = (d00025 & (BITS(19) << 10)) | loc117;
-        set_header();
-    }
-    call(pr1232,m5);
   delkey:
     acc = element.d;
     m16 = acc;
@@ -1461,8 +1442,27 @@ Error MarsImpl::eval() try {
     acc ^= m16[-1].d;
     m16[-1] = acc;
     acc &= 01777;
-    if (!acc)
-        jump(a00667);
+    if (!acc) {
+        acc = idx.d;
+        if (!acc)
+            jump(a01160);
+        free(loc246.d);
+        desc2 = 1;
+        acc = loc117.d;
+        d00025 = acc;
+        acc &= BITS(19) << 29;
+        d00032 = acc;
+        acc >>= 29;
+        if (acc) {
+            a00340();
+            acc &= ~(BITS(19) << 10);
+            loc117 = acc;
+            acc = (d00025 & (BITS(19) << 10)) | loc117;
+            set_header();
+        }
+        call(pr1232,m5);
+        jump(delkey);
+    }
     acc = loc116.d;
     while (true) {
         acc &= 077777;
@@ -1572,7 +1572,8 @@ Error MarsImpl::eval() try {
     mylen = ++acc;
     acc = loc246.d;
     a01311();
-    m5 = target(a01136);
+    call(pr1232,m5);
+    jump(a01136);
     // pr1232 can return in 3 ways:
     // - back to the immediate caller
     // - terminating execution of the instruction (next)
@@ -1703,9 +1704,9 @@ Error Mars::newd(const char * k, int lun, int start, int len) {
     impl.orgcmd = 0;
     impl.myloc = 077776;
     impl.mylen = 2;
-    impl.orgcmd = 02621151131LL; // ROOT FIND NOTFOUND PUT ADDKEY
+    impl.orgcmd = 02621151131LL; // ROOT FIND NOMATCH PUT ADDKEY
     impl.eval();
-    impl.orgcmd = 010121411;    // FIND FOUND SETCTL MKCTL
+    impl.orgcmd = 010121411;    // FIND MATCH SETCTL MKCTL
     return impl.eval();
 }
 
@@ -1713,7 +1714,7 @@ Error Mars::opend(const char * k) {
     if (verbose)
         std::cerr << "Running opend('" << k << "')\n";
     impl.key = *reinterpret_cast<const uint64_t*>(k);
-    impl.orgcmd = 02512141131;  // ROOT FIND FOUND SETCTL OPEN
+    impl.orgcmd = 02512141131;  // ROOT FIND MATCH SETCTL OPEN
     return impl.eval();
 }
 
@@ -1755,7 +1756,7 @@ Error Mars::modd(const char * k, int loc, int len) {
     impl.key = *reinterpret_cast<const uint64_t*>(k);
     impl.mylen = len;
     impl.myloc = loc;
-    impl.orgcmd = 020402621001511; // FIND NOTFOUND ? (PUT ADDKEY DONE) : UPDATE
+    impl.orgcmd = 020402621001511; // FIND NOMATCH ? (PUT ADDKEY DONE) : UPDATE
     return impl.eval();
 }
 
@@ -1771,7 +1772,7 @@ Error Mars::getd(const char * k, int loc, int len) {
     impl.key = *reinterpret_cast<const uint64_t*>(k);
     impl.mylen = len;
     impl.myloc = loc;
-    impl.orgcmd = 0221411;      // FIND FOUND GET
+    impl.orgcmd = 0221411;      // FIND MATCH GET
     return impl.eval();
 }
 
@@ -1788,7 +1789,7 @@ Error Mars::getd(uint64_t k, int loc, int len) {
 
 Error Mars::deld(const char * k) {
     impl.key = *reinterpret_cast<const uint64_t*>(k);
-    impl.orgcmd = 027231411;    // FIND FOUND FREE DELKEY
+    impl.orgcmd = 027231411;    // FIND MATCH FREE DELKEY
     return impl.eval();
 }
 
@@ -1854,7 +1855,7 @@ Error Mars::cleard(bool forward) {
     if (forward)
         impl.orgcmd = 0302723000401; // BEGIN NEXT ? (FREE DELKEY LOOP) : empty
     else
-        impl.orgcmd = 030272302; // LAST FREE DELKEY LOOP (terminates with ERR_NO_RECORD)
+        impl.orgcmd = 0302723001502; // LAST NOMATCH ? FREE DELKEY LOOP : empty
     return impl.eval();
 }
 
