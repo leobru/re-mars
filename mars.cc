@@ -40,7 +40,7 @@ void Mars::dump() {
     sav = bdvect();
 }
 
-word& word::operator*() {
+word& word::operator*() const {
     unsigned a = d & 077777;
     if (a >= Mars::RAM_LENGTH) {
       std::cerr << std::format("Address {:o} out of range\n", a);
@@ -49,11 +49,11 @@ word& word::operator*() {
     return mars->data[a];
 }
 
-word& word::operator[](word x) {
+word& word::operator[](word x) const {
     return *word(*mars, d+x.d);
 }
 
-uint64_t word::operator&() { return this-mars->data; }
+uint64_t word::operator&() const { return this-mars->data; }
 
 #define ONEBIT(n) (1ULL << ((n)-1))   // one bit set, from 1 to 48
 #define BITS(n)   (~0ULL >> (64 - n)) // bitmask of bits from 0 to n
