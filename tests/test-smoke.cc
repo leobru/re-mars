@@ -43,7 +43,7 @@ static void init(Mars & mars, int start, int len) {
     }
 }
 
-static bool compare(Mars & mars, int start1, int start2, int len) {
+static bool compare(const Mars & mars, int start1, int start2, int len) {
     for (int i = 0; i < len; ++i) {
         if (mars.data[start1+i] != mars.data[start2+i]) {
             return false;

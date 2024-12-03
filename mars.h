@@ -41,16 +41,16 @@ class Mars {
         uint64_t& store(uint64_t x);
         word& operator=(word x);
         word& operator=(word * x);
-        inline word& operator*();
-        inline uint64_t operator&();
-        inline word& operator[](word x);
+        inline word& operator*() const;
+        inline uint64_t operator&() const;
+        inline word& operator[](word x) const;
         word operator+(word x) const { return d + x.d; }
         word operator-(word x) const { return d - x.d; }
         word operator&(word x) const { return d & x.d; }
         word operator|(word x) const { return d | x.d; }
         uint64_t operator>>(int x) const { return d >> x; }
-        bool operator==(const word & x) { return d == x.d; }
-        bool operator!=(const word & x) { return d != x.d; }
+        bool operator==(const word & x) const { return d == x.d; }
+        bool operator!=(const word & x) const { return d != x.d; }
         word& operator++() { (*this) = d + 1; return *this; }
         word& operator--() { (*this) = d - 1; return *this; }
     };
