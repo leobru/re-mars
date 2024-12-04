@@ -109,12 +109,12 @@ struct MarsImpl {
         erhndl, curDescr, myloc, loc14, mylen, bdbuf, bdtab,
         loc20, dbdesc, DBkey, savedp, freeSpace, adescr, limit,
         curkey, endmrk, desc1, desc2, IOpat, curExtLength, aitem, itmlen,
-        element, dblen, curlen, loc54, loc116, loc117,
+        element, dblen, curlen, loc116, loc117,
         loc157, loc160, curExtent, curbuf, curZone, loc246,
         dirty;
 
     uint64_t & idx;
-// Metadata[-1] (loc55) is also used
+// Metadata[-1] (loc54) is also used
     word * const Array;
     word * const Metadata;
     word * const Loc120;
@@ -148,7 +148,7 @@ struct MarsImpl {
         mylen(data[BDVECT+015]),
         bdbuf(data[BDVECT+016]),
         bdtab(data[BDVECT+017]),
-        loc20(data[BDVECT+020]),
+        loc20(data[BDVECT+020]), // Can only be 0 or 02000 ???
         dbdesc(data[BDVECT+030]),
         DBkey(data[BDVECT+031]),
         savedp(data[BDVECT+032]),
@@ -166,7 +166,6 @@ struct MarsImpl {
         element(data[BDVECT+050]),
         dblen(data[BDVECT+051]),
         curlen(data[BDVECT+053]),
-        loc54(data[BDVECT+054]),
         loc116(data[BDVECT+0116]),
         loc117(data[BDVECT+0117]),
         loc157(data[BDVECT+0157]),
@@ -179,8 +178,8 @@ struct MarsImpl {
 
         idx(data[BDVECT+0242].d),
         Array(data+BDVECT+021),
-        // Metadata[-1] (loc55) is also used
-        Metadata(data+BDVECT+056),
+        // Metadata[-1] (loc54) is also used
+        Metadata(data+BDVECT+055),
         Loc120(data+BDVECT+0120),
 
         // Fields of BDSYS
@@ -244,7 +243,7 @@ struct MarsImpl {
     void prepare_chunk();
     void allocator(int);
     void mkctl(), find(word);
-    void a01346(), a00164(), a01311(word);
+    void a01346(), a00164(), update(word);
     void setDirty(int x) {
         dirty = dirty.d | ((curZone.d ? x : 0) + 1);
     }
@@ -488,8 +487,8 @@ void MarsImpl::date() {
     uint64_t stamp = mars.zero_date ? 0 : (d/10*16+d%10) << 9 |
         (m/10*16+m%10) << 4 |
         y % 10;
-    work = loc14.d & (0777777LL << 15);
-    extentHeader = work.d | mylen.d | (stamp << 33);
+    work = loc14 & (BITS(18) << 15); // not BITS(19)? a typo?
+    extentHeader = work | mylen | (stamp << 33);
 }
 
 // Prepare a metadata block
@@ -609,14 +608,13 @@ void MarsImpl::cpyout(uint64_t descr) {
 
 // Not really a mutex
 void MarsImpl::lock() {
-    acc = bdtab.d << 20;
-    work = acc |= IOpat.d;
-    IOword = acc |= ONEBIT(40);
+    work = (bdtab.d << 20) | IOpat.d;
+    IOword = work | ONEBIT(40);
     IOcall(IOword);
-    bdtab[1] = acc = bdtab[1].d ^ LOCKKEY;
-    if (!(acc & LOCKKEY))
+    bdtab[1] = bdtab[1].d ^ LOCKKEY;
+    if (!(bdtab[1].d & LOCKKEY))
         throw Mars::ERR_LOCKED;
-    bdbuf[0] = acc;
+    bdbuf[0] = LOCKKEY;         // What is the purpose of this?
     IOcall(work);
 }
 
@@ -633,7 +631,7 @@ void MarsImpl::a00203(uint64_t arg) {
 }
 
 void MarsImpl::a00213() {
-    m16 = &loc54;
+    m16 = Metadata-1;
     a00203(02000);
 }
 
@@ -1035,6 +1033,10 @@ void MarsImpl::mkctl() {
     mylen = dblen.d;
     // This trick results in max possible DB length = 753 zones.
     bdbuf[0] = 01731 - mylen.d;
+    // Invoking OP_INSERT for the freeSpace array
+    usrloc = myloc;
+    allocator(01022);
+    curDescr = d00024;
 }
 
 void MarsImpl::a01346() {
@@ -1105,7 +1107,7 @@ void MarsImpl::find(word k) {
     idx = 0;
     temp = temp.d ^ BITS(47);
     while (true) {
-        m16 = Metadata;
+        m16 = Metadata+1;
         if (loc20.d)
             break;
         if (verbose)
@@ -1115,7 +1117,7 @@ void MarsImpl::find(word k) {
     a00164();
 }
 
-void MarsImpl::a01311(word arg) {
+void MarsImpl::update(word arg) {
     d00012 = arg;
     find_item(d00012.d);
     --acc;
@@ -1185,18 +1187,18 @@ Error MarsImpl::eval() try {
     switch (m5.d) {
     case 0:
         break;
-    case 1:                     // FIRST
+    case Mars::OP_BEGIN:
         find(0);
         break;
-    case 2:                     // LAST
+    case Mars::OP_LAST:
         find(BITS(47));
         break;
-    case 3:                     // PREV
+    case Mars::OP_PREV:
         m16 = 1;
         if (step())
             jump(next);
         break;
-    case 4:                     // NEXT
+    case Mars::OP_NEXT:
         m16 = 0;
         if (step())
             jump(next);
@@ -1211,82 +1213,78 @@ Error MarsImpl::eval() try {
     case 6:
         idx = 0;
         itmlen = 041;
-        m16 = &loc54;
+        m16 = Metadata-1;
         a00203(adescr.d);
         break;
     case 7:
         jmpoff = A00317;
         a00334(desc2);
         break;
-    case 010:
+    case Mars::OP_INIT:
         mkctl();
-        // Invoking command 21 for the freeSpace array
-        usrloc = myloc;
-        allocator(01022);
-        curDescr = d00024;
         break;
-    case 011:
+    case Mars::OP_FIND:
         if (key == 0 || key.d & ONEBIT(48))
             throw Mars::ERR_INV_NAME;
         find(key);
         break;
-    case 012:
+    case Mars::OP_SETCTL:
         myloc = &dbdesc;
         mylen = 3;
         cpyout(adescr.d);
         break;
-    case 013:
+    case Mars::OP_AVAIL:
         usable_space();
         break;
-    case 014:
+    case Mars::OP_MATCH:
         if (curkey == key)
             break;
         skip(Mars::ERR_NO_NAME);
         jump(next);
-    case 015:
+    case Mars::OP_NOMATCH:
         if (curkey != key)
             break;
         skip(Mars::ERR_EXISTS);
         jump(next);
-    case 016:
+    case Mars::OP_STRLEN:
         find_end_mark();
         break;
-    case 017:
+    case Mars::OP_WORDLEN:
         find_end_word();
         break;
-    case 020:
+    case Mars::OP_UPDATE:
         usrloc = myloc.d;
-        a01311(adescr);
+        update(adescr);
         break;
-    case 021:
+    case Mars::OP_INSERT:
         usrloc = myloc;
         allocator(01022);
         curDescr = d00024;
         break;
-    case 022:
+    case Mars::OP_GET:
         cpyout(adescr.d);
         break;
-    case 023:
+    case Mars::OP_FREE:
         free(adescr.d);
         break;
-    case 024:
+    case Mars::OP_PASSWD:
         if (givenp != savedp)
             throw Mars::ERR_WRONG_PASSWORD;
         break;
-    case 025:
+    case Mars::OP_OPEN:
         setctl(dbdesc.d);
         break;
-    case 026:
+    case Mars::OP_ADDKEY:
         d00011 = key;
         adescr = acc = curDescr.d;
         jump(a01140);
-    case 027:
+    case Mars::OP_DELKEY:
         limit = 0;              // looks dead
         jump(delkey);
-    case 030:
+    case Mars::OP_LOOP:
         acc = orgcmd.d;
         jump(next);
-    case 031:
+    case Mars::OP_ROOT:
         DBkey = ROOTKEY;
         dbdesc = arch;
         setctl(dbdesc.d);
@@ -1295,14 +1293,14 @@ Error MarsImpl::eval() try {
         *aitem = curDescr;
         setDirty(2);
         break;
-    case 033:
+    case Mars::OP_LENGTH:
         info(adescr.d);
         break;
-    case 034:
+    case Mars::OP_DESCR:
         acc = desc1.d;
         totext();
         break;
-    case 035:
+    case Mars::OP_SAVE:
         acc = dirty.d;
         save();
         if (mars.dump_diffs)
@@ -1312,22 +1310,22 @@ Error MarsImpl::eval() try {
         m16 = element;
         m16[Array[idx]+1] = curDescr;
         jump(a01160);
-    case 037:
+    case Mars::OP_SKIP:
         acc = curcmd >> 12;
         jump(next);
-    case 040:
+    case Mars::OP_STOP:
         jump(next);
-    case 041:
+    case Mars::OP_IFEQ:
         jmpoff = COMPARE;
         if (a00334(mylen))
             jump(next);
         break;
-    case 042:
+    case Mars::OP_MODIFY:
         jmpoff = TOBASE;
         if (a00334(mylen))
             jump(next);
         break;
-    case 043:
+    case Mars::OP_COPY:
         jmpoff = FROMBASE;
         if(a00334(mylen))
             jump(next);
@@ -1335,17 +1333,17 @@ Error MarsImpl::eval() try {
     case 044:
         adescr = desc1;
         break;
-    case 045:
+    case Mars::OP_LOCK:
         lock();
         break;
     case 046:
         if (cmd46())
             jump(next);
         break;
-    case 047:
+    case Mars::OP_CALL:
         acc = desc1.d;
         indjump(outadr);
-    case 050:
+    case Mars::OP_CHAIN:
         // cmd := mem[bdvect[src]++]
         // curcmd is ..... src 50
         acc = &orgcmd-BDVECT;
@@ -1364,7 +1362,7 @@ Error MarsImpl::eval() try {
         curcmd = curcmd >> 6;
         assign_and_incr();
         break;
-    case 053:
+    case Mars::OP_ASSIGN:
         // bdvect[dst] = bdvect[src]
         // curcmd is ..... src dst 53
         m16 = (curcmd >> 6) & 077;
@@ -1379,7 +1377,7 @@ Error MarsImpl::eval() try {
         curcmd = curcmd >> 6;
         *abdv[m16] = curDescr;
         break;
-    case 055:
+    case Mars::OP_EXIT:
         if (mars.dump_diffs)
             mars.dump();
         return Mars::ERR_SUCCESS;
@@ -1511,24 +1509,24 @@ Error MarsImpl::eval() try {
             }
             acc -= 0101;
             allocator(01022);
-            Metadata[1] = d00024.d | ONEBIT(48);
-            Metadata[-1] = 2;
+            Metadata[2] = d00024.d | ONEBIT(48);
+            Metadata[0] = 2;
             mylen = 041;
-            a01311(loc20);
+            update(loc20);
             jump(rtnext);
         }
-        a01311(loc20);
+        update(loc20);
         jump(rtnext);
     }
     acc = m16[-1].d & 01777;
     if (acc != 0100) {
         acc = m16[-1].d & 01777;
         mylen = ++acc;
-        a01311(loc246);
+        update(loc246);
         jump(rtnext);
     }
     work = (idx * 2) + 041;
-    if (Metadata[-1].d == 036) {
+    if (Metadata[0].d == 036) {
         // The current metadata block is full, account for another one
         work = work + 044;
     }
@@ -1560,7 +1558,7 @@ Error MarsImpl::eval() try {
     usrloc = Loc120 - 1;
     acc = Loc120[-1].d & 01777;
     mylen = ++acc;
-    a01311(loc246);
+    update(loc246);
     call(pr1232,m5);
     jump(a01136);
     // pr1232 can return in 3 ways:
@@ -1577,7 +1575,7 @@ Error MarsImpl::eval() try {
         set_header(d00032 | (acc & BITS(29)));
     }
   a01242:
-    element = Metadata;
+    element = Metadata+1;
     if (idx == 0) {
         if (goto_.d)
             std::cerr << "Returning from pr1232 with non-0 goto_\n";
@@ -1615,10 +1613,10 @@ Error MarsImpl::eval() try {
     }
     acc -= 0101;
     allocator(01022);
-    Metadata[1] = d00024 | ONEBIT(48);
-    Metadata[-1] = 2;
+    Metadata[2] = d00024 | ONEBIT(48);
+    Metadata[0] = 2;
     mylen = 041;
-    a01311(loc20);
+    update(loc20);
     jump(rtnext);
 } catch (Error e) {
     if (erhndl.d)
@@ -1687,6 +1685,7 @@ Error Mars::newd(const char * k, int lun, int start, int len) {
     impl.mylen = 2;
     impl.orgcmd = mcprog(OP_ROOT, OP_FIND, OP_NOMATCH, OP_INSERT, OP_ADDKEY);
     impl.eval();
+    // OP_FIND and OP_MATCH do not seem to be necessary
     impl.orgcmd = mcprog(OP_FIND, OP_MATCH, OP_SETCTL, OP_INIT);
     return impl.eval();
 }

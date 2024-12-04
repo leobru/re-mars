@@ -36,8 +36,11 @@ TEST(mars, diagnostics)
     ASSERT_EQ(mars.getd(one, 0, 0), Mars::ERR_SUCCESS);
     ASSERT_EQ(mars.getd(one, 0, 1), Mars::ERR_TOO_LONG);
     ASSERT_EQ(mars.deld(one), Mars::ERR_SUCCESS);
-    ASSERT_EQ(mars.eval(0272301), Mars::ERR_NO_RECORD);
-    ASSERT_EQ(mars.eval(0401), Mars::ERR_NO_NEXT);
+    ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_BEGIN, Mars::OP_FREE, Mars::OP_DELKEY)),
+              Mars::ERR_NO_RECORD);
+    ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_BEGIN, Mars::OP_NEXT)),
+              Mars::ERR_NO_NEXT);
+    ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_LOCK, Mars::OP_LOCK)), Mars::ERR_LOCKED);
 }
 
 static void init(Mars & mars, int start, int len) {
