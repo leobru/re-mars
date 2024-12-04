@@ -1595,7 +1595,7 @@ TEST(mars, cleard_stores)
     mars.cleard(false);
 
     EXPECT_EQ(mars.get_store(01410), 0'0000'0000'0000'0000u);
-    EXPECT_EQ(mars.get_store(01403), 0'0000'0000'3027'2302u);
+    EXPECT_EQ(mars.get_store(01403), 0'0000'3027'2300'1502u);
     EXPECT_EQ(mars.get_store(02007), 0'0000'0000'0000'4000u);
     EXPECT_EQ(mars.get_store(02013), 0'0000'0000'0000'1400u);
     EXPECT_EQ(mars.get_store(02041), 0'0340'0000'0000'0000u);
@@ -1729,18 +1729,18 @@ TEST(mars, cleard_stores)
 //  EXPECT_EQ(mars.get_store(02036), 0'0000'0000'0000'0002u); // overwritten
 //  EXPECT_EQ(mars.get_store(04002), 0'0020'0000'0000'7732u); // overwritten
 //  EXPECT_EQ(mars.get_store(02031), 0'0000'0000'0000'1735u); // overwritten
-    EXPECT_EQ(mars.get_store(04002), 0'0020'0000'0000'7774u); // latest
+    EXPECT_EQ(mars.get_store(04002), 0'0000'0000'0000'0000u); // latest
 //  EXPECT_EQ(mars.get_store(02035), 0'0000'0000'0000'1732u); // overwritten
 //  EXPECT_EQ(mars.get_store(02035), 0'0000'0000'0000'5732u); // overwritten
-    EXPECT_EQ(mars.get_store(02031), 0'0000'0000'0000'5774u); // latest
-    EXPECT_EQ(mars.get_store(05777), 0'0000'0000'0000'1776u); // latest
-    EXPECT_EQ(mars.get_store(05776), 0'0000'0000'0000'1727u); // latest
-    EXPECT_EQ(mars.get_store(05775), 0'0000'0000'0000'0002u); // latest
-    EXPECT_EQ(mars.get_store(04001), 0'0000'0000'0000'3774u); // latest
-    EXPECT_EQ(mars.get_store(05734), 0'0000'0000'0000'1772u); // latest
+    EXPECT_EQ(mars.get_store(02031), 0'0000'0000'0000'1717u); // latest
+    EXPECT_EQ(mars.get_store(05777), 0'1234'5670'0765'4321u); // latest
+    EXPECT_EQ(mars.get_store(05776), 0'1234'5670'0765'4321u); // latest
+    EXPECT_EQ(mars.get_store(05775), 0'1234'5670'0765'4321u); // latest
+    EXPECT_EQ(mars.get_store(04001), 0'0000'0000'0000'5732u); // latest
+    EXPECT_EQ(mars.get_store(05734), 0'0000'0000'0000'1727u); // latest
 //  EXPECT_EQ(mars.get_store(01647), 0'0000'0000'0000'0001u); // overwritten
 //  EXPECT_EQ(mars.get_store(01647), 0'0000'0000'0000'0001u); // overwritten
-    EXPECT_EQ(mars.get_store(01405), 0'0000'0000'0000'3027u); // latest
+    EXPECT_EQ(mars.get_store(01405), 0'0000'0030'2723'0015u); // latest
     EXPECT_EQ(mars.get_store(02014), 0'0000'0000'0000'0000u);
 
     // Executing microcode 27
@@ -1748,9 +1748,9 @@ TEST(mars, cleard_stores)
 //  EXPECT_EQ(mars.get_store(01516), 0'0000'0100'0000'0000u); // overwritten
 //  EXPECT_EQ(mars.get_store(02036), 0'0000'0000'0000'0002u); // overwritten
 //  EXPECT_EQ(mars.get_store(02035), 0'0000'0000'0000'1460u); // overwritten
-    EXPECT_EQ(mars.get_store(01456), 0'1234'5670'0765'4321u);
-    EXPECT_EQ(mars.get_store(01457), 0'1234'5670'0765'4321u);
-    EXPECT_EQ(mars.get_store(01455), 0'0000'0000'0000'0000u); // latest
+    EXPECT_EQ(mars.get_store(01456), 0'0000'0000'0000'0000u);
+    EXPECT_EQ(mars.get_store(01457), 0'0000'0000'0000'0000u);
+    EXPECT_EQ(mars.get_store(01455), 0'0000'0000'0000'0002u); // latest
     EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0000'1455u);
     EXPECT_EQ(mars.get_store(01415), 0'0000'0000'0000'0041u);
     EXPECT_EQ(mars.get_store(02012), 0'0000'0000'0000'2000u);
@@ -1758,14 +1758,14 @@ TEST(mars, cleard_stores)
     EXPECT_EQ(mars.get_store(01644), 0'0000'0000'0000'0000u);
     EXPECT_EQ(mars.get_store(02015), 0'0524'6520'4010'0000u);
     EXPECT_EQ(mars.get_store(01641), 0'0000'0000'0000'4000u);
-    EXPECT_EQ(mars.get_store(02035), 0'0000'0000'0000'2000u); // latest
+    EXPECT_EQ(mars.get_store(02035), 0'0000'0000'0000'0000u); // latest
     EXPECT_EQ(mars.get_store(02036), 0'0010'0000'0000'0000u); // latest
     EXPECT_EQ(mars.get_store(01516), 0'0000'0000'0000'0001u); // latest
-    EXPECT_EQ(mars.get_store(01620), 0'0020'0000'0000'7774u); // latest
+    EXPECT_EQ(mars.get_store(01620), 0'0010'0000'0010'5735u); // latest
 
-    // ERROR 3 (No such record)
-    EXPECT_EQ(mars.get_store(02010), 0x20'68'63'75'73'20'6f'4eu); // text message 'No such '
-    EXPECT_EQ(mars.get_store(02011), 0x49'00'64'72'6f'63'65'72u); // text message 'record\0I'
+    // Must be no error (02010 and 02011 are 0)
+    EXPECT_EQ(mars.get_store(02010), 0'0000'0000'0000'0000u);
+    EXPECT_EQ(mars.get_store(02011), 0'0000'0000'0000'0000u);
     EXPECT_EQ(mars.get_store(02037), 0'0000'0200'0052'0001u);
 
     // Writing 520001 from address 4000
