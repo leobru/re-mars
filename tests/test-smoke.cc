@@ -31,10 +31,13 @@ TEST(mars, diagnostics)
     mars.root();
     ASSERT_EQ(mars.getd(zero, 0, 0), Mars::ERR_INV_NAME);
     ASSERT_EQ(mars.getd(one, 0, 0), Mars::ERR_NO_NAME);
-    ASSERT_EQ(mars.putd(one, 0, 0), Mars::ERR_SUCCESS);
+    ASSERT_EQ(mars.putd(one, 0, 2), Mars::ERR_SUCCESS);
     ASSERT_EQ(mars.putd(one, 0, 0), Mars::ERR_EXISTS);
     ASSERT_EQ(mars.getd(one, 0, 0), Mars::ERR_SUCCESS);
+    ASSERT_EQ(mars.getd(one, 0, 1), Mars::ERR_TOO_LONG);
     ASSERT_EQ(mars.deld(one), Mars::ERR_SUCCESS);
+    ASSERT_EQ(mars.eval(0272301), Mars::ERR_NO_RECORD);
+    ASSERT_EQ(mars.eval(0401), Mars::ERR_NO_NEXT);
 }
 
 static void init(Mars & mars, int start, int len) {
