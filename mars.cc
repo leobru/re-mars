@@ -1666,7 +1666,7 @@ Error Mars::InitDB(int lun, int start, int len) {
     impl.pasbdi();
     impl.dbdesc = to_lnuzzzz(lun, start, len);
     impl.DBkey = ROOTKEY;
-    impl.orgcmd = 010;
+    impl.orgcmd = OP_INIT;
     return impl.eval();
 }
 
@@ -1685,9 +1685,9 @@ Error Mars::newd(const char * k, int lun, int start, int len) {
     impl.orgcmd = 0;
     impl.myloc = 077776;
     impl.mylen = 2;
-    impl.orgcmd = 02621151131LL; // ROOT FIND NOMATCH PUT ADDKEY
+    impl.orgcmd = mcprog(OP_ROOT, OP_FIND, OP_NOMATCH, OP_INSERT, OP_ADDKEY);
     impl.eval();
-    impl.orgcmd = 010121411;    // FIND MATCH SETCTL MKCTL
+    impl.orgcmd = mcprog(OP_FIND, OP_MATCH, OP_SETCTL, OP_INIT);
     return impl.eval();
 }
 
@@ -1695,7 +1695,7 @@ Error Mars::opend(const char * k) {
     if (verbose)
         std::cerr << "Running opend('" << k << "')\n";
     impl.key = *reinterpret_cast<const uint64_t*>(k);
-    impl.orgcmd = 02512141131;  // ROOT FIND MATCH SETCTL OPEN
+    impl.orgcmd = mcprog(OP_ROOT, OP_FIND, OP_MATCH, OP_SETCTL, OP_OPEN);
     return impl.eval();
 }
 
@@ -1706,7 +1706,7 @@ Error Mars::putd(const char * k, int loc, int len) {
     impl.key = *reinterpret_cast<const uint64_t*>(k);
     impl.mylen = len;
     impl.myloc = loc;
-    impl.orgcmd = 026211511;
+    impl.orgcmd = mcprog(OP_FIND, OP_NOMATCH, OP_INSERT, OP_ADDKEY);
     return impl.eval();
 }
 
@@ -1717,7 +1717,7 @@ Error Mars::putd(uint64_t k, int loc, int len) {
     impl.key = k;
     impl.mylen = len;
     impl.myloc = loc;
-    impl.orgcmd = 026211511;
+    impl.orgcmd = mcprog(OP_FIND, OP_NOMATCH, OP_INSERT, OP_ADDKEY);
     return impl.eval();
 }
 
@@ -1729,7 +1729,7 @@ Error Mars::putd(const char * k, const char * v) {
     strcpy((char*)(data+RAM_LENGTH-len), v);
     impl.mylen = len;
     impl.myloc = RAM_LENGTH-len;
-    impl.orgcmd = 026211511;
+    impl.orgcmd = mcprog(OP_FIND, OP_NOMATCH, OP_INSERT, OP_ADDKEY);
     return impl.eval();
 }
 
@@ -1737,7 +1737,9 @@ Error Mars::modd(const char * k, int loc, int len) {
     impl.key = *reinterpret_cast<const uint64_t*>(k);
     impl.mylen = len;
     impl.myloc = loc;
-    impl.orgcmd = 020402621001511; // FIND NOMATCH ? (PUT ADDKEY DONE) : UPDATE
+    impl.orgcmd = mcprog(OP_FIND, OP_NOMATCH, OP_COND,
+                         OP_INSERT, OP_ADDKEY, OP_STOP,
+                         OP_UPDATE);
     return impl.eval();
 }
 
@@ -1745,7 +1747,9 @@ Error Mars::modd(uint64_t k, int loc, int len) {
     impl.key = k;
     impl.mylen = len;
     impl.myloc = loc;
-    impl.orgcmd = 020402621001511;
+    impl.orgcmd = mcprog(OP_FIND, OP_NOMATCH, OP_COND,
+                         OP_INSERT, OP_ADDKEY, OP_STOP,
+                         OP_UPDATE);
     return impl.eval();
 }
 
@@ -1753,7 +1757,7 @@ Error Mars::getd(const char * k, int loc, int len) {
     impl.key = *reinterpret_cast<const uint64_t*>(k);
     impl.mylen = len;
     impl.myloc = loc;
-    impl.orgcmd = 0221411;      // FIND MATCH GET
+    impl.orgcmd = mcprog(OP_FIND, OP_MATCH, OP_GET);
     return impl.eval();
 }
 
@@ -1764,68 +1768,68 @@ Error Mars::getd(uint64_t k, int loc, int len) {
     impl.key = k;
     impl.mylen = len;
     impl.myloc = loc;
-    impl.orgcmd = 0221411;
+    impl.orgcmd = mcprog(OP_FIND, OP_MATCH, OP_GET);
     return impl.eval();
 }
 
 Error Mars::deld(const char * k) {
     impl.key = *reinterpret_cast<const uint64_t*>(k);
-    impl.orgcmd = 027231411;    // FIND MATCH FREE DELKEY
+    impl.orgcmd = mcprog(OP_FIND, OP_MATCH, OP_FREE, OP_DELKEY);
     return impl.eval();
 }
 
 Error Mars::deld(uint64_t k) {
     impl.idx = 0;
     impl.key = k;
-    impl.orgcmd = 027231411;
+    impl.orgcmd = mcprog(OP_FIND, OP_MATCH, OP_FREE, OP_DELKEY);
     return impl.eval();
 }
 
 Error Mars::root() {
-    impl.orgcmd = 031;
+    impl.orgcmd = OP_ROOT;
     return impl.eval();
 }
 
 uint64_t Mars::first() {
-    impl.orgcmd = 0401;         // BEGIN NEXT
+    impl.orgcmd = mcprog(OP_BEGIN, OP_NEXT);
     impl.eval();
     return impl.curkey.d;
 }
 
 uint64_t Mars::last() {
-    impl.orgcmd = 02;
+    impl.orgcmd = OP_LAST;
     impl.eval();
     return impl.curkey.d;
 }
 
 uint64_t Mars::prev() {
-    impl.orgcmd = 03;
+    impl.orgcmd = OP_PREV;
     impl.eval();
     return impl.curkey.d;
 }
 
 uint64_t Mars::next() {
-    impl.orgcmd = 04;
+    impl.orgcmd = OP_NEXT;
     impl.eval();
     return impl.curkey.d;
 }
 
 uint64_t Mars::find(const char * k) {
     impl.key = *reinterpret_cast<const uint64_t*>(k);
-    impl.orgcmd = 011;
+    impl.orgcmd = OP_FIND;
     impl.eval();
     return impl.curkey.d;
 }
 
 uint64_t Mars::find(uint64_t k) {
     impl.key = k;
-    impl.orgcmd = 011;
+    impl.orgcmd = OP_FIND;
     impl.eval();
     return impl.curkey.d;
 }
 
 int Mars::getlen() {
-    impl.orgcmd = 033;
+    impl.orgcmd = OP_LENGTH;
     if (impl.eval())
         return -1;
     return impl.itmlen.d;
@@ -1834,14 +1838,16 @@ int Mars::getlen() {
 Error Mars::cleard(bool forward) {
     impl.key = 0;
     if (forward)
-        impl.orgcmd = 0302723000401; // BEGIN NEXT ? (FREE DELKEY LOOP) : empty
+        impl.orgcmd = mcprog(OP_BEGIN, OP_NEXT, OP_COND,
+                             OP_FREE, OP_DELKEY, OP_LOOP);
     else
-        impl.orgcmd = 0302723001502; // LAST NOMATCH ? FREE DELKEY LOOP : empty
+        impl.orgcmd = mcprog(OP_LAST, OP_NOMATCH, OP_COND,
+                             OP_FREE, OP_DELKEY, OP_LOOP);
     return impl.eval();
 }
 
 int Mars::avail() {
-    impl.orgcmd = 013;
+    impl.orgcmd = OP_AVAIL;
     impl.itmlen = 0;
     impl.eval();
     return impl.itmlen.d;

@@ -28,6 +28,51 @@ class Mars {
         ERR_WRONG_PASSWORD = 17
     };
 
+    enum Op : uint64_t {
+        OP_NOP = 0,
+        OP_COND = 0,
+        OP_BEGIN = 1,
+        OP_LAST = 2,
+        OP_PREV = 3,
+        OP_NEXT = 4,
+        OP_INIT = 010,
+        OP_FIND = 011,
+        OP_SETCTL = 012,
+        OP_AVAIL = 013,
+        OP_MATCH = 014,
+        OP_NOMATCH = 015,
+        OP_STRLEN = 016,
+        OP_WORDLEN = 017,
+        OP_UPDATE = 020,
+        OP_INSERT = 021,
+        OP_GET = 022,
+        OP_FREE = 023,
+        OP_PASSWD = 024,
+        OP_OPEN = 025,
+        OP_ADDKEY = 026,
+        OP_DELKEY = 027,
+        OP_LOOP = 030,
+        OP_ROOT = 031,
+        OP_LENGTH = 033,
+        OP_DESCR = 034,
+        OP_SAVE = 035,
+        OP_SKIP = 037,
+        OP_STOP = 040,
+        OP_IFEQ = 041,
+        OP_MODIFY = 042,
+        OP_COPY = 043,
+        OP_LOCK = 045,
+        OP_CALL = 047,
+        OP_CHAIN = 050,
+        OP_ASSIGN = 053,
+        OP_EXIT = 055
+    };
+    static inline uint64_t
+    mcprog(Op o1, Op o2=OP_NOP, Op o3=OP_NOP, Op o4=OP_NOP,
+           Op o5=OP_NOP, Op o6=OP_NOP, Op o7=OP_NOP, Op o8=OP_NOP) {
+        return (o8 << 42) | (o7 << 36) | (o6 << 30) | (o5 << 24) |
+            (o4 << 18) | (o3 << 12) | (o2 << 6) | o1;
+    }
     struct word {
         class Mars * const mars = nullptr;
         uint64_t d;
