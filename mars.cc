@@ -110,8 +110,8 @@ struct MarsImpl {
         erhndl, curDescr, myloc, loc14, mylen, bdbuf, bdtab,
         metaflag, dbdesc, DBkey, savedp, freeSpace, adescr, limit,
         curkey, endmrk, desc1, desc2, IOpat, curExtLength, aitem, itmlen,
-        element, dblen, curlen, loc116, loc117,
-        loc157, loc160, curExtent, curbuf, curZone, curBlockDescr,
+        curMetaBlock, dblen, curlen, loc116,
+        curExtent, curbuf, curZone, curBlockDescr,
         dirty;
 
     uint64_t & idx;
@@ -164,13 +164,10 @@ struct MarsImpl {
         curExtLength(data[BDVECT+045]),
         aitem(data[BDVECT+046]),
         itmlen(data[BDVECT+047]),
-        element(data[BDVECT+050]),
+        curMetaBlock(data[BDVECT+050]),
         dblen(data[BDVECT+051]),
         curlen(data[BDVECT+053]),
         loc116(data[BDVECT+0116]),
-        loc117(data[BDVECT+0117]),
-        loc157(data[BDVECT+0157]),
-        loc160(data[BDVECT+0160]),
         curExtent(data[BDVECT+0220]),
         curbuf(data[BDVECT+0241]),
         curZone(data[BDVECT+0244]),
@@ -180,8 +177,9 @@ struct MarsImpl {
         idx(data[BDVECT+0242].d),
         Array(data+BDVECT+021),
         // Metadata[-1] (loc54) is also used
-        Metadata(data+BDVECT+055),
-        Secondary(data+BDVECT+0117),
+        Metadata(data+BDVECT+055), // spans 041 words, up to 0115
+        // Secondary[-1] loc116 is also used
+        Secondary(data+BDVECT+0117), // spans 0101 words, up to 0217
 
         // Fields of BDSYS
         arch(data[BDSYS+4].d),
@@ -634,7 +632,7 @@ void MarsImpl::get_block(word descr) {
     Array[idx-1] = descr;
     loc116 = descr & BITS(19);
     usrloc = m16;
-    element = m16 + 2;
+    curMetaBlock = m16 + 2;
     if (loc116 == curBlockDescr)
         return;
     curBlockDescr = loc116;
@@ -791,9 +789,8 @@ bool MarsImpl::step() {
         // Step forward
         acc += 2;
         m5 = acc;
-        (acc ^= element[-1].d) &= 01777;
-        if (!acc) {
-            acc = element[-1].d;
+        if ((acc & 01777) == (curMetaBlock[-1].d & 01777)) {
+            acc = curMetaBlock[-1].d;
             acc &= BITS(19) << 10;
             if (!acc) {
                 skip(Mars::ERR_NO_NEXT);
@@ -806,20 +803,20 @@ bool MarsImpl::step() {
     } else {
         // Step back
         if (!m5.d) {
-            acc = element[-1] >> 29;
+            acc = curMetaBlock[-1] >> 29;
             if (!acc) {
                 skip(Mars::ERR_NO_PREV);
                 return true;
             }
             get_secondary_block(acc.d);
             Array[idx-2] = Array[idx-2] - (1<<15);
-            m5 = loc117 & 01777;
+            m5 = Secondary[0] & 01777;
         }
         m5 = m5 - 2;
     }
     Array[idx] = m5 | ONEBIT(31);
-    curkey = element[m5];
-    adescr = element[m5+1];
+    curkey = curMetaBlock[m5];
+    adescr = curMetaBlock[m5+1];
     return false;
 }
 
@@ -1092,8 +1089,8 @@ void MarsImpl::search_in_block() {
     m5.d -= 2;
     Array[idx] = m5.d | ONEBIT(31);
     if (!parent) {
-        curkey = element[m5];
-        adescr = element[m5+1];
+        curkey = curMetaBlock[m5];
+        adescr = curMetaBlock[m5+1];
         return;
     }
     idx = idx + 2;
@@ -1229,7 +1226,7 @@ Error MarsImpl::eval() try {
         break;
     case Mars::OP_SETCTL:
         myloc = &dbdesc;
-        mylen = 3;
+        mylen = 3;              // accounting for a possible password
         cpyout(adescr.d);
         break;
     case Mars::OP_AVAIL:
@@ -1276,7 +1273,7 @@ Error MarsImpl::eval() try {
     case Mars::OP_ADDKEY:
         d00011 = key;
         adescr = acc = curDescr.d;
-        jump(a01140);
+        jump(addkey);
     case Mars::OP_DELKEY:
         limit = 0;              // looks dead
         jump(delkey);
@@ -1306,7 +1303,7 @@ Error MarsImpl::eval() try {
             mars.dump();
         return Mars::ERR_SUCCESS;
     case 036:
-        m16 = element;
+        m16 = curMetaBlock;
         m16[Array[idx]+1] = curDescr;
         jump(a01160);
     case Mars::OP_SKIP:
@@ -1422,39 +1419,32 @@ Error MarsImpl::eval() try {
     goto_ = 0;
     jump(switch_);
   delkey:
-    acc = element.d;
-    m16 = acc;
-    acc += Array[idx].d;
-    m5 = acc;
-    loc116 = acc ^ element.d;
-    acc = m16[-1].d & 01777;
-    work2 = acc;
-    work = acc + element.d;
+    m16 = curMetaBlock;
+    m5 = m16 + Array[idx];
+    loc116 = m5.d ^ curMetaBlock.d;
+    work2 = m16[-1] & 01777;
+    if (work2.d < 2) std::cerr << "work2 @ delkey < 2\n";
+    work = work2 + curMetaBlock;
     do {
-        *m5 = m5[2].d;
+        *m5 = m5[2];
         ++m5;
     } while (m5 != work);
-    acc = work2.d - 2;
-    acc ^= work2.d;
-    acc ^= m16[-1].d;
-    m16[-1] = acc;
-    acc &= 01777;
+    m16[-1] = m16[-1] - 2;
+    acc = m16[-1].d & 01777;
     if (!acc) {
         acc = idx;
         if (!acc)
             jump(a01160);
         free(curBlockDescr.d);
         desc2 = 1;
-        acc = loc117.d;
-        d00025 = acc;
-        acc &= BITS(19) << 29;
-        d00032 = acc;
-        acc >>= 29;
+        d00025 = Secondary[0];
+        d00032 = Secondary[0] & (BITS(19) << 29);
+        acc = d00032.d >> 29;
         if (acc) {
             a00340(acc);
             acc &= ~(BITS(19) << 10);
-            loc117 = acc;
-            set_header((d00025 & (BITS(19) << 10)) | loc117);
+            Secondary[0] = acc;
+            set_header((d00025 & (BITS(19) << 10)) | Secondary[0]);
         }
         call(pr1232,m5);
         jump(delkey);
@@ -1470,7 +1460,7 @@ Error MarsImpl::eval() try {
         jump(a01160);
       a00731:
         acc = d00011.d;
-        m16 = element;
+        m16 = curMetaBlock;
         m16[Array[idx]] = acc;
         acc = Array[idx].d;
     }
@@ -1478,10 +1468,10 @@ Error MarsImpl::eval() try {
     acc = d00032.d;
     acc >>= 29;
     acc |= ONEBIT(48);
-  a01140:
+  addkey:
     d00024 = acc;
-    m16 = element;
-    m5 = element + Array[idx] + 2;
+    m16 = curMetaBlock;
+    m5 = curMetaBlock + Array[idx] + 2;
     limit = m5;
     m6 = (m16[-1] & 01777) + m16;
     if (verbose)
@@ -1511,8 +1501,6 @@ Error MarsImpl::eval() try {
             Metadata[2] = d00024.d | ONEBIT(48);
             Metadata[0] = 2;
             mylen = 041;
-            update(metaflag);
-            jump(rtnext);
         }
         update(metaflag);
         jump(rtnext);
@@ -1534,25 +1522,25 @@ Error MarsImpl::eval() try {
         free(curDescr.d);
         throw Mars::ERR_OVERFLOW;
     }
-    d00025 = loc157;
-    loc157 = (curBlockDescr.d << 29) & BITS(48);
-    acc = loc117.d;
+    d00025 = Secondary[040];
+    Secondary[040] = (curBlockDescr.d << 29) & BITS(48);
+    acc = Secondary[0].d;
     acc &= BITS(19) << 10;
-    acc |= loc157.d | 040;
-    loc157 = acc;
+    acc |= Secondary[040].d | 040;
+    Secondary[040] = acc;
     usrloc.d += 040;
     mylen = 041;
     allocator(01022);
-    loc157 = d00025;
-    d00011 = loc160;
-    acc = (d00025 = loc117).d;
+    Secondary[040] = d00025;
+    d00011 = Secondary[041];
+    acc = (d00025 = Secondary[0]).d;
     acc = (acc >> 29 << 19) | d00024.d;
     acc <<= 10;
     acc &= BITS(48);
     acc |= 040;
-    loc117 = acc;
+    Secondary[0] = acc;
     acc &= BITS(19) << 10;
-    d00032 = (acc << 19) & BITS(48);
+    d00032 = acc << 19;
     m16 = Secondary+1;
     usrloc = Secondary;
     acc = Secondary[0].d & 01777;
@@ -1574,7 +1562,7 @@ Error MarsImpl::eval() try {
         set_header(d00032 | (acc & BITS(29)));
     }
   a01242:
-    element = Metadata+1;
+    curMetaBlock = Metadata+1;
     if (idx == 0) {
         if (goto_.d)
             std::cerr << "Returning from pr1232 with non-0 goto_\n";
