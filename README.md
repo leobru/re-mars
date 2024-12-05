@@ -9,7 +9,7 @@ They are:
 | Operation | Micro-program | Comment |
 | :-------: | :-----------: | --- |
 | GETD  | FIND MATCH GET | Get the value by key, error out if the key does not exist |
-| PUTD  | FIND NOMATCH INSERT ADDKEY | Add a key-value pair, error out if the key elready exists |
+| PUTD  | FIND NOMATCH INSERT ADDKEY | Add a key-value pair, error out if the key already exists |
 | DELD  | FIND MATCH FREE DELKEY | Delete a pair by key, error out if the key does not exist |
 | MODD  | FIND NOMATCH (COND INSERT ADDKEY STOP) UPDATE | Modify the value if a pair with the key already exists, add a pair otherwise |
 | OPEND | ROOT FIND MATCH SETCTL OPEN | Open an existing container by name, error out if it does not exist in the root catalog |
@@ -21,11 +21,11 @@ Below are micro-programs found in the binary code of a program which used the MA
 | :-----------: | --- |
 | FIND MATCH (COND FREE DELKEY NOP) INSERT ADDKEY | An alternative implementation of MODD,<br>deleting the key before inserting the new value | 
 | ROOT FIND MATCH SETCTL OPEN AVAIL BEGIN | Open a container, compute available space,<br>position the iterator to the starting dummy entry |
-| FIND MATCH 06 | If the key-value pair exists, then do what? otherwise error out |
-| FIND NOMATCH 05 ADDKEY | If the key does not exist, then do what? and add the key, otherwise error out |
-| BEGIN 06 | Do what? to the dummy entry |
+| FIND MATCH SETMETA | If the key-value pair exists, set the value as the main metablock, otherwise error out |
+| FIND NOMATCH INSMETA ADDKEY | If the key does not exist, add a key-metablock pair, otherwise error out |
+| BEGIN SETMETA | Reset the metablock to the root ??? |
 | BEGIN NEXT | Position the iterator to the first real entry |
-| LAST NOMATCH (COND FREE DELKEY LOOP) DELKEY | Deletion in the loop (backeards, this is faster);<br>the last DELKEY looks erroneous |
+| LAST NOMATCH (COND FREE DELKEY LOOP) DELKEY | Deletion in the loop (backwards, this is faster);<br>the last DELKEY looks erroneous |
 | ROOT FIND MATCH | Check that a file exists; do not open |
 | LAST COND FREE DELKEY LOOP | Deletion in the loop; COND is useless, as LAST is not conditional;<br>will error out and potentially corrupt the DB |
 | FIND FREE DELKEY | Unconditional deletion |
@@ -39,8 +39,8 @@ The semantics of micro-instructions (with the range of possible valid codes 00-5
 |  02  |   LAST   | Position the iterator at the end |
 |  03  |   PREV   | Step back (with conditionality, see 14); reaches the zero key before failing | 
 |  04  |   NEXT   | Step forward (with conditionality, see 14) |
-|  05  |    ???   | Wants to write to the disk |
-|  06  |    ???   | Wants to write to the disk |
+|  05  |  INSMETA | Makes and inserts a metadata block |
+|  06  |  SETMETA | Sets the current datum as the main metadata block  |
 |  07  |    ???   | Non-writing |
 |  10  |   INIT   | Initialize a container/catalog |
 |  11  |   FIND   | Find an entry by key |
