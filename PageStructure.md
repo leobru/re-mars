@@ -10,4 +10,4 @@ All pages of the database have the same basic structure.
 | E+2 &mdash; L | Available | ALways maintained contiguous |
 | L+1 &mdash; 1777 | Extent contents | Unless L == 1777, of course |
 
-[^1] Using the number 2 as the file name may be "magic".
+[^1]: Using the number 2 as the file name may be "magic".
