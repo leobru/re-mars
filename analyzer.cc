@@ -26,16 +26,17 @@ void usage() {
       "\t-V\tVerbose\n"
       "\t-L <n>\tCatalog length, octal (default 1)\n"
       "\t-f <n>\tOperate on a file with the given name\n"
+      "\t-d\tDump extent descriptors\n"
       ;
 }
 
-std::string tobesm(std::string s) {
+uint64_t tobesm(std::string s) {
     // Convert to the BESM-6 compatible format for ease of comparison
     s += "     ";
     s.resize(6);
     std::reverse(s.begin(), s.end());
     s.resize(8);
-    return s;
+    return *(uint64_t*)s.c_str();
 }
 
 std::string frombesm(uint64_t w) {
@@ -87,19 +88,21 @@ class Analyzer {
     pp IOcall(uint64_t);
     pp get_zone(uint64_t);
     void setctl(uint64_t);
-    void check_zone(int);
+    void check_zone(int), dump_zone(int);
     const uint64_t * get_root_block();
     const uint64_t * get_block(uint64_t);
     const uint64_t * find_item(uint64_t);
+    const uint64_t * find(uint64_t key);
 
 public:
-    Analyzer(int lun, int start, int len, bool v) : verbose(v) {
+    Analyzer(uint64_t key, int lun, int start, int len, bool v) : verbose(v) {
        dbdesc = arch = to_lnuzzzz(lun, start, len);
-       DBkey = ROOTKEY;
+       DBkey = key;
        setctl(dbdesc);
     }
     void check_leaks();
-    void dir(), open(const std::string &), dump();
+    void dir(), dump();
+    Analyzer * open(const std::string &);
 };
 
 void Analyzer::setctl(uint64_t location) {
@@ -112,7 +115,7 @@ void Analyzer::setctl(uint64_t location) {
         exit(1);
     }
     freeSpace = page.w + (page.w[3] & 01777) + 2;
-    int length = freeSpace[-1] & 01777;
+    uint64_t length = freeSpace[-1] & 01777;
     if (length != dblen) {
         std::cerr << std::format("Wrong catalog length: specified {:o}, seen {:o}\n",
                                  dblen, length);
@@ -218,14 +221,16 @@ const uint64_t * Analyzer::get_root_block() {
 
 void Analyzer::dir() {
     std::cout << "Free space per zone:\n    ZONE   WORDS\n";
-    for (int i = 0; i < dblen; ++i) {
+    for (size_t i = 0; i < dblen; ++i) {
         std::cout << std::format("    {:04o}    {:04o}\n", i, freeSpace[i]);
     }
     if (root[1] != 0 || root[2] != ROOT_BLOCK) {
         std::cerr << "Bad self-reference of the root block\n";
     }
+    if (root[0] < 3)
+        return;
     std::cout << "FILE NAME LENGTH LOCATION\n";
-    for (int i = 3; i <= root[0]; i += 2) {
+    for (size_t i = 3; i <= root[0]; i += 2) {
         std::string fname = frombesm(root[i]);
         auto fdescr = find_item(root[i+1]);
         int length = fdescr[1] >> 18;
@@ -238,39 +243,89 @@ void Analyzer::dir() {
 
 void Analyzer::check_zone(int i) {
     pp page = get_zone(i);
-    int last_free = page.w[1] & 01777;
-    int extents = (page.w[1] >> 10) & 01777;
-    int used = 0;               // header
-    for (int i = 0; i < extents; ++i)
+    size_t last_free = page.w[1] & 01777;
+    size_t extents = (page.w[1] >> 10) & 01777;
+    size_t used = 0;               // header
+    for (size_t i = 0; i < extents; ++i)
         used += get_extlength(page.w[i+2]);
+    if (extents + 2 + freeSpace[i] != last_free + 1)
+        std::cerr << std::format("Zone {:04o}: front {:04o} + free space {:04o} - 1 != last free {:o}\n",
+                                 i, extents + 2, freeSpace[i], last_free);
     if (used + last_free != 01777) {
-        std::cerr << std::format("Zone {:04o}: used {:04o} + free {:04o} != 02000\n",
+        std::cerr << std::format("Zone {:04o}: used {:04o} + last free {:04o} != 01777\n",
                                  i, used, last_free);
-    }    
+    }
 }
 
 void Analyzer::check_leaks() {
-    for (int i = 0; i < dblen; ++i) {
+    for (size_t i = 0; i < dblen; ++i) {
         check_zone(i);
     }
-    std::cout << std::format("Checked {:04o} zones\n", dblen); 
+    std::cout << std::format("Checked {:04o} zones\n", dblen);
 }
 
-void Analyzer::open(const std::string &) {
-    std::cerr << __FUNCTION__ << " NYI\n";
+// At the moment searches only in the root metablock
+const uint64_t * Analyzer::find(uint64_t key) {
+    for (size_t i = 3; i <= root[0]; i += 2) {
+        if (root[i] == key) {
+            return find_item(root[i+1]);
+        }
+    }
+    return nullptr;
+}
+
+Analyzer * Analyzer::open(const std::string & fname) {
+    auto key = tobesm(fname);
+    auto fdescr = find(key);
+    if (!fdescr) {
+        std::cerr << std::format("File {} ({:016o}) not found\n", fname, key);
+        exit(1);
+    }
+    int length = fdescr[1] >> 18;
+    int location = fdescr[1] & 0777777;
+    auto an = new Analyzer(fdescr[2], location >> 12, location & 07777, length, verbose);
+    an->check_leaks();
+    return an;
+}
+
+void Analyzer::dump_zone(int i) {
+    pp page = get_zone(i);
+    size_t extents = (page.w[1] >> 10) & 01777;
+    size_t free_space = page.w[1] & 01777;
+    if (!extents)
+        return;
+    std::cout << std::format("ZONE {:04o} EXTENTS {:o} FREE {:o}\n", i, extents, free_space);
+    std::cout << "EXTENT START LENGTH  NEXT\n";
+    for (size_t i = 0; i < extents; ++i) {
+        int id = get_id(page.w[i+2]);
+        size_t start = get_extstart(page.w[i+2]) + 1;
+        size_t length = get_extlength(page.w[i+2]);
+        size_t next = next_extent(page.w[i+2]);
+        auto aitem = page.w + start;
+        char flag = (length != (*aitem & 017777) + 1) ? '*' : ' ';
+        if (next)
+            std::cout << std::format("{:4o}   {:04o}  {}{:04o}  {:04o}.{:03o}\n",
+                                     id, start, flag, length, next & 01777, next >> 10);
+        else
+            std::cout << std::format("{:4o}   {:04o}  {}{:04o}\n",
+                                     id, start, flag, length);
+    }
 }
 
 void Analyzer::dump() {
-    std::cerr << __FUNCTION__ << " NYI\n";
+    for (size_t i = 0; i < dblen; ++i) {
+        dump_zone(i);
+    }
 }
 
 int main(int argc, char ** argv) {
     int c;
     std::string fname;
     bool verbose = false;
+    bool dump_descrs = false;
     int catalog_len = 1;
     for (;;) {
-        c = getopt (argc, argv, "hVL:f:");
+        c = getopt (argc, argv, "hVdL:f:");
         if (c < 0)
             break;
         switch (c) {
@@ -281,6 +336,9 @@ int main(int argc, char ** argv) {
         case 'V':
             verbose = true;
             break;
+        case 'd':
+            dump_descrs = true;
+            break;
         case 'L':
             catalog_len = strtol(optarg, nullptr, 8);
             break;
@@ -290,11 +348,16 @@ int main(int argc, char ** argv) {
         }
     }
 
-    Analyzer an(052, 0, catalog_len, verbose);
+    Analyzer an(ROOTKEY, 052, 0, catalog_len, verbose);
     an.check_leaks();
     an.dir();
-    if (!fname.empty()) {
-        an.open(fname);
+    if (dump_descrs)
         an.dump();
+    if (!fname.empty()) {
+        std::cout << "Opening file " << fname << '\n';
+        auto an2 = an.open(fname);
+        std::cout << "Dumping file " << fname << '\n';
+        an2->dump();
+        delete an2;
     }
 }

@@ -29,6 +29,8 @@ TEST(mars, diagnostics)
     uint64_t zero = 0, one = 1;
     mars.InitDB(0, 0, 1);
     mars.root();
+    mars.next();
+    ASSERT_EQ(mars.data[7], Mars::ERR_NO_CURR);
     ASSERT_EQ(mars.getd(zero, 0, 0), Mars::ERR_INV_NAME);
     ASSERT_EQ(mars.getd(one, 0, 0), Mars::ERR_NO_NAME);
     ASSERT_EQ(mars.putd(one, 0, 2), Mars::ERR_SUCCESS);

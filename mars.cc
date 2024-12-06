@@ -704,9 +704,8 @@ void MarsImpl::free_extent() {
 
 // DOes not seem to
 void MarsImpl::free(uint64_t arg) {
-    acc = arg;
     do {
-        find_item(acc);
+        find_item(arg);
         work2 = (m16[1].d >> 10) & 077777;
         m5 = loc116;
         while (m5 != work2) {
@@ -714,8 +713,8 @@ void MarsImpl::free(uint64_t arg) {
             ++m5;
         };
         free_extent();
-        acc = next_extent(curExtent);
-    } while (acc);
+        arg = next_extent(curExtent);
+    } while (arg);
     dirty = dirty.d | 1;
 }
 
