@@ -27,6 +27,7 @@ void usage() {
       "\t-L <n>\tCatalog length, octal (default 1)\n"
       "\t-f <n>\tOperate on a file with the given name\n"
       "\t-d\tDump extent descriptors\n"
+      "\t-r\tRecurse into metablocks\n"
       ;
 }
 
@@ -68,6 +69,10 @@ static int to_lnuzzzz(int lun, int start, int len) {
     return ((lun & 077) << 12) | (start & 01777) | ((len & 0777) << 18);
 }
 
+static std::string print_id(uint64_t id) {
+    return std::format("{:04o}.{:03o}", id & 01777, id >> 10);
+}
+
 struct Page {
     Page() { }
     uint64_t w[1024];
@@ -75,12 +80,15 @@ struct Page {
 
 typedef const Page & pp;
 
+typedef std::vector<uint64_t> Block;
+typedef std::pair<Block, uint64_t> Extent;
+
 class Analyzer {
     std::unordered_map<std::string, Page*> DiskImage;
     bool verbose;
     uint64_t arch, dbdesc, DBkey, dblen, IOpat;
     const uint64_t * freeSpace;
-    const uint64_t * root;
+    Block root;
     struct BlockTreeLevel {
         uint64_t id;
         const uint64_t * location;
@@ -89,10 +97,10 @@ class Analyzer {
     pp get_zone(uint64_t);
     void setctl(uint64_t);
     void check_zone(int), dump_zone(int);
-    const uint64_t * get_root_block();
-    const uint64_t * get_block(uint64_t);
-    const uint64_t * find_item(uint64_t);
-    const uint64_t * find(uint64_t key);
+    Block get_root_block();
+    Block get_block(uint64_t);
+    Extent find_item(uint64_t);
+    Extent find(uint64_t key);
 
 public:
     Analyzer(uint64_t key, int lun, int start, int len, bool v) : verbose(v) {
@@ -101,7 +109,11 @@ public:
        setctl(dbdesc);
     }
     void check_leaks();
-    void dir(), dump();
+    void avail(), dir(), dump();
+    void metablocks(bool recurse) {
+        metablock(root, recurse, 0);
+    }
+    void metablock(Block &, bool, int = 0);
     Analyzer * open(const std::string &);
 };
 
@@ -121,10 +133,9 @@ void Analyzer::setctl(uint64_t location) {
                                  dblen, length);
         exit(1);
     }
-    // Can the root block be fragmented?
     root = get_root_block();
     if (verbose) {
-        std::cerr << std::format("The root block header is {:016o}\n", *root);
+        std::cerr << std::format("The root block header is {:016o}\n", root[0]);
     }
 }
 
@@ -163,9 +174,9 @@ pp Analyzer::get_zone(uint64_t arg) {
     throw Mars::ERR_BAD_PAGE;
 }
 
-const uint64_t * Analyzer::find_item(uint64_t id) {
+Extent Analyzer::find_item(uint64_t id) {
     auto zone = id & 01777;
-    auto recnum = id >> 10;
+    auto recnum = (id >> 10) & 0777;
     if (verbose)
         std::cerr << std::format("Need item {:o} in zone {:o}\n", recnum, zone);
     pp page = get_zone(zone);
@@ -200,44 +211,96 @@ const uint64_t * Analyzer::find_item(uint64_t id) {
     if (verbose) {
         std::cerr << std::format("Found extent of length {:o}\n", curExtLength);
     }
-    if (curExtLength != (*aitem & 01777) + 1) {
-        std::cerr <<
-            std::format("Extent length discrepancy: {:o} in descriptor, {:o} in header\n",
-            curExtLength, (*aitem & 01777));
-    }
-    return aitem;
+    return std::make_pair(Block(aitem, aitem + curExtLength), next_extent(curExtent));
 }
 
 // Returns the payload of the block
-const uint64_t * Analyzer::get_block(uint64_t id) {
+Block Analyzer::get_block(uint64_t id) {
     auto extent = find_item(id);
-    // TODO: check for chaining
-    return extent + 1;
+    while (extent.second) {
+        auto cont = find_item(extent.second);
+        extent.first.insert(extent.first.end(), cont.first.begin(), cont.first.end());
+        extent.second = cont.second;
+    }
+    if (extent.first.size() == extent.first[0] + 1) {
+        return Block(extent.first.begin() + 1, extent.first.end());
+    }
+    
+    std::cerr <<
+        std::format("Block length discrepancy: {:o} total extents, {:o} in header\n",
+                    extent.first.size(), extent.first[0]);
+    return extent.first;
 }
 
-const uint64_t * Analyzer::get_root_block() {
+Block Analyzer::get_root_block() {
      return get_block(ROOT_BLOCK);
 }
 
-void Analyzer::dir() {
-    std::cout << "Free space per zone:\n    ZONE   WORDS\n";
+void Analyzer::avail() {
+    std::cout << "Free space per zone (zones not mentioned are fully free):\n"
+        "    ZONE   WORDS\n";
     for (size_t i = 0; i < dblen; ++i) {
+        if (freeSpace[i] == 01776) {
+            continue;
+        }
         std::cout << std::format("    {:04o}    {:04o}\n", i, freeSpace[i]);
     }
-    if (root[1] != 0 || root[2] != ROOT_BLOCK) {
-        std::cerr << "Bad self-reference of the root block\n";
+}
+
+void Analyzer::dir() {
+    if (root[0] == 0) {
+        std::cerr << "An empty block does not make sense\n";
+        return;
+    }
+    if (root[0] & 1) {
+        std::cerr << "Bad block with odd length " << root[0] << '\n';
+    }
+    if (root[1] != 0) {
+        std::cerr << "Zero key is not zero?\n";
+    }
+    if (!(root[2] & ONEBIT(48)) && root[2] != ROOT_BLOCK) {
+        std::cerr << "The zero key terminator is corrupted\n";
     }
     if (root[0] < 3)
         return;
     std::cout << "FILE NAME LENGTH LOCATION\n";
     for (size_t i = 3; i <= root[0]; i += 2) {
         std::string fname = frombesm(root[i]);
-        auto fdescr = find_item(root[i+1]);
+        auto fdescr = find_item(root[i+1]).first;
         int length = fdescr[1] >> 18;
         int location = fdescr[1] & 0777777;
         bool has_passwd = fdescr[0] == 3;
         std::cout << std::format("  {:6}    {:04o}  {:6o} {}\n", fname, length, location,
                                  has_passwd ? frombesm(fdescr[3]) : "");
+    }
+}
+
+void Analyzer::metablock(Block & block, bool recurse, int indent) {
+    size_t limit = block.size()-1;
+    auto head = block[0];
+    size_t used = head & 01777;
+    if (used > limit) {
+        std::cout << "Corrupted block: size " << limit << " claims " << used << '\n';
+    } else {
+        limit = used;
+    }
+    if (head >> 10) {
+        std::cout << std::format("Linked: {} {}\n",
+                                 print_id(head >> 29), print_id((head >> 10) & BITS(19)));
+    }
+    if (indent == 0)
+        std::cout << "      KEY         RAW DESCRIPTOR  LOCATION\n";
+    for (size_t i = 1; i <= limit; i += 2) {
+        uint64_t key = block[i];
+        uint64_t first_extent = block[i+1];
+        std::cout << std::format("{:{}}{:016o} {:016o} {}\n", ' ', indent+1,
+                                 key, first_extent, print_id(first_extent & BITS(19)));
+        if (first_extent & ONEBIT(48)) {
+            // Nested metablock
+            auto nested = get_block(first_extent & 01777777);
+            if (recurse)
+                metablock(nested, true, indent+1);
+        }
     }
 }
 
@@ -265,19 +328,19 @@ void Analyzer::check_leaks() {
 }
 
 // At the moment searches only in the root metablock
-const uint64_t * Analyzer::find(uint64_t key) {
+Extent Analyzer::find(uint64_t key) {
     for (size_t i = 3; i <= root[0]; i += 2) {
         if (root[i] == key) {
             return find_item(root[i+1]);
         }
     }
-    return nullptr;
+    return Extent();
 }
 
 Analyzer * Analyzer::open(const std::string & fname) {
     auto key = tobesm(fname);
-    auto fdescr = find(key);
-    if (!fdescr) {
+    auto fdescr = find(key).first;
+    if (fdescr.empty()) {
         std::cerr << std::format("File {} ({:016o}) not found\n", fname, key);
         exit(1);
     }
@@ -304,8 +367,8 @@ void Analyzer::dump_zone(int i) {
         auto aitem = page.w + start;
         char flag = (length != (*aitem & 017777) + 1) ? '*' : ' ';
         if (next)
-            std::cout << std::format("{:4o}   {:04o}  {}{:04o}  {:04o}.{:03o}\n",
-                                     id, start, flag, length, next & 01777, next >> 10);
+            std::cout << std::format("{:4o}   {:04o}  {}{:04o}  {}\n",
+                                     id, start, flag, length, print_id(next));
         else
             std::cout << std::format("{:4o}   {:04o}  {}{:04o}\n",
                                      id, start, flag, length);
@@ -323,9 +386,10 @@ int main(int argc, char ** argv) {
     std::string fname;
     bool verbose = false;
     bool dump_descrs = false;
+    bool recurse = false;
     int catalog_len = 1;
     for (;;) {
-        c = getopt (argc, argv, "hVdL:f:");
+        c = getopt (argc, argv, "hVdrL:f:");
         if (c < 0)
             break;
         switch (c) {
@@ -339,6 +403,9 @@ int main(int argc, char ** argv) {
         case 'd':
             dump_descrs = true;
             break;
+        case 'r':
+            recurse = true;
+            break;
         case 'L':
             catalog_len = strtol(optarg, nullptr, 8);
             break;
@@ -349,6 +416,7 @@ int main(int argc, char ** argv) {
     }
 
     Analyzer an(ROOTKEY, 052, 0, catalog_len, verbose);
+    an.avail();
     an.check_leaks();
     an.dir();
     if (dump_descrs)
@@ -356,8 +424,11 @@ int main(int argc, char ** argv) {
     if (!fname.empty()) {
         std::cout << "Opening file " << fname << '\n';
         auto an2 = an.open(fname);
+        an2->avail();
         std::cout << "Dumping file " << fname << '\n';
-        an2->dump();
+        an2->metablocks(recurse);
+        if (dump_descrs)
+            an2->dump();
         delete an2;
     }
 }
