@@ -58,6 +58,7 @@ class Mars {
         OP_LENGTH = 033,
         OP_DESCR = 034,
         OP_SAVE = 035,
+        OP_ADDMETA = 036,
         OP_SKIP = 037,
         OP_STOP = 040,
         OP_IFEQ = 041,
@@ -69,12 +70,26 @@ class Mars {
         OP_ASSIGN = 053,
         OP_EXIT = 055
     };
+
+    // Helper functions
+
+    // Constructs a microprogram word.
     static inline uint64_t
     mcprog(Op o1, Op o2=OP_NOP, Op o3=OP_NOP, Op o4=OP_NOP,
            Op o5=OP_NOP, Op o6=OP_NOP, Op o7=OP_NOP, Op o8=OP_NOP) {
         return (o8 << 42) | (o7 << 36) | (o6 << 30) | (o5 << 24) |
             (o4 << 18) | (o3 << 12) | (o2 << 6) | o1;
     }
+    // Converts a single-word string to the BESM-6 compatible format
+    // for ease of comparison od binary dumps.
+    static uint64_t tobesm(std::string s) {
+        s += "     ";
+        s.resize(6);
+        std::reverse(s.begin(), s.end());
+        s.resize(8);
+        return *(uint64_t*)s.c_str();
+    }
+
     struct word {
         class Mars * const mars = nullptr;
         uint64_t d;

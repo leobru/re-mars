@@ -19,7 +19,7 @@ Below are micro-programs found in the binary code of a program which used the MA
 
 | Micro-program | Comment |
 | :-----------: | --- |
-| FIND MATCH (COND FREE DELKEY NOP) INSERT ADDKEY | An alternative implementation of MODD,<br>deleting the key before inserting the new value | 
+| FIND MATCH (COND FREE DELKEY NOP) INSERT ADDKEY | An alternative implementation of MODD,<br>deleting the key before inserting the new value |
 | ROOT FIND MATCH SETCTL OPEN AVAIL BEGIN | Open a container, compute available space,<br>position the iterator to the starting dummy entry |
 | FIND MATCH SETMETA | If the key-value pair exists, set the value as the main metablock, otherwise error out |
 | FIND NOMATCH INSMETA ADDKEY | If the key does not exist, add a key-metablock pair, otherwise error out |
@@ -37,7 +37,7 @@ The semantics of micro-instructions (with the range of possible valid codes 00-5
 |  00  | NOP/COND | no-op/conditional mark |
 |  01  |   BEGIN  | Position the iterator at the beginning (to the zero key entry;<br>needs 04 to get to the actual first element) |
 |  02  |   LAST   | Position the iterator at the end |
-|  03  |   PREV   | Step back (with conditionality, see 14); reaches the zero key before failing | 
+|  03  |   PREV   | Step back (with conditionality, see 14); reaches the zero key before failing |
 |  04  |   NEXT   | Step forward (with conditionality, see 14) |
 |  05  |  INSMETA | Makes and inserts a metadata block |
 |  06  |  SETMETA | Sets the current datum as the main metadata block  |
@@ -48,10 +48,10 @@ The semantics of micro-instructions (with the range of possible valid codes 00-5
 |  13  |   AVAIL  | Compute remaining usable space |
 |  14  |   MATCH  | If the current entry does not match the given key:<br>if the 14 op is the last in the instruction word or is followed by a non-00 instruction, error out,<br>otherwise skip the 00 insn and 3 following insns |
 |  15  |  NOMATCH | The converse of 14 (if the current entry does match  the given key ....) |
-|  16  |  STRLEN  | Compute character string length | 
-|  17  |  WORDLEN | Compute data length in words using bdvec[32] as delimiter, buggy | 
+|  16  |  STRLEN  | Compute character string length |
+|  17  |  WORDLEN | Compute data length in words using bdvec[32] as delimiter, buggy |
 |  20  |  UPDATE  | Update the value part of the current entry, reallocating if the size changes |
-|  21  |  INSERT  | Allocate a memory block for data or metadata | 
+|  21  |  INSERT  | Allocate a memory block for data or metadata |
 |  22  |    GET   | Copy the value part of the current entry to the user area |
 |  23  |   FREE   | Free the memory for the value part of the current entry |
 |  24  |  PASSWD  | Password check (against the 3rd word of the current file descriptor),<br>if created with 3 words instead of default 2 in NEWD |
@@ -64,7 +64,7 @@ The semantics of micro-instructions (with the range of possible valid codes 00-5
 |  33  |  LENGTH  | Compute length of the object pointed to by the descriptor |
 |  34  |   DESCR  | Converts a block descriptor to a text format (length, date) |
 |  35  |   SAVE   | Save dirty buffers and exit |
-|  36  |    ???   | Wants to write to the disk |
+|  36  |  ADDMETA | Adds the current descriptor to the current metablock position,<br>updates the metablock tree |
 |  37  |   SKIP   | Skip the next instruction |
 |  40  |   STOP   | Stops the execution of the micro-program |
 |  41  |   IFEQ   | Compare the user data to the current entry and skip next 2 instructions if no match |

@@ -426,9 +426,9 @@ int main(int argc, char ** argv) {
         auto an2 = an.open(fname);
         an2->avail();
         std::cout << "Dumping file " << fname << '\n';
-        an2->metablocks(recurse);
         if (dump_descrs)
             an2->dump();
+        an2->metablocks(recurse);
         delete an2;
     }
 }
