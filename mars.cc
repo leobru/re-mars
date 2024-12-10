@@ -17,8 +17,6 @@
 using word = Mars::word;
 using Error = Mars::Error;
 
-const uint64_t rk = 7LL << 41;
-
 #define FAKEBLK 020
 #define ARBITRARY_NONZERO 01234567007654321LL
 #define ROOTKEY 04000
@@ -122,11 +120,11 @@ struct MarsImpl {
 
     // Fields of BDSYS
     uint64_t & arch;
-    wordref abdv, savm16, d00010, d00011, d00012,
-        savm13, goto_, zoneKey, usrloc, savm7, savm6,
-        savm5, jmpoff, extentHeader, newDescr, d00025, d00026,
+    wordref abdv, d00010, d00011, d00012,
+        goto_, zoneKey, usrloc,
+        jmpoff, extentHeader, newDescr, d00025, d00026,
         temp, chainHead, d00031, d00032, d00033, remlen,
-        work, work2, IOword, d00040, savrk;
+        work, work2, IOword, d00040;
 
     std::unordered_map<std::string, Page> DiskImage;
 
@@ -184,17 +182,12 @@ struct MarsImpl {
         // Fields of BDSYS
         arch(data[BDSYS+4].d),
         abdv(data[BDSYS+3]),
-        savm16(data[BDSYS+7]),
         d00010(data[BDSYS+010]),
         d00011(data[BDSYS+011]),
         d00012(data[BDSYS+012]),
-        savm13(data[BDSYS+013]),
         goto_(data[BDSYS+014]),
         zoneKey(data[BDSYS+015]),
         usrloc(data[BDSYS+016]),
-        savm7(data[BDSYS+017]),
-        savm6(data[BDSYS+020]),
-        savm5(data[BDSYS+021]),
         jmpoff(data[BDSYS+022]),
         extentHeader(data[BDSYS+023]),
         newDescr(data[BDSYS+024]),
@@ -209,8 +202,8 @@ struct MarsImpl {
         work(data[BDSYS+035]),
         work2(data[BDSYS+036]),
         IOword(data[BDSYS+037]),
-        d00040(data[BDSYS+040]),
-        savrk(data[BDSYS+041]) { }
+        d00040(data[BDSYS+040])
+        { }
     void IOflush();
     void IOcall(word);
     void get_zone(uint64_t);
@@ -902,10 +895,9 @@ void MarsImpl::overflow(word ext) {
 }
 
 void MarsImpl::prepare_chunk() {
-    acc = freeSpace[m5-1].d - 1;
-    work = acc;
+    work = freeSpace[m5-1].d - 1;
     --m5;
-    if (acc < mylen.d) {
+    if (work.d < mylen.d) {
         remlen = mylen - work;
         mylen = work;
         usrloc = usrloc - work;
@@ -1181,10 +1173,34 @@ void MarsImpl::update(word arg) {
 Error MarsImpl::eval() try {
     std::unordered_map<void*,int> jumptab;
     std::vector<void*> targets;
-    acc = m16.d;
-    jump(enter);
+    m13 = abdv;
+    if (bdtab[0] != DBkey && IOpat.d) {
+        IOword = bdtab.d << 20 | ONEBIT(40) | IOpat.d;
+        IOcall(IOword);
+    }
+    // enter2:                       // continue execution after a callback?
+    acc = orgcmd.d;
+    jump(next);
+  rtnext:
+    if (goto_.d) {
+        word to = goto_;
+        goto_ = 0;
+        indjump(to);
+    }
+  cmd0:
+    acc = curcmd >> 6;
+  next:
+    if (!acc) {
+        finalize(0);
+        if (mars.dump_diffs)
+            mars.dump();
+        return Mars::ERR_SUCCESS;
+    }
+    curcmd = acc;
+    m5 = acc & BITS(6);
+    m6 = target(cmd0);
+    goto_ = 0;
     // The switch is entered with m6 = cmd0 and acc = 0
-  switch_:
     if (verbose)
         std::cerr << "Executing microcode " << std::oct << m5.d << '\n';
     acc = 0;
@@ -1387,41 +1403,6 @@ Error MarsImpl::eval() try {
         abort();
     }
     jump(cmd0);
-  enter:
-    savm16 = acc;
-    savm13 = m13;
-    savrk = rk;
-    m13 = abdv;
-    savm7 = m7;
-    savm5 = m5;
-    if (bdtab[0] != DBkey && IOpat.d) {
-        IOword = bdtab.d << 20 | ONEBIT(40) | IOpat.d;
-        IOcall(IOword);
-    }
-    savm6 = m6;
-    // enter2:                       // continue execution after a callback?
-    acc = orgcmd.d;
-    jump(next);
-  rtnext:
-    if (goto_.d) {
-        word to = goto_;
-        goto_ = 0;
-        indjump(to);
-    }
-  cmd0:
-    acc = curcmd >> 6;
-  next:
-    if (!acc) {
-        finalize(0);
-        if (mars.dump_diffs)
-            mars.dump();
-        return Mars::ERR_SUCCESS;
-    }
-    curcmd = acc;
-    m5 = acc & BITS(6);
-    m6 = target(cmd0);
-    goto_ = 0;
-    jump(switch_);
   delkey:
     m16 = curMetaBlock;
     m5 = m16 + Array[idx];
@@ -1597,8 +1578,9 @@ Error MarsImpl::eval() try {
     update(metaflag);
     jump(rtnext);
 } catch (Error e) {
-    if (erhndl.d)
-        savm16 = erhndl;
+    if (erhndl.d) {
+        // savm16 = erhndl;  // returning to erhndl instead of the point of call
+    }
     m7 = e;
     std::cerr << std::format("ERROR {} ({})\n", int(e), msg[e-1]);
     d00010 = *(uint64_t*)msg[e-1];
@@ -1613,11 +1595,6 @@ void MarsImpl::pasbdi() {
         new (data+i) word(mars, 0);
     }
     // Faking MARS words
-    m16 = 04700;
-    m13 = 01654;
-    m7 = 01603;
-    m5 = 077770;
-    m6 = 022731;
     bdtab = Mars::BDTAB;
     bdbuf = Mars::BDBUF;
     abdv = BDVECT;

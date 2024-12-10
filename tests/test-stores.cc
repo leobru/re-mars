@@ -43,12 +43,6 @@ TEST(mars, initdb_stores)
     EXPECT_EQ(mars.get_store(01430), 0'0000'0000'0352'0000u);
     EXPECT_EQ(mars.get_store(01431), 0'0000'0000'0000'4000u);
     EXPECT_EQ(mars.get_store(01403), 0'0000'0000'0000'0010u);
-    EXPECT_EQ(mars.get_store(02007), 0'0000'0000'0000'4700u);
-    EXPECT_EQ(mars.get_store(02013), 0'0000'0000'0000'1654u);
-    EXPECT_EQ(mars.get_store(02041), 0'0340'0000'0000'0000u);
-    EXPECT_EQ(mars.get_store(02017), 0'0000'0000'0000'1603u);
-    EXPECT_EQ(mars.get_store(02021), 0'0000'0000'0007'7770u);
-    EXPECT_EQ(mars.get_store(02020), 0'0000'0000'0002'2731u);
     EXPECT_EQ(mars.get_store(01405), 0'0000'0000'0000'0010u);
     EXPECT_EQ(mars.get_store(02014), 0'0000'0000'0000'0000u);
 
@@ -81,7 +75,6 @@ TEST(mars, initdb_stores)
     EXPECT_EQ(mars.get_store(02012), 0'0000'0000'0000'2000u);
 //  EXPECT_EQ(mars.get_store(01415), 0'0000'0000'0000'0041u); // overwritten
     EXPECT_EQ(mars.get_store(02010), 0'0000'0000'0000'0002u);
-//  EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0000'2010u); // overwritten
 //  EXPECT_EQ(mars.get_store(02035), 0'0000'0000'0000'0000u); // overwritten
 //  EXPECT_EQ(mars.get_store(02023), 0'0000'0000'0000'0041u); // overwritten
 //  EXPECT_EQ(mars.get_store(02030), 0'0000'0000'0000'0000u); // overwritten
@@ -145,7 +138,6 @@ TEST(mars, initdb_stores)
     EXPECT_EQ(mars.get_store(02014), 0'0000'0000'0000'0000u);
 
     // Executing microcode 21
-    EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0000'6000u); // latest
 //  EXPECT_EQ(mars.get_store(02035), 0'0000'0000'0000'0000u); // overwritten
     EXPECT_EQ(mars.get_store(02023), 0'0000'0000'0000'0003u); // latest
 //  EXPECT_EQ(mars.get_store(02030), 0'0000'0000'0000'0000u); // overwritten
@@ -202,12 +194,6 @@ TEST(mars, setdb_stores)
     EXPECT_EQ(mars.get_store(01416), 0'0000'0000'0000'6000u);
     EXPECT_EQ(mars.get_store(02003), 0'0000'0000'0000'1400u);
     EXPECT_EQ(mars.get_store(01403), 0'0000'0000'0000'0031u);
-    EXPECT_EQ(mars.get_store(02007), 0'0000'0000'0000'4700u);
-    EXPECT_EQ(mars.get_store(02013), 0'0000'0000'0000'1654u);
-    EXPECT_EQ(mars.get_store(02041), 0'0340'0000'0000'0000u);
-    EXPECT_EQ(mars.get_store(02017), 0'0000'0000'0000'1603u);
-    EXPECT_EQ(mars.get_store(02021), 0'0000'0000'0007'7770u);
-    EXPECT_EQ(mars.get_store(02020), 0'0000'0000'0002'2731u);
     EXPECT_EQ(mars.get_store(01405), 0'0000'0000'0000'0031u);
     EXPECT_EQ(mars.get_store(02014), 0'0000'0000'0000'0000u);
 
@@ -226,7 +212,6 @@ TEST(mars, setdb_stores)
     EXPECT_EQ(mars.get_store(01434), 0'0000'0000'0000'5735u);
     EXPECT_EQ(mars.get_store(01420), 0'0000'0000'0000'2000u);
 //  EXPECT_EQ(mars.get_store(01516), 0'0000'0000'0000'2000u); // overwritten
-//  EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0000'1454u); // overwritten
     EXPECT_EQ(mars.get_store(01450), 0'0000'0000'0000'1456u);
     EXPECT_EQ(mars.get_store(01646), 0'0000'0000'0000'2000u); // latest
     EXPECT_EQ(mars.get_store(02040), 0'0000'0000'0000'2000u);
@@ -275,7 +260,6 @@ TEST(mars, setdb_stores)
     EXPECT_EQ(mars.get_store(01456), 0'0000'0000'0000'0000u);
     EXPECT_EQ(mars.get_store(01455), 0'0000'0000'0000'0002u);
     EXPECT_EQ(mars.get_store(01454), 0'0000'0000'0000'0041u);
-    EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0000'1516u); // latest
     EXPECT_EQ(mars.get_store(02011), 0'0000'0000'0000'0000u);
     EXPECT_EQ(mars.get_store(01647), 0'0000'0000'0000'0000u);
 }
@@ -314,10 +298,6 @@ TEST(mars, newd_stores)
 //  EXPECT_EQ(mars.get_store(01415), 0'0000'0000'0000'0002u); // overwritten
 //  EXPECT_EQ(mars.get_store(01403), 0'0000'0026'2115'1131u); // overwritten
 //  EXPECT_EQ(mars.get_store(02007), 0'0000'0000'0000'0000u); // overwritten
-    EXPECT_EQ(mars.get_store(02013), 0'0000'0000'0000'1400u);
-    EXPECT_EQ(mars.get_store(02041), 0'0340'0000'0000'0000u);
-//  EXPECT_EQ(mars.get_store(02017), 0'0000'0000'0000'1603u); // overwritten
-//  EXPECT_EQ(mars.get_store(02021), 0'0000'0000'0005'4321u); // overwritten
 //  EXPECT_EQ(mars.get_store(02020), 0'0000'0417'6274'3662u); // random address, don't check
 //  EXPECT_EQ(mars.get_store(01405), 0'0000'0026'2115'1131u); // overwritten
     EXPECT_EQ(mars.get_store(02014), 0'0000'0000'0000'0000u);
@@ -337,7 +317,6 @@ TEST(mars, newd_stores)
 //  EXPECT_EQ(mars.get_store(01434), 0'0000'0000'0000'5735u); // overwritten
     EXPECT_EQ(mars.get_store(01420), 0'0000'0000'0000'2000u);
 //  EXPECT_EQ(mars.get_store(01516), 0'0000'0000'0000'2000u); // overwritten
-//  EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0000'1454u); // overwritten
     EXPECT_EQ(mars.get_store(01450), 0'0000'0000'0000'1456u);
     EXPECT_EQ(mars.get_store(01646), 0'0000'0000'0000'2000u); // latest
 //  EXPECT_EQ(mars.get_store(02040), 0'0000'0000'0000'2000u); // overwritten
@@ -386,7 +365,6 @@ TEST(mars, newd_stores)
     EXPECT_EQ(mars.get_store(01456), 0'0000'0000'0000'0000u);
 //  EXPECT_EQ(mars.get_store(01455), 0'0000'0000'0000'0002u); // overwritten
     EXPECT_EQ(mars.get_store(01454), 0'0000'0000'0000'0041u);
-//  EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0000'1516u); // overwritten
 //  EXPECT_EQ(mars.get_store(01405), 0'0000'0000'2621'1511u); // overwritten
     EXPECT_EQ(mars.get_store(02014), 0'0000'0000'0000'0000u);
 
@@ -408,7 +386,6 @@ TEST(mars, newd_stores)
     EXPECT_EQ(mars.get_store(02014), 0'0000'0000'0000'0000u);
 
     // Executing microcode 21
-//  EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0007'7776u); // overwritten
 //  EXPECT_EQ(mars.get_store(02035), 0'0000'0000'0000'0000u); // overwritten
 //  EXPECT_EQ(mars.get_store(02023), 0'0000'0000'0000'0002u); // overwritten
 //  EXPECT_EQ(mars.get_store(02030), 0'0000'0000'0000'0000u); // overwritten
@@ -450,7 +427,6 @@ TEST(mars, newd_stores)
     EXPECT_EQ(mars.get_store(01460), 0'2504'2523'2502'0040u); // latest
     EXPECT_EQ(mars.get_store(01461), 0'0000'0000'0000'6000u); // latest
     EXPECT_EQ(mars.get_store(01455), 0'0000'0000'0000'0004u); // latest
-//  EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0000'1455u); // overwritten
 //  EXPECT_EQ(mars.get_store(01415), 0'0000'0000'0000'0041u); // overwritten
     EXPECT_EQ(mars.get_store(02012), 0'0000'0000'0000'2000u);
 //  EXPECT_EQ(mars.get_store(02040), 0'0000'0000'0000'2000u); // overwritten
@@ -507,11 +483,6 @@ TEST(mars, newd_stores)
     // Writing 520000 from address 4000
 //  EXPECT_EQ(mars.get_store(01647), 0'0000'0000'0000'0000u); // overwritten
     EXPECT_EQ(mars.get_store(01403), 0'0000'0000'1012'1411u); // latest
-    EXPECT_EQ(mars.get_store(02007), 0'0000'0000'0000'4000u); // latest
-    EXPECT_EQ(mars.get_store(02013), 0'0000'0000'0000'1400u);
-    EXPECT_EQ(mars.get_store(02041), 0'0340'0000'0000'0000u);
-    EXPECT_EQ(mars.get_store(02017), 0'0000'0000'0000'4000u); // latest
-    EXPECT_EQ(mars.get_store(02021), 0'0000'0000'0000'4000u); // latest
 //  EXPECT_EQ(mars.get_store(02020), 0'0000'0417'6274'3474u); // random address, don't check
 //  EXPECT_EQ(mars.get_store(01405), 0'0000'0000'1012'1411u); // overwritten
     EXPECT_EQ(mars.get_store(02014), 0'0000'0000'0000'0000u);
@@ -549,14 +520,12 @@ TEST(mars, newd_stores)
     EXPECT_EQ(mars.get_store(01441), 0'0000'0000'0000'0002u);
     EXPECT_EQ(mars.get_store(01447), 0'0000'0000'0000'0002u);
     EXPECT_EQ(mars.get_store(01453), 0'0000'0000'0000'0000u);
-//  EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0000'1430u); // overwritten
     EXPECT_EQ(mars.get_store(01446), 0'0000'0000'0000'5732u); // latest
     EXPECT_EQ(mars.get_store(01445), 0'0000'0000'0000'0002u); // latest
 
     // From DB: 2(8) words from 5732 to 1430
     EXPECT_EQ(mars.get_store(01431), 0'0524'6520'4010'0000u); // latest
     EXPECT_EQ(mars.get_store(01430), 0'0000'0000'0252'0001u); // latest
-//  EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0000'1432u); // overwritten
     EXPECT_EQ(mars.get_store(01405), 0'0000'0000'0000'0010u); // latest
     EXPECT_EQ(mars.get_store(02014), 0'0000'0000'0000'0000u);
 
@@ -584,7 +553,6 @@ TEST(mars, newd_stores)
     EXPECT_EQ(mars.get_store(02012), 0'0000'0000'0000'2000u);
 //  EXPECT_EQ(mars.get_store(01415), 0'0000'0000'0000'0041u); // overwritten
     EXPECT_EQ(mars.get_store(02010), 0'0000'0000'0000'0002u);
-//  EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0000'2010u); // overwritten
 //  EXPECT_EQ(mars.get_store(02035), 0'0000'0000'0000'0000u); // overwritten
 //  EXPECT_EQ(mars.get_store(02023), 0'0000'0000'0000'0041u); // overwritten
 //  EXPECT_EQ(mars.get_store(02030), 0'0000'0000'0000'0000u); // overwritten
@@ -648,7 +616,6 @@ TEST(mars, newd_stores)
     EXPECT_EQ(mars.get_store(02014), 0'0000'0000'0000'0000u);
 
     // Executing microcode 21
-    EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0000'6000u); // latest
 //  EXPECT_EQ(mars.get_store(02035), 0'0000'0000'0000'0000u); // overwritten
     EXPECT_EQ(mars.get_store(02023), 0'0000'0000'0000'0002u); // latest
 //  EXPECT_EQ(mars.get_store(02030), 0'0000'0000'0000'0000u); // overwritten
@@ -712,11 +679,6 @@ TEST(mars, opend_stores)
     // Running opend('  TSET')
     EXPECT_EQ(mars.get_store(01410), 0'2504'2523'2502'0040u);
     EXPECT_EQ(mars.get_store(01403), 0'0000'0025'1214'1131u);
-    EXPECT_EQ(mars.get_store(02007), 0'0000'0000'0000'6000u);
-    EXPECT_EQ(mars.get_store(02013), 0'0000'0000'0000'1400u);
-    EXPECT_EQ(mars.get_store(02041), 0'0340'0000'0000'0000u);
-    EXPECT_EQ(mars.get_store(02017), 0'0000'0000'0000'4000u);
-    EXPECT_EQ(mars.get_store(02021), 0'0000'0000'0000'0000u);
 //  EXPECT_EQ(mars.get_store(02020), 0'0000'0406'1017'7065u); // random address, don't check
 //  EXPECT_EQ(mars.get_store(01405), 0'0000'0025'1214'1131u); // overwritten
     EXPECT_EQ(mars.get_store(02014), 0'0000'0000'0000'0000u);
@@ -736,7 +698,6 @@ TEST(mars, opend_stores)
 //  EXPECT_EQ(mars.get_store(01434), 0'0000'0000'0000'5735u); // overwritten
     EXPECT_EQ(mars.get_store(01420), 0'0000'0000'0000'2000u);
 //  EXPECT_EQ(mars.get_store(01516), 0'0000'0000'0000'2000u); // overwritten
-//  EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0000'1454u); // overwritten
     EXPECT_EQ(mars.get_store(01450), 0'0000'0000'0000'1456u);
 //  EXPECT_EQ(mars.get_store(01646), 0'0000'0000'0000'2000u); // overwritten
 //  EXPECT_EQ(mars.get_store(02040), 0'0000'0000'0000'2000u); // overwritten
@@ -785,7 +746,6 @@ TEST(mars, opend_stores)
     EXPECT_EQ(mars.get_store(01456), 0'0000'0000'0000'0000u);
 //  EXPECT_EQ(mars.get_store(01455), 0'0000'0000'0000'0004u); // overwritten
     EXPECT_EQ(mars.get_store(01454), 0'0000'0000'0000'0041u);
-//  EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0000'1516u); // overwritten
 //  EXPECT_EQ(mars.get_store(01405), 0'0000'0000'2512'1411u); // overwritten
     EXPECT_EQ(mars.get_store(02014), 0'0000'0000'0000'0000u);
 
@@ -822,14 +782,12 @@ TEST(mars, opend_stores)
     EXPECT_EQ(mars.get_store(01441), 0'0000'0000'0000'0002u);
     EXPECT_EQ(mars.get_store(01447), 0'0000'0000'0000'0002u);
     EXPECT_EQ(mars.get_store(01453), 0'0000'0000'0000'0000u);
-//  EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0000'1430u); // overwritten
 //  EXPECT_EQ(mars.get_store(01446), 0'0000'0000'0000'5732u); // overwritten
 //  EXPECT_EQ(mars.get_store(01445), 0'0000'0000'0000'0002u); // overwritten
 
     // From DB: 2(8) words from 5732 to 1430
     EXPECT_EQ(mars.get_store(01431), 0'0524'6520'4010'0000u); // latest
     EXPECT_EQ(mars.get_store(01430), 0'0000'0000'0252'0001u); // latest
-//  EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0000'1432u); // overwritten
     EXPECT_EQ(mars.get_store(01405), 0'0000'0000'0000'0025u); // latest
     EXPECT_EQ(mars.get_store(02014), 0'0000'0000'0000'0000u);
 
@@ -846,7 +804,6 @@ TEST(mars, opend_stores)
     EXPECT_EQ(mars.get_store(01434), 0'0000'0000'0000'5734u); // latest
     EXPECT_EQ(mars.get_store(01420), 0'0000'0000'0000'2000u);
 //  EXPECT_EQ(mars.get_store(01516), 0'0000'0000'0000'2000u); // overwritten
-//  EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0000'1454u); // overwritten
     EXPECT_EQ(mars.get_store(01450), 0'0000'0000'0000'1456u);
     EXPECT_EQ(mars.get_store(01646), 0'0000'0000'0000'2000u); // latest
     EXPECT_EQ(mars.get_store(02040), 0'0000'0000'0000'2000u); // latest
@@ -895,7 +852,6 @@ TEST(mars, opend_stores)
     EXPECT_EQ(mars.get_store(01456), 0'0000'0000'0000'0000u);
     EXPECT_EQ(mars.get_store(01455), 0'0000'0000'0000'0002u); // latest
     EXPECT_EQ(mars.get_store(01454), 0'0000'0000'0000'0041u);
-    EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0000'1516u); // latest
     EXPECT_EQ(mars.get_store(02011), 0'0000'0000'0000'0000u);
     EXPECT_EQ(mars.get_store(01647), 0'0000'0000'0000'0000u);
 }
@@ -946,12 +902,6 @@ TEST(mars, getd_str_stores)
     EXPECT_EQ(mars.get_store(01415), 0'0000'0000'0000'0012u);
     EXPECT_EQ(mars.get_store(01413), 0'0000'0000'0001'2000u);
     EXPECT_EQ(mars.get_store(01403), 0'0000'0000'0022'1411u);
-    EXPECT_EQ(mars.get_store(02007), 0'0000'0000'0000'4000u);
-    EXPECT_EQ(mars.get_store(02013), 0'0000'0000'0000'1400u);
-    EXPECT_EQ(mars.get_store(02041), 0'0340'0000'0000'0000u);
-    EXPECT_EQ(mars.get_store(02017), 0'0000'0000'0000'4000u);
-    EXPECT_EQ(mars.get_store(02021), 0'0000'0000'0000'0040u);
-    EXPECT_EQ(mars.get_store(02020), 0'0000'0000'0007'6500u);
 //  EXPECT_EQ(mars.get_store(01405), 0'0000'0000'0022'1411u); // overwritten
     EXPECT_EQ(mars.get_store(02014), 0'0000'0000'0000'0000u);
 
@@ -985,7 +935,6 @@ TEST(mars, getd_str_stores)
     EXPECT_EQ(mars.get_store(01441), 0'0000'0000'0000'0012u);
     EXPECT_EQ(mars.get_store(01447), 0'0000'0000'0000'0012u);
     EXPECT_EQ(mars.get_store(01453), 0'0000'0000'0000'0000u);
-//  EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0001'2000u); // overwritten
     EXPECT_EQ(mars.get_store(01446), 0'0000'0000'0000'5721u); // latest
     EXPECT_EQ(mars.get_store(01445), 0'0000'0000'0000'0012u); // latest
 
@@ -1000,7 +949,6 @@ TEST(mars, getd_str_stores)
     EXPECT_EQ(mars.get_store(012002),0'6400'0000'0000'0002u);
     EXPECT_EQ(mars.get_store(012001),0'6400'0000'0000'0001u);
     EXPECT_EQ(mars.get_store(012000),0'6400'0000'0000'0000u);
-    EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0001'2012u); // latest
     EXPECT_EQ(mars.get_store(02011), 0'0000'0000'0000'0000u);
     EXPECT_EQ(mars.get_store(01647), 0'0000'0000'0000'0000u);
 }
@@ -1047,12 +995,6 @@ TEST(mars, deld_stores)
 
     EXPECT_EQ(mars.get_store(01410), 0'0000'0000'0000'0101u);
     EXPECT_EQ(mars.get_store(01403), 0'0000'0000'2723'1411u);
-    EXPECT_EQ(mars.get_store(02007), 0'0000'0000'0000'4000u);
-    EXPECT_EQ(mars.get_store(02013), 0'0000'0000'0000'1400u);
-    EXPECT_EQ(mars.get_store(02041), 0'0340'0000'0000'0000u);
-    EXPECT_EQ(mars.get_store(02017), 0'0000'0000'0000'4000u);
-    EXPECT_EQ(mars.get_store(02021), 0'0000'0000'0000'0040u);
-    EXPECT_EQ(mars.get_store(02020), 0'0000'0000'0007'6500u);
 //  EXPECT_EQ(mars.get_store(01405), 0'0000'0000'2723'1411u); // overwritten
     EXPECT_EQ(mars.get_store(02014), 0'0000'0000'0000'0000u);
 
@@ -1101,7 +1043,6 @@ TEST(mars, deld_stores)
     EXPECT_EQ(mars.get_store(01460), 0'1234'5670'0765'4321u);
     EXPECT_EQ(mars.get_store(01461), 0'1234'5670'0765'4321u);
     EXPECT_EQ(mars.get_store(01455), 0'0000'0000'0000'0002u);
-    EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0000'1455u);
     EXPECT_EQ(mars.get_store(01415), 0'0000'0000'0000'0041u);
     EXPECT_EQ(mars.get_store(02012), 0'0000'0000'0000'2000u);
     EXPECT_EQ(mars.get_store(02040), 0'0000'0000'0000'2000u); // latest
@@ -1194,12 +1135,6 @@ TEST(mars, putd_stores)
 //  EXPECT_EQ(mars.get_store(01415), 0'0000'0000'0000'0012u); // overwritten
     EXPECT_EQ(mars.get_store(01413), 0'0000'0000'0001'0000u);
     EXPECT_EQ(mars.get_store(01403), 0'0000'0000'2621'1511u);
-    EXPECT_EQ(mars.get_store(02007), 0'0000'0000'0000'4000u);
-    EXPECT_EQ(mars.get_store(02013), 0'0000'0000'0000'1400u);
-    EXPECT_EQ(mars.get_store(02041), 0'0340'0000'0000'0000u);
-    EXPECT_EQ(mars.get_store(02017), 0'0000'0000'0000'4000u);
-    EXPECT_EQ(mars.get_store(02021), 0'0000'0000'0005'4321u);
-    EXPECT_EQ(mars.get_store(02020), 0'0000'0000'0007'6500u);
 //  EXPECT_EQ(mars.get_store(01405), 0'0000'0000'2621'1511u); // overwritten
     EXPECT_EQ(mars.get_store(02014), 0'0000'0000'0000'0000u);
 
@@ -1220,7 +1155,6 @@ TEST(mars, putd_stores)
     EXPECT_EQ(mars.get_store(02014), 0'0000'0000'0000'0000u);
 
     // Executing microcode 21
-//  EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0001'0000u); // overwritten
 //  EXPECT_EQ(mars.get_store(02035), 0'0000'0000'0000'0000u); // overwritten
 //  EXPECT_EQ(mars.get_store(02023), 0'0000'0000'0000'0012u); // overwritten
 //  EXPECT_EQ(mars.get_store(02030), 0'0000'0000'0000'0000u); // overwritten
@@ -1270,7 +1204,6 @@ TEST(mars, putd_stores)
     EXPECT_EQ(mars.get_store(01460), 0'0000'0000'0000'0173u);
     EXPECT_EQ(mars.get_store(01461), 0'0000'0000'0000'6000u);
     EXPECT_EQ(mars.get_store(01455), 0'0000'0000'0000'0004u);
-    EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0000'1455u); // latest
     EXPECT_EQ(mars.get_store(01415), 0'0000'0000'0000'0041u); // latest
     EXPECT_EQ(mars.get_store(02012), 0'0000'0000'0000'2000u);
     EXPECT_EQ(mars.get_store(02040), 0'0000'0000'0000'2000u);
@@ -1371,12 +1304,6 @@ TEST(mars, modd_stores)
 //  EXPECT_EQ(mars.get_store(01415), 0'0000'0000'0000'0007u); // overwritten
     EXPECT_EQ(mars.get_store(01413), 0'0000'0000'0001'0001u);
     EXPECT_EQ(mars.get_store(01403), 0'0020'4026'2100'1511u);
-    EXPECT_EQ(mars.get_store(02007), 0'0000'0000'0000'4000u);
-    EXPECT_EQ(mars.get_store(02013), 0'0000'0000'0000'1400u);
-    EXPECT_EQ(mars.get_store(02041), 0'0340'0000'0000'0000u);
-    EXPECT_EQ(mars.get_store(02017), 0'0000'0000'0000'4000u);
-    EXPECT_EQ(mars.get_store(02021), 0'0000'0000'0000'4000u);
-//  EXPECT_EQ(mars.get_store(02020), 0'0000'0000'0007'6502u); // not needed
 //  EXPECT_EQ(mars.get_store(01405), 0'0020'4026'2100'1511u); // overwritten
     EXPECT_EQ(mars.get_store(02014), 0'0000'0000'0000'0000u);
 
@@ -1397,7 +1324,6 @@ TEST(mars, modd_stores)
     EXPECT_EQ(mars.get_store(02014), 0'0000'0000'0000'0000u);
 
     // Executing microcode 20
-    EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0001'0001u);
     EXPECT_EQ(mars.get_store(02012), 0'0000'0000'0000'6000u);
     EXPECT_EQ(mars.get_store(02040), 0'0000'0000'0000'6000u);
     EXPECT_EQ(mars.get_store(01644), 0'0000'0000'0000'0000u);
@@ -1498,12 +1424,6 @@ TEST(mars, getd_num_stores)
     EXPECT_EQ(mars.get_store(01415), 0'0000'0000'0000'0012u);
     EXPECT_EQ(mars.get_store(01413), 0'0000'0000'0001'2000u);
     EXPECT_EQ(mars.get_store(01403), 0'0000'0000'0022'1411u);
-    EXPECT_EQ(mars.get_store(02007), 0'0000'0000'0000'4000u);
-    EXPECT_EQ(mars.get_store(02013), 0'0000'0000'0000'1400u);
-    EXPECT_EQ(mars.get_store(02041), 0'0340'0000'0000'0000u);
-    EXPECT_EQ(mars.get_store(02017), 0'0000'0000'0000'4000u);
-    EXPECT_EQ(mars.get_store(02021), 0'0000'0000'0000'4000u);
-//  EXPECT_EQ(mars.get_store(02020), 0'0000'0000'0007'6502u); // not needed
 //  EXPECT_EQ(mars.get_store(01405), 0'0000'0000'0022'1411u); // overwritten
     EXPECT_EQ(mars.get_store(02014), 0'0000'0000'0000'0000u);
 
@@ -1537,7 +1457,6 @@ TEST(mars, getd_num_stores)
     EXPECT_EQ(mars.get_store(01441), 0'0000'0000'0000'0012u);
     EXPECT_EQ(mars.get_store(01447), 0'0000'0000'0000'0012u);
     EXPECT_EQ(mars.get_store(01453), 0'0000'0000'0000'0000u);
-//  EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0001'2000u); // overwritten
     EXPECT_EQ(mars.get_store(01446), 0'0000'0000'0000'5721u); // latest
     EXPECT_EQ(mars.get_store(01445), 0'0000'0000'0000'0012u); // latest
 
@@ -1552,7 +1471,6 @@ TEST(mars, getd_num_stores)
     EXPECT_EQ(mars.get_store(012002),0'6400'0000'0000'0002u);
     EXPECT_EQ(mars.get_store(012001),0'6400'0000'0000'0001u);
     EXPECT_EQ(mars.get_store(012000),0'6400'0000'0000'0000u);
-    EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0001'2012u); // latest
     EXPECT_EQ(mars.get_store(02011), 0'0000'0000'0000'0000u);
     EXPECT_EQ(mars.get_store(01647), 0'0000'0000'0000'0000u);
 }
@@ -1596,12 +1514,6 @@ TEST(mars, cleard_stores)
 
     EXPECT_EQ(mars.get_store(01410), 0'0000'0000'0000'0000u);
     EXPECT_EQ(mars.get_store(01403), 0'0000'3027'2300'1502u);
-    EXPECT_EQ(mars.get_store(02007), 0'0000'0000'0000'4000u);
-    EXPECT_EQ(mars.get_store(02013), 0'0000'0000'0000'1400u);
-    EXPECT_EQ(mars.get_store(02041), 0'0340'0000'0000'0000u);
-    EXPECT_EQ(mars.get_store(02017), 0'0000'0000'0000'4000u);
-    EXPECT_EQ(mars.get_store(02021), 0'0000'0000'0000'4000u);
-//    EXPECT_EQ(mars.get_store(02020), 0'0000'0000'0007'6502u); // fluctuates
 //  EXPECT_EQ(mars.get_store(01405), 0'0000'0000'3027'2302u); // overwritten
     EXPECT_EQ(mars.get_store(02014), 0'0000'0000'0000'0000u);
 
@@ -1646,7 +1558,6 @@ TEST(mars, cleard_stores)
     EXPECT_EQ(mars.get_store(01460), 0'1234'5670'0765'4321u);
     EXPECT_EQ(mars.get_store(01461), 0'1234'5670'0765'4321u);
 //  EXPECT_EQ(mars.get_store(01455), 0'0000'0000'0000'0002u); // overwritten
-    EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0000'1455u);
     EXPECT_EQ(mars.get_store(01415), 0'0000'0000'0000'0041u);
     EXPECT_EQ(mars.get_store(02012), 0'0000'0000'0000'2000u);
 //  EXPECT_EQ(mars.get_store(02040), 0'0000'0000'0000'2000u); // overwritten
@@ -1751,7 +1662,6 @@ TEST(mars, cleard_stores)
     EXPECT_EQ(mars.get_store(01456), 0'0000'0000'0000'0000u);
     EXPECT_EQ(mars.get_store(01457), 0'0000'0000'0000'0000u);
     EXPECT_EQ(mars.get_store(01455), 0'0000'0000'0000'0002u); // latest
-    EXPECT_EQ(mars.get_store(02016), 0'0000'0000'0000'1455u);
     EXPECT_EQ(mars.get_store(01415), 0'0000'0000'0000'0041u);
     EXPECT_EQ(mars.get_store(02012), 0'0000'0000'0000'2000u);
     EXPECT_EQ(mars.get_store(02040), 0'0000'0000'0000'2000u); // latest
