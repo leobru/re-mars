@@ -236,7 +236,7 @@ struct MarsImpl {
     void find_end_mark(), find_end_word();
     bool proc270(), step(), a00334(word);
     bool cmd46();
-    void assign_and_incr();
+    void assign_and_incr(uint64_t);
     void pasbdi();
     Error eval();
     void overflow(word);
@@ -245,7 +245,26 @@ struct MarsImpl {
     void mkctl(), find(word);
     void update_by_reallocation(), search_in_block(), update(word);
     void setDirty(int x) {
-        dirty = dirty.d | ((curZone.d ? x : 0) + 1);
+        dirty = dirty.d | (curZone.d ? x+1 : 1);
+    }
+    void set_dirty_data() {
+        // If the current data zone is 0, sets dirty tab,
+        // otherwise dirty buf
+        setDirty(1);
+    }
+    void set_dirty_both() {
+        // If the current data zone is 0, sets dirty tab,
+        // otherwise dirty buf and tab
+        setDirty(2);
+    }
+    void set_dirty_tab() {
+        dirty = dirty | 1;
+    }
+    bool is_dirty_tab() const {
+        return dirty.d & 1;
+    }
+    bool is_dirty_buf() {
+        return dirty.d & 2;
     }
 
 };
@@ -428,7 +447,7 @@ void MarsImpl::get_zone(uint64_t arg) {
     m16 = curbuf = (arg & 01777) ? bdbuf : bdtab;
     if (m16[0] == zoneKey)
         return;
-    if (curZone.d && (dirty.d & 2)) {
+    if (curZone.d && is_dirty_buf()) {
         dirty = dirty.d & ~2;
         IOword = (IOpat.d | bdbuf.d << 20) + (m16[0].d & 01777);
         IOcall(IOword);
@@ -443,11 +462,11 @@ void MarsImpl::get_zone(uint64_t arg) {
 }
 
 void MarsImpl::save(bool force_tab = false) {
-    if (force_tab || (dirty.d & 1)) {
+    if (force_tab || is_dirty_tab()) {
         IOword = IOpat.d | bdtab.d << 20;
         IOcall(IOword);
     }
-    if (dirty.d & 2) {
+    if (is_dirty_buf()) {
         IOword = (IOpat.d | bdbuf.d << 20) + (bdbuf[0].d & 01777);
         IOcall(IOword);
     }
@@ -506,7 +525,7 @@ uint64_t MarsImpl::usable_space() {
             datumLen = datumLen + freeSpace[i] - 1;
     }
     m16 = 0;
-    return datumLen.d;
+    return acc = datumLen.d;
 }
 
 // Finds item indicated by the zone number in bits 10-1
@@ -564,7 +583,7 @@ void MarsImpl::totext() {
 
 void MarsImpl::set_header(word arg) {
     *aitem = arg;
-    setDirty(1);
+    set_dirty_data();
 }
 
 void MarsImpl::copy_words(word dst, word src, int len) {
@@ -689,7 +708,7 @@ void MarsImpl::free_extent() {
     }
     m16[1] = m16[1] - 02000 + curExtLength;
     freeSpace[curZone] = freeSpace[curZone] + curExtLength + 1;
-    setDirty(1);
+    set_dirty_data();
     acc = curExtent.d;
 }
 
@@ -706,7 +725,7 @@ void MarsImpl::free(uint64_t arg) {
         free_extent();
         arg = next_extent(curExtent);
     } while (arg);
-    dirty = dirty.d | 1;
+    set_dirty_tab();
 }
 
 // When an extent chain must be freed but not the descriptor
@@ -716,7 +735,7 @@ void MarsImpl::free_from_current_extent() {
     if (next_extent(curExtent)) {
         free(next_extent(curExtent));
     } else {
-        dirty = dirty.d | 1;
+        set_dirty_tab();
     }
 }
 
@@ -747,7 +766,7 @@ bool MarsImpl::proc270() {
         copy_words(usrloc, aitem, m16.d);
         break;
     case TOBASE:
-        setDirty(1);
+        set_dirty_data();
         copy_words(aitem, usrloc, m16.d);
         break;
     case COMPARE:
@@ -846,8 +865,8 @@ uint64_t MarsImpl::a00340(uint64_t arg) {
     return acc;
 }
 
-void MarsImpl::assign_and_incr() {
-    m16 = acc;
+void MarsImpl::assign_and_incr(uint64_t arg) {
+    m16 = arg;
     m5 = (curcmd >> 6) & 077;
     curcmd = curcmd >> 6;
     abdv[m16] = (*abdv[m5]).d;
@@ -878,7 +897,7 @@ void MarsImpl::overflow(word ext) {
         free(next);
         throw Mars::ERR_OVERFLOW;
     }
-    dirty = dirty.d | 1;
+    set_dirty_tab();
     throw Mars::ERR_OVERFLOW;
 }
 
@@ -980,10 +999,10 @@ void MarsImpl::allocator(int addr) {
             std::cerr << "Got " << freeSpace[curZone].d << '\n';
         if (!m5.d) {
             work2[-1] = extentHeader;
-            setDirty(2);
+            set_dirty_both();
             return;
         }
-        setDirty(1);
+        set_dirty_data();
         acc = newDescr.d;
         acc <<= 20;
         acc &= BITS(48);
@@ -1002,20 +1021,21 @@ void MarsImpl::allocator(int addr) {
     }
 }
 
+// There was no check for dblen == 0
 void MarsImpl::mkctl() {
     curZone = 0;
-    m5 = dblen = dbdesc >> 18;
+    int nz = dblen = dbdesc >> 18;
     IOpat = dbdesc & 0777777;
     curbuf = bdtab;
     work2 = IOpat | bdtab.d << 20;
     bdtab[1] = 01777;           // last free location in zone
     do {
-        --m5;
-        bdbuf[m5] = 01776;      // free countwords in zone
-        bdtab[0] = DBkey | m5;
-        IOword = work2 + m5;
+        --nz;
+        bdbuf[nz] = 01776;      // free countwords in zone
+        bdtab[0] = DBkey | nz;
+        IOword = work2 + nz;
         IOcall(IOword);
-    } while (m5.d);
+    } while (nz);
     myloc = freeSpace = bdbuf; // freeSpace[0] is now the same as bdbuf[0]
     metaflag = ROOT_METABLOCK;
     d00011 = 0;
@@ -1044,7 +1064,7 @@ void MarsImpl::update_by_reallocation() {
     if (acc) {
         free(acc);
     } else {
-        dirty = dirty.d | 1;
+        set_dirty_tab();
     }
 }
 
@@ -1117,12 +1137,12 @@ void MarsImpl::update(word arg) {
         m5 = m16;
         make_extent_header();
         *aitem = extentHeader;
-        setDirty(1);
+        set_dirty_data();
         if (!next_extent(curExtent))
             return;       // No extents to free: done
         m5[loc116+1] = curExtent & ~(BITS(19) << 20); // dropping the extent chain
         free(next_extent(curExtent)); // Free remaining extents
-        dirty = dirty.d | 1;
+        set_dirty_tab();
         return;
     }
     make_extent_header();
@@ -1134,7 +1154,7 @@ void MarsImpl::update(word arg) {
     work = acc;
     if (acc >= mylen.d) {
         update_by_reallocation();
-        dirty = dirty.d | 1;
+        set_dirty_tab();
         return;
     }
     usable_space();
@@ -1154,7 +1174,7 @@ void MarsImpl::update(word arg) {
     // This is likely chaining the extents
     acc = (newDescr.d << 20) & BITS(48);
     m16[loc116+1] = acc | curExtent.d;
-    setDirty(2);
+    set_dirty_both();
     return;
 }
 
@@ -1274,7 +1294,7 @@ Error MarsImpl::eval() try {
         break;
     case 032:
         *aitem = curDescr;
-        setDirty(2);
+        set_dirty_both();
         break;
     case Mars::OP_LENGTH:
         info(adescr.d);
@@ -1328,21 +1348,19 @@ Error MarsImpl::eval() try {
     case Mars::OP_CHAIN:
         // cmd := mem[bdvect[src]++]
         // curcmd is ..... src 50
-        acc = &orgcmd-BDVECT;
-        assign_and_incr();
+        assign_and_incr(&orgcmd-BDVECT);
         jump(next);
     case 051:
         // myloc := mem[bdvect[src]++]
         // curcmd is ..... src 51
-        acc = &myloc-BDVECT;
-        assign_and_incr();
+        assign_and_incr(&myloc-BDVECT);
         break;
     case 052:
         // bdvect[dst] := mem[bdvect[src]++]
         // curcmd is ..... src dst 52
         acc = (curcmd >> 6) & 077;
         curcmd = curcmd >> 6;
-        assign_and_incr();
+        assign_and_incr(acc);
         break;
     case Mars::OP_ASSIGN:
         // bdvect[dst] = bdvect[src]
@@ -1470,10 +1488,8 @@ Error MarsImpl::eval() try {
     m5[1] = newDescr;
     m16[-1] = m16[-1] + 2;
   a01160:                       // generic metablock update ???
-    acc = m16.d;
-    usrloc = --acc;
-    acc = idx;
-    if (!acc) {
+    usrloc = m16 - 1;
+    if (idx == 0) {
         mylen = 041;
         if (m16[-1] == 040) {
             if (usable_space() < 0101) {
@@ -1542,7 +1558,7 @@ Error MarsImpl::eval() try {
     if (idx == 0) {
         if (goto_.d)
             std::cerr << "Returning from pr1232 with non-0 goto_\n";
-        dirty = dirty.d | 1;
+        set_dirty_tab();
         jump(rtnext);
     }
     idx = idx - 2;
@@ -1563,8 +1579,7 @@ Error MarsImpl::eval() try {
         if (m16.d) {
             acc += 2;
         }
-        --acc;
-        d00012 = acc;
+        d00012 = acc - 1;
         if (step())
             jump(next);
         acc = d00012.d;
