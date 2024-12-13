@@ -122,10 +122,9 @@ struct MarsImpl {
     uint64_t & arch;
     wordref abdv, d00010, d00011, d00012,
         goto_, zoneKey, usrloc,
-        jmpoff, extentHeader, newDescr, d00025, d00026,
-        temp, chainHead, d00031, d00032, d00033, remlen,
-        work, work2, IOword, d00040;
-
+        jmpoff, extentHeader, newDescr, d00025,
+        temp, chainHead, d00032, d00033, remlen,
+        work, work2, IOword;
     std::unordered_map<std::string, Page> DiskImage;
 
     // History of all stores, for debug.
@@ -192,17 +191,14 @@ struct MarsImpl {
         extentHeader(data[BDSYS+023]),
         newDescr(data[BDSYS+024]),
         d00025(data[BDSYS+025]),
-        d00026(data[BDSYS+026]),
         temp(data[BDSYS+027]),
         chainHead(data[BDSYS+030]),
-        d00031(data[BDSYS+031]),
         d00032(data[BDSYS+032]),
         d00033(data[BDSYS+033]),
         remlen(data[BDSYS+034]),
         work(data[BDSYS+035]),
         work2(data[BDSYS+036]),
-        IOword(data[BDSYS+037]),
-        d00040(data[BDSYS+040])
+        IOword(data[BDSYS+037])
         { }
     void IOflush();
     void IOcall(word);
@@ -525,7 +521,6 @@ uint64_t MarsImpl::usable_space() {
 // and by the number within the zone in bits 19-11
 // Sets 'aitem', also returns the extent length in 'curExtLength'
 uint64_t MarsImpl::find_item(uint64_t arg) {
-    d00040 = arg;               // To pacify test-stores, not really needed anymore
     get_zone(arg & 01777);
     // now m16 points to the current page
     work = arg & (BITS(10) << 10);
@@ -679,24 +674,21 @@ void MarsImpl::setctl(uint64_t location) {
 
 // Frees curExtent
 void MarsImpl::free_extent() {
-    d00031 = curExtent.d & 01777;
-    do {
-        --m5;
-        if (!m5.d)
-            break;
-        if ((m16[m5+1].d & 01777) >= d00031.d)
+    word loc(mars,get_extstart(curExtent));
+    for (;--m5 != 0;) {
+        if ((m16[m5+1].d & 01777) >= loc.d)
             continue;
         m16[m5+1] = m16[m5+1] + curExtLength;
-    } while (true);
+    }
     work = m16[1] & 01777;
-    if (work != d00031) {
-        if (d00031.d < work.d)
+    if (work != loc) {
+        if (loc.d < work.d)
             throw Mars::ERR_INTERNAL;
-        m5 = (d00031 - work) & 077777;
+        m5 = (loc - work) & 077777;
         work = work + curbuf;
-        d00031 = work + curExtLength;
+        loc = work + curExtLength;
         do {
-            d00031[m5] = work[m5];
+            loc[m5] = work[m5];
         } while(--m5.d);
     }
     m16[1] = m16[1] - 02000 + curExtLength;
@@ -1044,15 +1036,15 @@ void MarsImpl::mkctl() {
 
 void MarsImpl::update_by_reallocation() {
     // d00026 is used only in this function
-    d00026 = curExtent;
+    word old = curExtent.d;
     curExtent = curExtent & 01777;
     free_from_current_extent();
     ++mylen;
     m5 = 0;
     m7 = curbuf;
-    acc = get_id(d00026) << 39;
+    acc = get_id(old) << 39;
     allocator(01047);
-    acc = next_extent(d00026);
+    acc = next_extent(old);
     if (acc) {
         free(acc);
     } else {
@@ -1516,8 +1508,7 @@ Error MarsImpl::eval() try {
     d00032 = make_block_header(newDescr.d, 0, 0);
     m16 = Secondary+1;
     usrloc = Secondary;
-    acc = Secondary[0].d & 01777;
-    mylen = ++acc;
+    mylen = (Secondary[0].d & 01777) + 1;
     update(curBlockDescr);
     call(pr1232,m5);
     jump(a01136);
