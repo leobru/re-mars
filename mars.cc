@@ -98,7 +98,7 @@ struct MarsImpl {
     word * const data;
     bool & verbose;
     // Registers
-    wordref m5, m6, m7, m13, m16;
+    wordref m5, m6, m16;
 
     // For convenience of detection which locations not to trace,
     // the registers are mapped to the lower addresses of the RAM.
@@ -132,7 +132,7 @@ struct MarsImpl {
 
     MarsImpl(Mars & up) :
         mars(up), data(up.data), verbose(up.verbose),
-        m5(data[5]), m6(data[6]), m7(data[7]), m13(data[013]), m16(data[016]),
+        m5(data[5]), m6(data[6]), m16(data[016]),
         outadr(data[BDVECT+1]),
         orgcmd(data[BDVECT+3]),
         curcmd(data[BDVECT+5]),
@@ -943,8 +943,7 @@ void MarsImpl::allocator(int addr) {
         acc = curZone.d;
     chunk:
         get_zone(acc);
-        m7 = m16;
-        m16 = m7[1] >> 10;
+        m16 = curbuf[1] >> 10;
         do {
             if (m16 == get_id(curbuf[m16+1]))
                 break;
@@ -959,8 +958,8 @@ void MarsImpl::allocator(int addr) {
         chainHead = acc;
         newDescr = (get_id(acc) << 10) | curZone.d;
         m16 = mylen;
-        acc = m7[1].d - m16.d + 02000;
-        m7[1] = acc;
+        acc = curbuf[1].d - m16.d + 02000;
+        curbuf[1] = acc;
         acc &= 01777;
         work = acc;
         work2 = curbuf + work + 1;
@@ -973,7 +972,7 @@ void MarsImpl::allocator(int addr) {
                 std::cerr << "To DB: ";
             copy_words(work2, usrloc, m16.d);
         }
-        m7[loc116+1] = (mylen.d << 10) | work.d | chainHead.d;
+        curbuf[loc116+1] = (mylen.d << 10) | work.d | chainHead.d;
         m16 = freeSpace;
         if (verbose)
             std::cerr << "Reducing free " << std::oct << freeSpace[curZone].d
@@ -1041,7 +1040,6 @@ void MarsImpl::update_by_reallocation() {
     free_from_current_extent();
     ++mylen;
     m5 = 0;
-    m7 = curbuf;
     acc = get_id(old) << 39;
     allocator(01047);
     acc = next_extent(old);
@@ -1165,7 +1163,6 @@ void MarsImpl::update(word arg) {
 Error MarsImpl::eval() try {
     std::unordered_map<void*,int> jumptab;
     std::vector<void*> targets;
-    m13 = abdv;
     if (bdtab[0] != DBkey && IOpat.d) {
         IOword = bdtab.d << 20 | ONEBIT(40) | IOpat.d;
         IOcall(IOword);
@@ -1572,7 +1569,7 @@ Error MarsImpl::eval() try {
     if (erhndl.d) {
         // savm16 = erhndl;  // returning to erhndl instead of the point of call
     }
-    m7 = e;
+    data[7] = e;                // imitating M7 = e
     std::cerr << std::format("ERROR {} ({})\n", int(e), msg[e-1]);
     d00010 = *(uint64_t*)msg[e-1];
     finalize(*((uint64_t*)msg[e-1]+1));
