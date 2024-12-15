@@ -107,7 +107,7 @@ struct MarsImpl {
     wordref outadr, orgcmd, curcmd, syncw, givenp, key,
         erhndl, curDescr, myloc, loc14, mylen, bdbuf, bdtab,
         metaflag, dbdesc, DBkey, savedp, freeSpace, adescr, limit,
-        curkey, endmrk, desc1, desc2, IOpat, curExtLength, aitem, datumLen,
+        curkey, endmrk, desc1, desc2, IOpat, curExtLength, extPtr, datumLen,
         curMetaBlock, dblen, curlen, loc116,
         curExtent, curbuf, curZone, curBlockDescr,
         dirty;
@@ -159,7 +159,7 @@ struct MarsImpl {
         desc2(data[BDVECT+042]),
         IOpat(data[BDVECT+044]),
         curExtLength(data[BDVECT+045]),
-        aitem(data[BDVECT+046]),
+        extPtr(data[BDVECT+046]),
         datumLen(data[BDVECT+047]),
         curMetaBlock(data[BDVECT+050]),
         dblen(data[BDVECT+051]),
@@ -519,7 +519,7 @@ uint64_t MarsImpl::usable_space() {
 
 // Finds item indicated by the zone number in bits 10-1
 // and by the number within the zone in bits 19-11
-// Sets 'aitem', also returns the extent length in 'curExtLength'
+// Sets 'extPtr', also returns the extent length in 'curExtLength'
 uint64_t MarsImpl::find_item(uint64_t arg) {
     get_zone(arg & 01777);
     // now m16 points to the current page
@@ -544,7 +544,7 @@ uint64_t MarsImpl::find_item(uint64_t arg) {
             throw Mars::ERR_NO_RECORD;
         }
     }
-    aitem = curbuf + get_extstart(curExtent) + 1;
+    extPtr = curbuf + get_extstart(curExtent) + 1;
     curExtLength =  get_extlength(curExtent);
     m5 = ARBITRARY_NONZERO;     // clobbering the link register
     return curExtLength.d;
@@ -554,7 +554,7 @@ uint64_t MarsImpl::find_item(uint64_t arg) {
 // Puts the full header to desc1, and its length to datumLen.
 void MarsImpl::info(uint64_t arg) {
     find_item(arg);
-    desc1 = *aitem;
+    desc1 = *extPtr;
     datumLen = desc1 & 077777;
     curlen = 0;
 }
@@ -570,7 +570,7 @@ void MarsImpl::totext() {
 }
 
 void MarsImpl::set_header(word arg) {
-    *aitem = arg;
+    *extPtr = arg;
     set_dirty_data();
 }
 
@@ -591,7 +591,7 @@ void MarsImpl::copy_chained(int len) { // a01423
         if (len) {
             if (verbose)
                 std::cerr << "From DB: ";
-            copy_words(usrloc, aitem, len);
+            copy_words(usrloc, extPtr, len);
         }
         usrloc = usrloc + len;
         if (!next_extent(curExtent))
@@ -607,7 +607,7 @@ void MarsImpl::cpyout(uint64_t descr) {
     if (mylen.d && mylen.d < datumLen.d)
         throw Mars::ERR_TOO_LONG;
     // Skip the first word ot the found item
-    ++aitem;
+    ++extPtr;
     --curExtLength;
     copy_chained(curExtLength.d);
 }
@@ -748,17 +748,17 @@ bool MarsImpl::proc270() {
     }
     switch (jmpoff.d) {
     case FROMBASE:
-        copy_words(usrloc, aitem, m16.d);
+        copy_words(usrloc, extPtr, m16.d);
         break;
     case TOBASE:
         set_dirty_data();
-        copy_words(aitem, usrloc, m16.d);
+        copy_words(extPtr, usrloc, m16.d);
         break;
     case COMPARE:
     // Check for 0 length is not needed, perhaps because the key part of datum
     // which is being compared, is never empty?
         do {
-            if (aitem[m16-1] != usrloc[m16-1]) {
+            if (extPtr[m16-1] != usrloc[m16-1]) {
                 acc = curcmd >> 12;
                 return true;
             }
@@ -823,9 +823,9 @@ bool MarsImpl::a00334(word arg) {
         return true;
     }
     if (m5.d) {
-        aitem = aitem + temp;
+        extPtr = extPtr + temp;
         curExtLength = curExtLength - temp;
-        acc = (*aitem).d;
+        acc = (*extPtr).d;
         desc1 = acc;
     } else {
         acc = next_extent(curExtent);
@@ -956,12 +956,10 @@ void MarsImpl::allocator(int addr) {
         // FALL THROUGH
     case 01047:                 // acc has the extent id in bits 48-40
         chainHead = acc;
-        newDescr = (get_id(acc) << 10) | curZone.d;
+        newDescr = (get_id(chainHead) << 10) | curZone.d;
         m16 = mylen;
-        acc = curbuf[1].d - m16.d + 02000;
-        curbuf[1] = acc;
-        acc &= 01777;
-        work = acc;
+        curbuf[1] = curbuf[1] - m16 + 02000;
+        work = curbuf[1].d & 01777;
         work2 = curbuf + work + 1;
         if (!m5.d) {
             --m16;
@@ -975,11 +973,11 @@ void MarsImpl::allocator(int addr) {
         curbuf[loc116+1] = (mylen.d << 10) | work.d | chainHead.d;
         m16 = freeSpace;
         if (verbose)
-            std::cerr << "Reducing free " << std::oct << freeSpace[curZone].d
-                      << " by len " << mylen.d << " + 1\n";
-        freeSpace[curZone] = freeSpace[curZone].d - (mylen.d+1);
+          std::cerr << std::format("Reducing free {:o} by len {:o} + 1\n",
+                                   freeSpace[curZone].d, mylen.d);
+        freeSpace[curZone] = freeSpace[curZone] - (mylen+1);
         if (verbose)
-            std::cerr << "Got " << freeSpace[curZone].d << '\n';
+          std::cerr << std::format("Got {:o}\n", freeSpace[curZone].d);
         if (!m5.d) {
             work2[-1] = extentHeader;
             set_dirty_both();
@@ -1014,8 +1012,8 @@ void MarsImpl::mkctl() {
     bdtab[1] = 01777;           // last free location in zone
     do {
         --nz;
-        bdbuf[nz] = 01776;      // free countwords in zone
-        bdtab[0] = DBkey | nz;
+        bdbuf[nz] = 01776;      // free words in zone
+        bdtab[0] = DBkey | nz;  // zone id
         IOword = work2 + nz;
         IOcall(IOword);
     } while (nz);
@@ -1113,12 +1111,12 @@ void MarsImpl::update(word arg) {
         // The new length of data matches the first extent length
         if (m5.d) {
             do {
-                aitem[m5] = usrloc[m5-1];
+                extPtr[m5] = usrloc[m5-1];
             } while (--m5.d);
         }
         m5 = m16;
         make_extent_header();
-        *aitem = extentHeader;
+        *extPtr = extentHeader;
         set_dirty_data();
         if (!next_extent(curExtent))
             return;       // No extents to free: done
@@ -1140,7 +1138,7 @@ void MarsImpl::update(word arg) {
         return;
     }
     usable_space();
-    acc = (*aitem).d & 077777;
+    acc = (*extPtr).d & 077777;
     acc += datumLen.d;
     if (acc < mylen.d) {
         throw Mars::ERR_OVERFLOW;
@@ -1298,7 +1296,7 @@ Error MarsImpl::eval() try {
         setctl(dbdesc.d);
         break;
     case 032:
-        *aitem = curDescr;
+        *extPtr = curDescr;
         set_dirty_both();
         break;
     case Mars::OP_LENGTH:
