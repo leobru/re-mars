@@ -738,11 +738,9 @@ void MarsImpl::find_end_mark() {
 }
 
 bool MarsImpl::proc270() {
-    acc = temp.d;
-    m16 = acc;
-    acc = (acc - curExtLength.d) & BITS(41);
-    if (!(acc & ONEBIT(41))) {
-        temp = acc;
+    m16 = temp;
+    if (temp.d >= curExtLength.d) {
+        temp = temp - curExtLength;
         m16 = curExtLength;
         m5 = 0;
     }
