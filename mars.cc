@@ -22,6 +22,7 @@ using Error = Mars::Error;
 #define ROOTKEY 04000
 #define ROOT_METABLOCK 02000    // ID 1 in zone 0
 #define LOCKKEY ONEBIT(32)
+#define INDIRECT ONEBIT(48)
 
 static const std::vector<int> comparable{
     3,5,010,012,013,014,015,020,021,022,023,024,025,026,027,
@@ -604,7 +605,7 @@ void MarsImpl::copy_chained(int len) { // a01423
 void MarsImpl::cpyout(uint64_t descr) {
     info(descr);
     usrloc = myloc;
-    if (mylen.d && mylen.d < datumLen.d)
+    if (mylen != 0 && mylen < datumLen)
         throw Mars::ERR_TOO_LONG;
     // Skip the first word ot the found item
     ++extPtr;
@@ -682,7 +683,7 @@ void MarsImpl::free_extent() {
     }
     work = m16[1] & 01777;
     if (work != loc) {
-        if (loc.d < work.d)
+        if (loc < work)
             throw Mars::ERR_INTERNAL;
         m5 = (loc - work) & 077777;
         work = work + curbuf;
@@ -744,6 +745,7 @@ bool MarsImpl::proc270() {
         m16 = curExtLength;
         m5 = 0;
     }
+    // Now m16 = current extent length, temp = remaining length (may be 0)
     switch (jmpoff.d) {
     case FROMBASE:
         copy_words(usrloc, extPtr, m16.d);
@@ -885,9 +887,9 @@ void MarsImpl::overflow(word ext) {
 }
 
 void MarsImpl::prepare_chunk() {
-    work = freeSpace[m5-1].d - 1;
+    work = freeSpace[m5-1] - 1;
     --m5;
-    if (work.d < mylen.d) {
+    if (work < mylen) {
         remlen = mylen - work;
         mylen = work;
         usrloc = usrloc - work;
@@ -917,20 +919,19 @@ void MarsImpl::allocator(int addr) {
             if (verbose)
                 std::cerr << "mylen = " << mylen.d << " work = " << work.d << '\n';
             // If the datum is larger than MAXCHUNK, it will have to be split
-            if (mylen.d >= Mars::MAXCHUNK)
-                jump(split);
-            // Find a zone with enough free space
-            for (size_t i = 0; i < dblen.d; ++i) {
-                if (mylen.d < freeSpace[i].d) {
-                    acc = i;
-                    jump(chunk);
+            if (mylen < Mars::MAXCHUNK) {
+                // Find a zone with enough free space
+                for (size_t i = 0; i < dblen.d; ++i) {
+                    if (mylen < freeSpace[i]) {
+                        acc = i;
+                        jump(chunk);
+                    }
                 }
             }
-            // End reached, must split
-          split:
+            // End reached, or the length is too large: must split
             usrloc = usrloc + mylen - 1;
             m5 = dblen;
-            while (freeSpace[m5-1].d < 2) {
+            while (freeSpace[m5-1] < 2) {
                 if (--m5.d)
                     continue;
                 overflow(chainHead);
@@ -988,7 +989,7 @@ void MarsImpl::allocator(int addr) {
         chainHead = acc;
         mylen = remlen;
         if (--m5.d) {
-            while (freeSpace[m5-1].d < 2) {
+            while (freeSpace[m5-1] < 2) {
                 if (--m5.d)
                     continue;
                 overflow(chainHead);
@@ -1065,7 +1066,7 @@ void MarsImpl::find_end_word() {
 
 // m16 points to the payload of a metadata block
 void MarsImpl::search_in_block() {
-    bool parent = m16[1].d & ONEBIT(48);
+    bool parent = m16[1].d & INDIRECT;
     m5 = m16[-1] & 01777;
     if (verbose)
         std::cerr << "Comparing " << std::dec << m5.d/2 << " elements\n";
@@ -1393,7 +1394,7 @@ Error MarsImpl::eval() try {
     m5 = m16 + Array[idx];
     loc116 = m5.d ^ curMetaBlock.d;
     work2 = m16[-1] & 01777;
-    if (work2.d < 2) std::cerr << "work2 @ delkey < 2\n";
+    if (work2 < 2) std::cerr << "work2 @ delkey < 2\n";
     work = work2 + curMetaBlock;
     do {
         *m5 = m5[2];
@@ -1436,7 +1437,7 @@ Error MarsImpl::eval() try {
   a01136:
     acc = d00032.d;
     acc >>= 29;
-    acc |= ONEBIT(48);
+    acc |= INDIRECT;
   addkey:
     newDescr = acc;
     m16 = curMetaBlock;
@@ -1465,17 +1466,16 @@ Error MarsImpl::eval() try {
             }
             acc -= 0101;
             allocator(01022);
-            Metadata[2] = newDescr.d | ONEBIT(48);
+            Metadata[2] = newDescr | INDIRECT;
             Metadata[0] = 2;
             mylen = 041;
         }
         update(metaflag);
         jump(rtnext);
     }
-    acc = m16[-1].d & 01777;
-    if (acc != 0100) {
-        acc = m16[-1].d & 01777;
-        mylen = ++acc;
+    if ((m16[-1] & 01777) != 0100) {
+        // THe current metablock has not reached the max allowed length
+        mylen = (m16[-1] & 01777) + 1;
         update(curBlockDescr);
         jump(rtnext);
     }
@@ -1556,7 +1556,7 @@ Error MarsImpl::eval() try {
     }
     acc -= 0101;
     allocator(01022);
-    Metadata[2] = newDescr | ONEBIT(48);
+    Metadata[2] = newDescr | INDIRECT;
     Metadata[0] = 2;
     mylen = 041;
     update(metaflag);

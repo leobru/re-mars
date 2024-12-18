@@ -60,7 +60,7 @@ The semantics of micro-instructions (with the range of possible valid codes 00-5
 |  27  |  DELKEY  | Delete a key |
 |  30  |   LOOP   | Restart executing the instruction word |
 |  31  |   ROOT   | Switch to the root catalog |
-|  32  |    ???   | [aitem] = bdvec[10]; ??? mark buffer modified |
+|  32  |    ???   | *extPtr = curDescr; ??? mark buffer modified |
 |  33  |  LENGTH  | Compute length of the object pointed to by the descriptor |
 |  34  |   DESCR  | Converts a block descriptor to a text format (length, date) |
 |  35  |   SAVE   | Save dirty buffers and exit |
@@ -78,5 +78,5 @@ The semantics of micro-instructions (with the range of possible valid codes 00-5
 |  51  |    ???   | myloc := mem[bdvec[next_insn]++] |
 |  52  |    ???   | bdvec[next_insn] := mem[bdvec[next_next_insn]++] |
 |  53  |  ASSIGN  | bdvec[next_insn] := bdvec[next_next_insn]  |
-|  54  |    ???   | mem[bdvec[next_insn]] := bdvec[012] |
+|  54  |    ???   | mem[bdvec[next_insn]] := curDescr |
 |  55  |   EXIT   | Immediate exit |

@@ -113,6 +113,7 @@ class Mars {
         uint64_t operator>>(int x) const { return d >> x; }
         bool operator==(const word & x) const { return d == x.d; }
         bool operator!=(const word & x) const { return d != x.d; }
+        bool operator<(const word & x) const { return d < x.d; }
         word& operator++() { (*this) = d + 1; return *this; }
         word& operator--() { (*this) = d - 1; return *this; }
     };

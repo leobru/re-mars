@@ -40,7 +40,7 @@ longtests:      $(LONGTESTS_SHA)
 		mkdir $$test.run       ;\
 		cd $$test.run          ;\
 		../$<                  ;\
-		sha1sum 52*[0-7] | tee ../$@ | cmp - ../$$test.gold || rm ../$@
+		sha1sum 52*[0-7] | tee ../$@ | (cmp - ../$$test.gold || echo $< FAILED); rm ../$@
 
 .PRECIOUS: %.exe ../mars.o
 
@@ -52,11 +52,11 @@ longtests:      $(LONGTESTS_SHA)
 
 clean:
 		rm -rf *.run
-		rm -f $(TESTS_EXE) $(TESTS_SHA)
+		rm -f $(TESTS_EXE) $(TESTS_SHA) $(LONGTESTS_SHA)
 		rm -f *.o ../*.o gtests
 
 gtests:         $(OBJS) $(GTEST) ../mars.o
-		$(CXX) $(LDFLAGS) $^ -o $@
+		$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
 
 gtest-all.o:    $(GTEST_DIR)/src/gtest-all.cc
 		$(CXX) -c $(CXXFLAGS) -I$(GTEST_DIR) -I$(GTEST_INC) -o $@ $?
