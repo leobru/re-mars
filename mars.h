@@ -104,7 +104,6 @@ class Mars {
         word& operator=(word x);
         word& operator=(word * x);
         inline word& operator*() const;
-        inline uint64_t operator&() const;
         inline word& operator[](word x) const;
         word operator+(word x) const { return d + x.d; }
         word operator-(word x) const { return d - x.d; }

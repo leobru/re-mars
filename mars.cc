@@ -1,7 +1,6 @@
-#include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <iostream>
-#include <iomanip>
 #include <cstdlib>
 #include <cassert>
 #include <unordered_map>
@@ -49,6 +48,8 @@ word& word::operator*() const {
     return mars->data[a];
 }
 
+// Base/index inversion check was to ascertain which of the constituents of an indexing
+// operation was the "base", and which was the "index", using simple heuristics.
 word& word::operator[](word x) const {
     if ((x.d & 077770) != 077770 &&
         ((x.d & 077777) >= 02000 ||
@@ -57,18 +58,18 @@ word& word::operator[](word x) const {
     return *word(*mars, d+x.d);
 }
 
-uint64_t word::operator&() const { return this-mars->data; }
-
 #define ONEBIT(n) (1ULL << ((n)-1))   // one bit set, from 1 to 48
-#define BITS(n)   (~0ULL >> (64 - n)) // bitmask of bits from 0 to n
-#define MERGE_(a,b)  a##b
-#define LABEL_(a) MERGE_(ret_, a)
-#define ret LABEL_(__LINE__)
-#define INDJUMP_MAGIC 076500
+#define BITS(n)   (~0ULL >> (64 - n)) // bitmask of n bits from LSB
+#define INDJUMP_MAGIC 076500          // a value in the high range not to clash with data
 #define target(label) (jumptab.count(&&label) ? jumptab[&&label] :      \
                        (targets.push_back(&&label),                     \
                         jumptab[&&label] = targets.size() + INDJUMP_MAGIC-1))
-#define call(addr,link) do { link = target(ret); goto addr; ret:; } while (0)
+#define call(addr,link) do {                                            \
+        __label__ ret;                                                  \
+        link = target(ret);                                             \
+        goto addr;                                                      \
+      ret:;                                                             \
+    } while (0)
 // #define jump(x) do { std::cerr << "Jump to " #x "\n"; goto x; } while(0)
 #define jump(x) goto x
 #define indjump(x)                                                      \
@@ -365,30 +366,28 @@ const char * msg[] = {
 void MarsImpl::IOflush() {
     for (auto & it : DiskImage) {
         const std::string& nuzzzz = it.first;
-        FILE * f = fopen(nuzzzz.c_str(), "w");
+        std::ofstream f(nuzzzz);
         if (!f) {
             std::cerr << std::format("Could not open {} ({})\n", nuzzzz, strerror(errno));
             exit(1);
         }
-        fwrite(&it.second, 1, sizeof(Page), f);
-        fclose(f);
+        f.write(reinterpret_cast<char*>(&it.second), sizeof(Page));
 
         if (mars.dump_txt_zones) {
             std::string txt(nuzzzz+".txt");
-            FILE * t = fopen(txt.c_str(), "w");
+            std::ofstream t(txt);
             if (!t) {
                 std::cerr << std::format("Could not open {} ({})\n", txt, strerror(errno));
                 exit(1);
             }
             const char * zone = nuzzzz.c_str()+2;
             for (int i = 0; i < 1024; ++i) {
-                fprintf(t, "%s.%04o:  %04o %04o %04o %04o\n",
-                        zone, i, int(it.second.w[i] >> 36),
-                        int((it.second.w[i] >> 24) & 07777),
-                        int((it.second.w[i] >> 12) & 07777),
-                        int((it.second.w[i] >> 0) & 07777));
+                t << std::format("{}.{:04o}:  {:04o} {:04o} {:04o} {:04o}\n",
+                        zone, i, it.second.w[i] >> 36,
+                        (it.second.w[i] >> 24) & 07777,
+                        (it.second.w[i] >> 12) & 07777,
+                        (it.second.w[i] >> 0) & 07777);
             }
-            fclose(t);
         }
     }
 }
@@ -405,7 +404,7 @@ void MarsImpl::IOcall(word is) {
         if (verbose)
             std::cerr << std::format("Reading {} to address {:o}\n", nuzzzz, page*1024);
         if (it == DiskImage.end()) {
-            FILE * f = fopen(nuzzzz.c_str(), "r");
+            std::ifstream f(nuzzzz);
             if (!f) {
                 std::cerr << "\tZone " << nuzzzz << " does not exist yet\n";
                 for (int i = page*1024; i < (page+1)*1024; ++i)
@@ -415,8 +414,7 @@ void MarsImpl::IOcall(word is) {
             }
             if (verbose)
                 std::cerr << "\tFirst time - reading from disk\n";
-            fread(&DiskImage[nuzzzz], 1, sizeof(Page), f);
-            fclose(f);
+            f.read(reinterpret_cast<char*>(&DiskImage[nuzzzz]), sizeof(Page));
             DiskImage[nuzzzz].to_memory(data+page*1024);
         } else
             it->second.to_memory(data+page*1024);
@@ -541,7 +539,7 @@ uint64_t MarsImpl::find_item(uint64_t arg) {
         if (get_id(curExtent) == get_id(work2)) {
             break;
         }
-        if (--loc116.d == 0) {
+        if (--loc116 == 0) {
             throw Mars::ERR_NO_RECORD;
         }
     }
@@ -850,12 +848,11 @@ uint64_t MarsImpl::a00340(uint64_t arg) {
     return acc;
 }
 
-void MarsImpl::assign_and_incr(uint64_t arg) {
-    m16 = arg;
-    m5 = (curcmd >> 6) & 077;
+void MarsImpl::assign_and_incr(uint64_t dst) {
+    auto src = (curcmd >> 6) & 077;
     curcmd = curcmd >> 6;
-    abdv[m16] = (*abdv[m5]).d;
-    ++abdv[m5];
+    abdv[dst] = *abdv[src];
+    ++abdv[src];
 }
 
 // Performs operations of upper bits in myloc
@@ -1350,12 +1347,13 @@ Error MarsImpl::eval() try {
     case Mars::OP_CHAIN:
         // cmd := mem[bdvect[src]++]
         // curcmd is ..... src 50
-        assign_and_incr(&orgcmd-BDVECT);
+        assign_and_incr(&orgcmd - &data[BDVECT]);
+        acc = orgcmd;
         jump(next);
     case 051:
         // myloc := mem[bdvect[src]++]
         // curcmd is ..... src 51
-        assign_and_incr(&myloc-BDVECT);
+        assign_and_incr(&myloc - &data[BDVECT]);
         break;
     case 052:
         // bdvect[dst] := mem[bdvect[src]++]
@@ -1474,7 +1472,7 @@ Error MarsImpl::eval() try {
         jump(rtnext);
     }
     if ((m16[-1] & 01777) != 0100) {
-        // THe current metablock has not reached the max allowed length
+        // The current metablock has not reached the max allowed length
         mylen = (m16[-1] & 01777) + 1;
         update(curBlockDescr);
         jump(rtnext);
