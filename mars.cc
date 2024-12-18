@@ -54,7 +54,8 @@ word& word::operator[](word x) const {
     if ((x.d & 077770) != 077770 &&
         ((x.d & 077777) >= 02000 ||
          ((x.d & 077777) >= 01400 && (d & 077777) < 0400)))
-        std::cerr << "Base/index inversion\n";
+        std::cerr << std::format("Base/index inversion: base = {}, index = {}\n",
+                                 d, x.d & 077777);
     return *word(*mars, d+x.d);
 }
 
@@ -64,12 +65,6 @@ word& word::operator[](word x) const {
 #define target(label) (jumptab.count(&&label) ? jumptab[&&label] :      \
                        (targets.push_back(&&label),                     \
                         jumptab[&&label] = targets.size() + INDJUMP_MAGIC-1))
-#define call(addr,link) do {                                            \
-        __label__ ret;                                                  \
-        link = target(ret);                                             \
-        goto addr;                                                      \
-      ret:;                                                             \
-    } while (0)
 // #define jump(x) do { std::cerr << "Jump to " #x "\n"; goto x; } while(0)
 #define jump(x) goto x
 #define indjump(x)                                                      \
@@ -100,7 +95,7 @@ struct MarsImpl {
     word * const data;
     bool & verbose;
     // Registers
-    wordref m5, m6, m16;
+    wordref m5, m16;
 
     // For convenience of detection which locations not to trace,
     // the registers are mapped to the lower addresses of the RAM.
@@ -108,7 +103,7 @@ struct MarsImpl {
     // Fields of BDVECT
     wordref outadr, orgcmd, curcmd, syncw, givenp, key,
         erhndl, curDescr, myloc, loc14, mylen, bdbuf, bdtab,
-        metaflag, dbdesc, DBkey, savedp, freeSpace, adescr, limit,
+        metaflag, dbdesc, DBkey, savedp, freeSpace, adescr, newkey,
         curkey, endmrk, desc1, desc2, IOpat, curExtLength, extPtr, datumLen,
         curMetaBlock, dblen, curlen, loc116,
         curExtent, curbuf, curZone, curBlockDescr,
@@ -134,7 +129,7 @@ struct MarsImpl {
 
     MarsImpl(Mars & up) :
         mars(up), data(up.data), verbose(up.verbose),
-        m5(data[5]), m6(data[6]), m16(data[016]),
+        m5(data[5]), m16(data[016]),
         outadr(data[BDVECT+1]),
         orgcmd(data[BDVECT+3]),
         curcmd(data[BDVECT+5]),
@@ -154,7 +149,7 @@ struct MarsImpl {
         savedp(data[BDVECT+032]),
         freeSpace(data[BDVECT+034]),
         adescr(data[BDVECT+035]),
-        limit(data[BDVECT+036]),
+        newkey(data[BDVECT+036]),
         curkey(data[BDVECT+037]),
         endmrk(data[BDVECT+040]),
         desc1(data[BDVECT+041]),
@@ -1164,12 +1159,6 @@ Error MarsImpl::eval() try {
     // enter2:                       // continue execution after a callback?
     acc = orgcmd.d;
     jump(next);
-  rtnext:
-    if (goto_.d) {
-        word to = goto_;
-        goto_ = 0;
-        indjump(to);
-    }
   cmd0:
     acc = curcmd >> 6;
   next:
@@ -1181,9 +1170,8 @@ Error MarsImpl::eval() try {
     }
     curcmd = acc;
     m5 = acc & BITS(6);
-    m6 = target(cmd0);
     goto_ = 0;
-    // The switch is entered with m6 = cmd0 and acc = 0
+    // The switch is entered with acc = 0
     if (verbose)
         std::cerr << "Executing microcode " << std::oct << m5.d << '\n';
     acc = 0;
@@ -1281,7 +1269,7 @@ Error MarsImpl::eval() try {
         adescr = acc = curDescr.d;
         jump(addkey);
     case Mars::OP_DELKEY:
-        limit = 0;              // looks dead
+        newkey = 0;              // looks dead
         jump(delkey);
     case Mars::OP_LOOP:
         acc = orgcmd.d;
@@ -1414,8 +1402,8 @@ Error MarsImpl::eval() try {
             Secondary[0] = make_block_header(prev_block(acc), 0, block_len(acc));
             set_header(make_block_header(prev_block(acc), next_block(d00025), block_len(acc)));
         }
-        call(pr1232,m5);
-        jump(delkey);
+        m5 = target(delkey);
+        jump(pr1232);
     }
     acc = loc116.d;
     while (true) {
@@ -1439,19 +1427,19 @@ Error MarsImpl::eval() try {
   addkey:
     newDescr = acc;
     m16 = curMetaBlock;
-    m5 = curMetaBlock + Array[idx] + 2;
-    limit = m5;
-    m6 = (m16[-1] & 01777) + m16;
-    if (verbose)
-        std::cerr << std::format("Expanding {}  elements\n", (m6.d-limit.d)/2);
-    while (m6 != limit) {
-        m6[0] = m6[-2];
-        m6[1] = m6[-1];
-        m6 = m6 - 2;
+    newkey = m5 = curMetaBlock + Array[idx] + 2;
+    if (verbose) {
+        size_t total = curMetaBlock[-1].d & 01777;
+        size_t downto = (Array[idx].d & 01777) + 2;
+        std::cerr << std::format("Expanding {} elements\n", (total-downto)/2);
     }
-    m5[0] = d00011;
-    m5[1] = newDescr;
-    m16[-1] = m16[-1] + 2;
+    for (size_t i = curMetaBlock[-1].d & 01777; i != (Array[idx].d & 01777) + 2; i -= 2) {
+        curMetaBlock[i] = curMetaBlock[i-2];
+        curMetaBlock[i+1] = curMetaBlock[i-1];
+    }
+    newkey[0] = d00011;
+    newkey[1] = newDescr;
+    curMetaBlock[-1] = curMetaBlock[-1] + 2;
   a01160:                       // generic metablock update ???
     usrloc = m16 - 1;
     if (idx == 0) {
@@ -1469,13 +1457,13 @@ Error MarsImpl::eval() try {
             mylen = 041;
         }
         update(metaflag);
-        jump(rtnext);
+        if (goto_.d) { goto_ = 0; jump(a01242); } else jump(cmd0);
     }
     if ((m16[-1] & 01777) != 0100) {
         // The current metablock has not reached the max allowed length
         mylen = (m16[-1] & 01777) + 1;
         update(curBlockDescr);
-        jump(rtnext);
+        if (goto_.d) { goto_ = 0; jump(a01242); } else jump(cmd0);
     }
     work = (idx * 2) + 041;
     if (Metadata[0] == 036) {
@@ -1501,13 +1489,11 @@ Error MarsImpl::eval() try {
     usrloc = Secondary;
     mylen = (Secondary[0].d & 01777) + 1;
     update(curBlockDescr);
-    call(pr1232,m5);
-    jump(a01136);
+    m5 = target(a01136);
     // pr1232 can return in 3 ways:
-    // - back to the immediate caller
-    // - terminating execution of the instruction (next)
-    // - potential termination of the execution
-    //   returning to the upper level caller if goto_ is not 0 (rtnext)
+    // - continue execution (following m5)
+    // - terminating execution of the instruction (cmd0)
+    // - conditionaly skipping micro-instructions (next)
   pr1232:
     d00033 = m5;
     desc2 = 1;
@@ -1519,10 +1505,8 @@ Error MarsImpl::eval() try {
   a01242:
     curMetaBlock = Metadata+1;
     if (idx == 0) {
-        if (goto_.d)
-            std::cerr << "Returning from pr1232 with non-0 goto_\n";
         set_dirty_tab();
-        jump(rtnext);
+        if (goto_.d) { goto_ = 0; jump(a01242); } else jump(cmd0);
     }
     idx = idx - 2;
     if (idx != 0) {
@@ -1558,7 +1542,7 @@ Error MarsImpl::eval() try {
     Metadata[0] = 2;
     mylen = 041;
     update(metaflag);
-    jump(rtnext);
+    if (goto_.d) { goto_ = 0; jump(a01242); } else jump(cmd0);
 } catch (Error e) {
     if (erhndl.d) {
         // savm16 = erhndl;  // returning to erhndl instead of the point of call
