@@ -228,6 +228,8 @@ struct MarsImpl {
     void overflow(word);
     void prepare_chunk();
     void allocator(int);
+    enum KeyOp { ADDKEY, DELKEY, A01160 };
+    bool key_manager(KeyOp);
     void mkctl(), find(word);
     void update_by_reallocation(), search_in_block(), update(word);
     void setDirty(int x) {
@@ -1150,8 +1152,6 @@ void MarsImpl::update(word arg) {
 }
 
 Error MarsImpl::eval() try {
-    std::unordered_map<void*,int> jumptab;
-    std::vector<void*> targets;
     if (bdtab[0] != DBkey && IOpat.d) {
         IOword = bdtab.d << 20 | ONEBIT(40) | IOpat.d;
         IOcall(IOword);
@@ -1169,13 +1169,12 @@ Error MarsImpl::eval() try {
         return Mars::ERR_SUCCESS;
     }
     curcmd = acc;
-    m5 = acc & BITS(6);
     goto_ = 0;
     // The switch is entered with acc = 0
     if (verbose)
-        std::cerr << "Executing microcode " << std::oct << m5.d << '\n';
+        std::cerr << std::format("Executing microcode {:02o}\n", curcmd.d & 077);
     acc = 0;
-    switch (m5.d) {
+    switch (curcmd.d & 077) {
     case 0:
         break;
     case Mars::OP_BEGIN:
@@ -1267,10 +1266,14 @@ Error MarsImpl::eval() try {
     case Mars::OP_ADDKEY:
         d00011 = key;
         adescr = acc = curDescr.d;
-        jump(addkey);
+        if (key_manager(ADDKEY))
+            jump(next);
+        break;
     case Mars::OP_DELKEY:
         newkey = 0;              // looks dead
-        jump(delkey);
+        if (key_manager(DELKEY))
+            jump(next);
+        break;
     case Mars::OP_LOOP:
         acc = orgcmd.d;
         jump(next);
@@ -1298,7 +1301,9 @@ Error MarsImpl::eval() try {
     case Mars::OP_ADDMETA:
         m16 = curMetaBlock;
         m16[Array[idx]+1] = curDescr;
-        jump(a01160);
+        if (key_manager(A01160))
+            jump(next);
+        break;
     case Mars::OP_SKIP:
         acc = curcmd >> 12;
         jump(next);
@@ -1331,7 +1336,9 @@ Error MarsImpl::eval() try {
         break;
     case Mars::OP_CALL:
         acc = desc1.d;
-        indjump(outadr);
+        // Then an indirect jump to outadr;
+        // expected to return to enter2?
+        break;
     case Mars::OP_CHAIN:
         // cmd := mem[bdvect[src]++]
         // curcmd is ..... src 50
@@ -1375,6 +1382,27 @@ Error MarsImpl::eval() try {
         abort();
     }
     jump(cmd0);
+} catch (Error e) {
+    if (erhndl.d) {
+        // savm16 = erhndl;  // returning to erhndl instead of the point of call
+    }
+    data[7] = e;                // imitating M7 = e
+    std::cerr << std::format("ERROR {} ({})\n", int(e), msg[e-1]);
+    d00010 = *(uint64_t*)msg[e-1];
+    finalize(*((uint64_t*)msg[e-1]+1));
+    if (mars.dump_diffs)
+        mars.dump();
+    return e;
+}
+
+bool MarsImpl::key_manager(KeyOp op) {
+    std::unordered_map<void*,int> jumptab;
+    std::vector<void*> targets;
+    switch (op) {
+    case ADDKEY: jump(addkey);
+    case DELKEY: jump(delkey);
+    case A01160: jump(a01160);
+    }
   delkey:
     m16 = curMetaBlock;
     m5 = m16 + Array[idx];
@@ -1457,13 +1485,13 @@ Error MarsImpl::eval() try {
             mylen = 041;
         }
         update(metaflag);
-        if (goto_.d) { goto_ = 0; jump(a01242); } else jump(cmd0);
+        if (goto_.d) { goto_ = 0; jump(a01242); } else return false;
     }
     if ((m16[-1] & 01777) != 0100) {
         // The current metablock has not reached the max allowed length
         mylen = (m16[-1] & 01777) + 1;
         update(curBlockDescr);
-        if (goto_.d) { goto_ = 0; jump(a01242); } else jump(cmd0);
+        if (goto_.d) { goto_ = 0; jump(a01242); } else return false;
     }
     work = (idx * 2) + 041;
     if (Metadata[0] == 036) {
@@ -1492,8 +1520,8 @@ Error MarsImpl::eval() try {
     m5 = target(a01136);
     // pr1232 can return in 3 ways:
     // - continue execution (following m5)
-    // - terminating execution of the instruction (cmd0)
-    // - conditionaly skipping micro-instructions (next)
+    // - terminating execution of the instruction (returning false)
+    // - conditionaly skipping micro-instructions (returning true)
   pr1232:
     d00033 = m5;
     desc2 = 1;
@@ -1506,7 +1534,7 @@ Error MarsImpl::eval() try {
     curMetaBlock = Metadata+1;
     if (idx == 0) {
         set_dirty_tab();
-        if (goto_.d) { goto_ = 0; jump(a01242); } else jump(cmd0);
+        if (goto_.d) { goto_ = 0; jump(a01242); } else return false;
     }
     idx = idx - 2;
     if (idx != 0) {
@@ -1519,6 +1547,16 @@ Error MarsImpl::eval() try {
         acc >>= 15;
         m16 = acc;
         if (!(d00012.d & 077777)) {
+            if (verbose) {
+                if (d00033 == target(a01136))
+                    std::cerr << "Jump target a01136\n";
+                else if (d00033 == target(delkey))
+                    std::cerr << "Jump target delkey\n";
+                else if (d00033 == target(a00731))
+                    std::cerr << "Jump target a00731\n"; // Not yet observed
+                else
+                    std::cerr << "Jump target unknown\n";
+            }
             indjump(d00033);    // return from pr1232
         }
         acc = d00012.d;
@@ -1528,7 +1566,7 @@ Error MarsImpl::eval() try {
         }
         d00012 = acc - 1;
         if (step())
-            jump(next);
+            return true;
         acc = d00012.d;
     }
     if (usable_space() < 0101) {
@@ -1542,18 +1580,7 @@ Error MarsImpl::eval() try {
     Metadata[0] = 2;
     mylen = 041;
     update(metaflag);
-    if (goto_.d) { goto_ = 0; jump(a01242); } else jump(cmd0);
-} catch (Error e) {
-    if (erhndl.d) {
-        // savm16 = erhndl;  // returning to erhndl instead of the point of call
-    }
-    data[7] = e;                // imitating M7 = e
-    std::cerr << std::format("ERROR {} ({})\n", int(e), msg[e-1]);
-    d00010 = *(uint64_t*)msg[e-1];
-    finalize(*((uint64_t*)msg[e-1]+1));
-    if (mars.dump_diffs)
-        mars.dump();
-    return e;
+    if (goto_.d) { goto_ = 0; jump(a01242); } else return false;
 }
 
 void MarsImpl::pasbdi() {
