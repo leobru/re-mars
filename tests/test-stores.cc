@@ -134,7 +134,7 @@ TEST(mars, initdb_stores)
     EXPECT_EQ(mars.get_store(05736), 0'0000'0000'0000'0041u);
 //  EXPECT_EQ(mars.get_store(01647), 0'0000'0000'0000'0001u); // overwritten
 //  EXPECT_EQ(mars.get_store(01415), 0'0000'0000'0000'0003u); // overwritten
-//  EXPECT_EQ(mars.get_store(06000), 0'0000'0000'0000'1726u); // overwritten
+    EXPECT_EQ(mars.get_store(06000), 0'0000'0000'0000'1726u); // fixed: kept
     EXPECT_EQ(mars.get_store(02014), 0'0000'0000'0000'0000u);
 
     // Executing microcode 21
@@ -157,11 +157,11 @@ TEST(mars, initdb_stores)
     // To DB: 3(8) words from 6000 to 5733
     EXPECT_EQ(mars.get_store(05735), 0'0000'0000'0000'1776u);
     EXPECT_EQ(mars.get_store(05734), 0'0000'0000'0000'1776u);
-    EXPECT_EQ(mars.get_store(05733), 0'0000'0000'0000'1726u);
+    EXPECT_EQ(mars.get_store(05733), 0'0000'0000'0000'1726u); // eventual value in the DB
     EXPECT_EQ(mars.get_store(04003), 0'0020'0000'0001'1731u);
 
     // Reducing free 1726 by len 4 + 1
-    EXPECT_EQ(mars.get_store(06000), 0'0000'0000'0000'1721u); // latest
+    // EXPECT_EQ(mars.get_store(06000), 0'0000'0000'0000'1721u); // corrected in 05733
     // Got 1721
 
     EXPECT_EQ(mars.get_store(05732), 0'0000'0000'0000'0003u);
@@ -608,7 +608,7 @@ TEST(mars, newd_stores)
     EXPECT_EQ(mars.get_store(05736), 0'0000'0000'0000'0041u);
 //  EXPECT_EQ(mars.get_store(01647), 0'0000'0000'0000'0001u); // overwritten
 //  EXPECT_EQ(mars.get_store(01415), 0'0000'0000'0000'0002u); // overwritten
-//  EXPECT_EQ(mars.get_store(06000), 0'0000'0000'0000'1727u); // overwritten
+    EXPECT_EQ(mars.get_store(06000), 0'0000'0000'0000'1727u); // fixed: kept
     EXPECT_EQ(mars.get_store(02014), 0'0000'0000'0000'0000u);
 
     // Executing microcode 21
@@ -634,7 +634,7 @@ TEST(mars, newd_stores)
     EXPECT_EQ(mars.get_store(04003), 0'0020'0000'0000'7732u);
 
     // Reducing free 1727 by len 3 + 1
-    EXPECT_EQ(mars.get_store(06000), 0'0000'0000'0000'1723u); // latest
+    // EXPECT_EQ(mars.get_store(06000), 0'0000'0000'0000'1723u); // corrected in place
     // Got 1723
 
     EXPECT_EQ(mars.get_store(05733), 0'0000'0000'0000'0002u); // latest

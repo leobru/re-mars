@@ -63,10 +63,11 @@ template<class T> uint64_t get_id(const T & x) {
 }
 
 static int to_lnuzzzz(int lun, int start, int len) {
-    if (lun > 077 || start > 01777 || len > 0777)
-        std::cerr << std::oct << lun << ' ' << start << ' ' << len
-                  << "out of valid range, truncated\n";
-    return ((lun & 077) << 12) | (start & 01777) | ((len & 0777) << 18);
+    if (lun > 077 || start > 01777 || len > 01731)
+        std::cerr << std::format("{:o} {:o} {:o} out of valid range, truncated\n",
+                                 lun, start, len);
+    len = std::min(len, 01731);
+    return ((lun & 077) << 12) | (start & 01777) | (len << 18);
 }
 
 static std::string print_id(uint64_t id) {
@@ -225,7 +226,7 @@ Block Analyzer::get_block(uint64_t id) {
     if (extent.first.size() == extent.first[0] + 1) {
         return Block(extent.first.begin() + 1, extent.first.end());
     }
-    
+
     std::cerr <<
         std::format("Block length discrepancy: {:o} total extents, {:o} in header\n",
                     extent.first.size(), extent.first[0]);
@@ -253,7 +254,7 @@ void Analyzer::dir() {
         return;
     }
     if (root[0] & 1) {
-        std::cerr << "Bad block with odd length " << root[0] << '\n';
+        std::cerr << std::format("Bad block with odd length {:016o}\n", root[0]);
     }
     if (root[1] != 0) {
         std::cerr << "Zero key is not zero?\n";
@@ -430,5 +431,6 @@ int main(int argc, char ** argv) {
             an2->dump();
         an2->metablocks(recurse);
         delete an2;
-    }
+    } else if (recurse)
+        an.metablocks(recurse);
 }
