@@ -25,7 +25,7 @@ Below are micro-programs found in the binary code of a program which used the MA
 | FIND NOMATCH INSMETA ADDKEY | If the key does not exist, add a key-metablock pair, otherwise error out |
 | BEGIN SETMETA | Reset the metablock to the root ??? |
 | BEGIN NEXT | Position the iterator to the first real entry |
-| LAST NOMATCH (COND FREE DELKEY LOOP) DELKEY | Deletion in the loop (backwards, this is faster);<br>the last DELKEY looks erroneous |
+| LAST NOMATCH (COND FREE DELKEY LOOP) DELKEY | Deletion in the loop (backwards, this is faster);<br>down to and including the entry with the specified key (must not be 0) |
 | ROOT FIND MATCH | Check that a file exists; do not open |
 | LAST COND FREE DELKEY LOOP | Deletion in the loop; COND is useless, as LAST is not conditional;<br>will error out and potentially corrupt the DB |
 | FIND FREE DELKEY | Unconditional deletion |
