@@ -10,22 +10,22 @@ class Mars {
     enum Error {
         ERR_SUCCESS = 0,
         ERR_ZEROKEY = 1,            // unclear if user-induced or internal
-        ERR_BAD_PAGE = 2,
-        ERR_NO_RECORD = 3,
+        ERR_BAD_PAGE = 2,           // data corruption
+        ERR_NO_RECORD = 3,          // no record to operate on
         ERR_INV_NAME = 4,           // 0 or with high bit set
-        ERR_BAD_CATALOG = 5,
-        ERR_OVERFLOW = 6,
+        ERR_BAD_CATALOG = 5,        // data corruption
+        ERR_OVERFLOW = 6,           // self-explanatory
         ERR_STEP = 7,               // unclear
-        ERR_NO_NAME = 8,
-        ERR_EXISTS = 9,
-        ERR_NO_END_MARK = 10,
+        ERR_NO_NAME = 8,            // requested key name not found
+        ERR_EXISTS = 9,             // key already exists
+        ERR_NO_END_MARK = 10,       // end mark not found within specified range
         ERR_INTERNAL = 11,          // formerly "no end word"
-        ERR_TOO_LONG = 12,
-        ERR_LOCKED = 13,
-        ERR_NO_CURR = 14,
-        ERR_NO_PREV = 15,
-        ERR_NO_NEXT = 16,
-        ERR_WRONG_PASSWORD = 17
+        ERR_TOO_LONG = 12,          // record is longer than th user space for it
+        ERR_LOCKED = 13,            // attempt to lock already locked DB
+        ERR_NO_CURR = 14,           // no current record to step from
+        ERR_NO_PREV = 15,           // no previous record (not triggered by BEGIN PREV)
+        ERR_NO_NEXT = 16,           // no next record
+        ERR_WRONG_PASSWORD = 17     // the saved password does not match the provided one
     };
 
     enum Op : uint64_t {
@@ -81,7 +81,7 @@ class Mars {
             (o4 << 18) | (o3 << 12) | (o2 << 6) | o1;
     }
     // Converts a single-word string to the BESM-6 compatible format
-    // for ease of comparison od binary dumps.
+    // for ease of comparison of binary dumps.
     static uint64_t tobesm(std::string s) {
         s += "     ";
         s.resize(6);
@@ -143,7 +143,7 @@ class Mars {
     ~Mars();
 
     // Initialize a database with 0 <= lun <= 077,
-    // 0 <= start_zone <= 01777, 1 <= length <= 01777
+    // 0 <= start_zone <= 01777, 1 <= length <= 01731
     Error InitDB(int lun, int start_zone, int length);
 
     // The same arguments, including root catalog length, as used in InitDB

@@ -24,6 +24,7 @@ using Error = Mars::Error;
 #define INDIRECT ONEBIT(48)
 #define META_SIZE (2*16+1)
 
+// Field offsets of interest within BDVECT
 static const std::vector<int> comparable{
     3,5,010,012,013,014,015,020,021,022,023,024,025,026,027,
     031,033,034,035,036,037,040,041,042,043,044,045,046,047,050,051,052,053,054,
@@ -96,7 +97,7 @@ struct MarsImpl {
     word * const data;
     bool & verbose;
     // Registers
-    wordref m5, m16;
+    wordref m5;
 
     // For convenience of detection which locations not to trace,
     // the registers are mapped to the lower addresses of the RAM.
@@ -130,7 +131,7 @@ struct MarsImpl {
 
     MarsImpl(Mars & up) :
         mars(up), data(up.data), verbose(up.verbose),
-        m5(data[5]), m16(data[016]),
+        m5(data[5]),
         outadr(data[BDVECT+1]),
         orgcmd(data[BDVECT+3]),
         curcmd(data[BDVECT+5]),
@@ -214,12 +215,12 @@ struct MarsImpl {
     void copy_chained(int len);
     void cpyout(uint64_t);
     void lock();
-    void get_block(word), get_root_block(), get_secondary_block(word);
-    void free_from_current_extent();
+    void get_block(word, word*), get_root_block(), get_secondary_block(word);
+    void free_from_current_extent(int);
     uint64_t a00340(uint64_t);
     void skip(Error);
     void setctl(uint64_t);
-    void free_extent(), free(uint64_t);
+    void free_extent(int), free(uint64_t);
     void find_end_mark(), find_end_word();
     bool proc270(), step(word), a00334(word);
     bool cmd46();
@@ -227,12 +228,12 @@ struct MarsImpl {
     void setup();
     Error eval();
     void overflow(word);
-    void prepare_chunk();
+    int prepare_chunk(int);
     void allocator(int);
     enum KeyOp { ADDKEY, DELKEY, A01160 };
     bool key_manager(KeyOp);
     void mkctl(), find(word);
-    void update_by_reallocation(), search_in_block(), update(word);
+    void update_by_reallocation(int), search_in_block(word*), update(word);
     void setDirty(int x) {
         dirty = dirty.d | (curZone.d ? x+1 : 1);
     }
@@ -426,24 +427,23 @@ void MarsImpl::IOcall(word is) {
 }
 
 // Takes the zone number as the argument,
-// returns the pointer to the zone read in m16 and curbuf
+// returns the pointer to the zone read in curbuf
 void MarsImpl::get_zone(uint64_t arg) {
     curZone = arg;
     zoneKey = arg | DBkey.d;
-    m16 = curbuf = (arg & 01777) ? bdbuf : bdtab;
-    if (m16[0] == zoneKey)
+    curbuf = (arg & 01777) ? bdbuf : bdtab;
+    if (curbuf[0] == zoneKey)
         return;
     if (curZone.d && is_dirty_buf()) {
         dirty = dirty.d & ~2;
-        IOword = (IOpat.d | bdbuf.d << 20) + (m16[0].d & 01777);
+        IOword = (IOpat.d | bdbuf.d << 20) + (curbuf[0].d & 01777);
         IOcall(IOword);
     }
     IOword = (curbuf.d << 20 | curZone.d | ONEBIT(40)) + IOpat.d;
     IOcall(IOword);
-    // m16 = curbuf; // not needed; emulated IOcall does not corrupt m16 as opposed to the original
-    if (m16[0] == zoneKey)
+    if (curbuf[0] == zoneKey)
         return;
-    std::cerr << std::format("Corruption: zoneKey = {:o}, data = {:o}\n", zoneKey.d, (*m16).d);
+    std::cerr << std::format("Corruption: zoneKey = {:o}, data = {:o}\n", zoneKey.d, curbuf[0].d);
     throw Mars::ERR_BAD_PAGE;
 }
 
@@ -466,9 +466,8 @@ void MarsImpl::finalize(word err) {
     if (syncw != 0) {
         if (syncw != 1)
             return;
-        m16 = bdtab;
-        if (m16[1].d & LOCKKEY) {
-            m16[1].d &= ~LOCKKEY;
+        if (bdtab[1].d & LOCKKEY) {
+            bdtab[1].d &= ~LOCKKEY;
             force_tab = true;
         }
     }
@@ -491,7 +490,7 @@ void MarsImpl::make_extent_header() {
     extentHeader = work | mylen | (stamp << 33);
 }
 
-// Prepare a metadata block, set m16 and usrloc to its address
+// Prepare a metadata block, set usrloc to its address
 void MarsImpl::make_metablock() {
     d00012 = metaflag;
     mylen = META_SIZE;
@@ -500,7 +499,7 @@ void MarsImpl::make_metablock() {
     data[FAKEBLK].d = 2;
     data[FAKEBLK+1].d = d00011.d; // appears to be always 0 when make_metablock() is called
     data[FAKEBLK+2].d = metaflag.d;
-    m16 = usrloc.d = FAKEBLK;
+    usrloc.d = FAKEBLK;
 }
 
 // Returns result in datumLen and acc
@@ -510,7 +509,6 @@ uint64_t MarsImpl::usable_space() {
         if (freeSpace[i] != 0)
             datumLen = datumLen + freeSpace[i] - 1;
     }
-    m16 = 0;
     return acc = datumLen.d;
 }
 
@@ -519,12 +517,11 @@ uint64_t MarsImpl::usable_space() {
 // Sets 'extPtr', also returns the extent length in 'curExtLength'
 uint64_t MarsImpl::find_item(uint64_t arg) {
     get_zone(arg & 01777);
-    // now m16 points to the current page
     work = arg & (BITS(10) << 10);
     if (!work.d)
         throw Mars::ERR_ZEROKEY;      // Attempting to find a placeholder?
     work2 = work.d << 29;
-    acc = m16[1] & (BITS(10) << 10);
+    acc = curbuf[1] & (BITS(10) << 10);
     if (!acc)
         throw Mars::ERR_NO_RECORD;    // Attempting to find a deleted record?
     // Records within the zone may be non-contiguous but sorted;
@@ -533,7 +530,7 @@ uint64_t MarsImpl::find_item(uint64_t arg) {
         acc = work.d;
     loc116 = acc >> 10;
     for (;;) {
-        curExtent = m16[loc116+1];
+        curExtent = curbuf[loc116+1];
         if (get_id(curExtent) == get_id(work2)) {
             break;
         }
@@ -579,7 +576,6 @@ void MarsImpl::copy_words(word dst, word src, int len) {
         dst[len-1] = src[len-1];
         --len;
     }
-    // originally m16 is 0 at return
 }
 
 // Copies chained extents to user memory (len = length of the first extent)
@@ -602,7 +598,7 @@ void MarsImpl::cpyout(uint64_t descr) {
     usrloc = myloc;
     if (mylen != 0 && mylen < datumLen)
         throw Mars::ERR_TOO_LONG;
-    // Skip the first word ot the found item
+    // Skip the first word (the header) of the found item
     ++extPtr;
     --curExtLength;
     copy_chained(curExtLength.d);
@@ -621,13 +617,13 @@ void MarsImpl::lock() {
 }
 
 // Finds and reads a block of metadata identified by 'descr'
-// into memory pointed to by m16, if 'curBlockDescr' does
+// into memory pointed to by 'dest', if 'curBlockDescr' does
 // not have the same ID already.
-void MarsImpl::get_block(word descr) {
+void MarsImpl::get_block(word descr, word * dest) {
     Array[idx-1] = descr;
     loc116 = descr & BITS(19);
-    usrloc = m16;
-    curMetaBlock = m16 + 2;
+    usrloc = dest;
+    curMetaBlock = dest + 2;
     if (loc116 == curBlockDescr)
         return;
     curBlockDescr = loc116;
@@ -636,14 +632,12 @@ void MarsImpl::get_block(word descr) {
 
 // Requests the root block into the main Metadata array
 void MarsImpl::get_root_block() {
-    m16 = Metadata-1;
-    get_block(ROOT_METABLOCK);
+    get_block(ROOT_METABLOCK, Metadata-1);
 }
 
 // Requests a block into the Secondary metadata array
 void MarsImpl::get_secondary_block(word descr) {
-    m16 = Secondary-1;
-    get_block(descr);
+    get_block(descr, Secondary-1);
 }
 
 void MarsImpl::skip(Error e) {
@@ -661,7 +655,7 @@ void MarsImpl::setctl(uint64_t location) {
     dblen = dbdesc >> 18;
     IOword = bdtab.d << 20 | IOpat.d | ONEBIT(40);
     IOcall(IOword);
-    m16 = curbuf = bdtab;
+    curbuf = bdtab;
     if (bdtab[0] != DBkey)
         throw Mars::ERR_BAD_CATALOG;
     idx = 0;
@@ -671,42 +665,47 @@ void MarsImpl::setctl(uint64_t location) {
     get_root_block();
 }
 
-// Frees curExtent
-void MarsImpl::free_extent() {
+// Frees curExtent, which position is given as the argument
+void MarsImpl::free_extent(int pos) {
     word loc(mars,get_extstart(curExtent));
-    for (;--m5 != 0;) {
-        if ((m16[m5+1].d & 01777) >= loc.d)
+    // Correct the data pointers of the extents
+    // below the one being freed
+    for (;--pos != 0;) {
+        if ((curbuf[pos+1].d & 01777) >= loc.d)
             continue;
-        m16[m5+1] = m16[m5+1] + curExtLength;
+        curbuf[pos+1] = curbuf[pos+1] + curExtLength;
     }
-    work = m16[1] & 01777;
+    work = curbuf[1] & 01777;
     if (work != loc) {
-        if (loc < work)
+        if (loc < work)         // extent cannot be located in the free area
             throw Mars::ERR_INTERNAL;
-        m5 = (loc - work) & 077777;
+        pos = (loc.d - work.d) & 077777;
         work = work + curbuf;
         loc = work + curExtLength;
+        // Move the extent data up to make the free area
+        // contiguous
         do {
-            loc[m5] = work[m5];
-        } while(--m5.d);
+            loc[pos] = work[pos];
+        } while(--pos);
     }
-    m16[1] = m16[1] - 02000 + curExtLength;
+    // Correct the free area location and the number of extents at once
+    curbuf[1] = curbuf[1] - 02000 + curExtLength;
     freeSpace[curZone] = freeSpace[curZone] + curExtLength + 1;
     set_dirty_data();
-    acc = curExtent.d;
 }
 
-// DOes not seem to
 void MarsImpl::free(uint64_t arg) {
     do {
         find_item(arg);
-        work2 = (m16[1].d >> 10) & 077777;
-        m5 = loc116;
-        while (m5 != work2) {
-            m16[m5+1] = m16[m5+2];
-            ++m5;
+        // work2 = extent count in zone
+        work2 = (curbuf[1].d >> 10) & 077777;
+        int i = loc116.d;       // extent to be freed
+        // shrink the extent handle array
+        while (work2 != i) {
+            curbuf[i+1] = curbuf[i+2];
+            ++i;
         };
-        free_extent();
+        free_extent(i);
         arg = next_extent(curExtent);
     } while (arg);
     set_dirty_tab();
@@ -714,8 +713,8 @@ void MarsImpl::free(uint64_t arg) {
 
 // When an extent chain must be freed but not the descriptor
 // (for OP_UPDATE)
-void MarsImpl::free_from_current_extent() {
-    free_extent();
+void MarsImpl::free_from_current_extent(int pos) {
+    free_extent(pos);
     if (next_extent(curExtent)) {
         free(next_extent(curExtent));
     } else {
@@ -725,10 +724,10 @@ void MarsImpl::free_from_current_extent() {
 
 void MarsImpl::find_end_mark() {
     // Searching for the end mark (originally 1 or 2 bytes)
-    m16 = -mylen.d;
-    work2 = myloc.d + mylen.d;
+    int i = -mylen.d;
+    work2 = myloc + mylen;
     // Handling only single byte mark, contemporary style
-    char * start = (char*)&(work2[m16].d);
+    char * start = (char*)&(work2[i].d);
     char * end = (char*)&(work2[0].d);
     char * found = (char*)memchr(start, endmrk.d & 0xFF, end-start);
     if (!found)
@@ -737,30 +736,30 @@ void MarsImpl::find_end_mark() {
 }
 
 bool MarsImpl::proc270() {
-    m16 = temp;
+    int len = temp.d;
     if (temp.d >= curExtLength.d) {
         temp = temp - curExtLength;
-        m16 = curExtLength;
+        len = curExtLength.d;
         m5 = 0;
     }
-    // Now m16 = current extent length, temp = remaining length (may be 0)
+    // Now len = current extent length, temp = remaining length (may be 0)
     switch (jmpoff.d) {
     case FROMBASE:
-        copy_words(usrloc, extPtr, m16.d);
+        copy_words(usrloc, extPtr, len);
         break;
     case TOBASE:
         set_dirty_data();
-        copy_words(extPtr, usrloc, m16.d);
+        copy_words(extPtr, usrloc, len);
         break;
     case COMPARE:
     // Check for 0 length is not needed, perhaps because the key part of datum
     // which is being compared, is never empty?
         do {
-            if (extPtr[m16-1] != usrloc[m16-1]) {
+            if (extPtr[len-1] != usrloc[len-1]) {
                 acc = curcmd >> 12;
                 return true;
             }
-        } while (--m16.d);
+        } while (--len);
         break;
     case A00317:
         return false;
@@ -884,25 +883,32 @@ void MarsImpl::overflow(word ext) {
     throw Mars::ERR_OVERFLOW;
 }
 
-void MarsImpl::prepare_chunk() {
-    work = freeSpace[m5-1] - 1;
-    --m5;
+// Input: z = zone number + 1
+// Output: acc = zone number
+// returns 0 if no more chunks remain
+// otherwise z to continue finding
+// free space.
+int MarsImpl::prepare_chunk(int z) {
+    work = freeSpace[z-1] - 1;
+    --z;
     if (work < mylen) {
         remlen = mylen - work;
         mylen = work;
         usrloc = usrloc - work;
-        acc = m5.d;
-        ++m5;
+        acc = z;
+        ++z;
     } else {
         usrloc = usrloc - mylen + 1;
-        acc = m5.d;
-        m5 = 0;
+        acc = z;
+        z = 0;
     }
+    return z;
 }
 
 // The 3 entry points are disambiguated by the original code addresses
 // for lack of a better understanding of their semantics.
 void MarsImpl::allocator(int addr) {
+    int i;
     switch (addr) {
     case 01022:
         make_extent_header();
@@ -910,7 +916,6 @@ void MarsImpl::allocator(int addr) {
     case 01023:
         m5 = 0;
         chainHead = 0;
-        m16 = freeSpace;
         work = freeSpace[curZone];
         ++mylen;
         if (mylen.d >= work.d) {
@@ -928,47 +933,48 @@ void MarsImpl::allocator(int addr) {
             }
             // End reached, or the length is too large: must split
             usrloc = usrloc + mylen - 1;
-            m5 = dblen;
-            while (freeSpace[m5-1] < 2) {
-                if (--m5.d)
+            i = dblen.d;
+            while (freeSpace[i-1] < 2) {
+                if (--i)
                     continue;
                 overflow(chainHead);
             }
-            prepare_chunk();
+            m5 = prepare_chunk(i);
             jump(chunk);
         }
         acc = curZone.d;
-    chunk:
+    chunk: {
         get_zone(acc);
-        m16 = curbuf[1] >> 10;
+        uint64_t id = curbuf[1] >> 10;
         do {
-            if (m16 == get_id(curbuf[m16+1]))
+            if (id == get_id(curbuf[id+1]))
                 break;
-            curbuf[m16+2] = curbuf[m16+1];
-            --m16;
-        } while (m16.d);
-        ++m16;
-        loc116 = m16;
-        acc = (m16.d << 39) | chainHead.d;
+            curbuf[id+2] = curbuf[id+1];
+            --id;
+        } while (id);
+        ++id;
+        loc116 = id;
+        acc = (id << 39) | chainHead.d;
+        }
         // FALL THROUGH
-    case 01047:                 // acc has the extent id in bits 48-40
+    case 01047: {               // acc has the extent id in bits 48-40
         chainHead = acc;
         newDescr = (get_id(chainHead) << 10) | curZone.d;
-        m16 = mylen;
-        curbuf[1] = curbuf[1] - m16 + 02000;
-        work = curbuf[1].d & 01777;
+        int len = mylen.d;
+        // Correcting the free space pointer and incrementing extent count
+        curbuf[1] = curbuf[1] - mylen + 02000;
+        work = curbuf[1] & 01777;
         work2 = curbuf + work + 1;
         if (!m5.d) {
-            --m16;
+            --len;
             ++work2;
         }
-        if (m16.d) {
+        if (len) {
             if (verbose)
                 std::cerr << "To DB: ";
-            copy_words(work2, usrloc, m16.d);
+            copy_words(work2, usrloc, len);
         }
         curbuf[loc116+1] = (mylen.d << 10) | work.d | chainHead.d;
-        m16 = freeSpace;
         if (verbose)
           std::cerr << std::format("Reducing free {:o} by len {:o} + 1\n",
                                    freeSpace[curZone].d, mylen.d);
@@ -983,7 +989,6 @@ void MarsImpl::allocator(int addr) {
         set_dirty_data();
         acc = newDescr.d;
         acc <<= 20;
-        acc &= BITS(48);
         chainHead = acc;
         mylen = remlen;
         if (--m5.d) {
@@ -992,10 +997,11 @@ void MarsImpl::allocator(int addr) {
                     continue;
                 overflow(chainHead);
             }
-            prepare_chunk();
+            m5 = prepare_chunk(m5.d);
             jump(chunk);
         }
         overflow(chainHead);       // will throw
+    }
     }
 }
 
@@ -1029,11 +1035,10 @@ void MarsImpl::mkctl() {
     curDescr = newDescr;          // unused
 }
 
-void MarsImpl::update_by_reallocation() {
-    // d00026 is used only in this function
+void MarsImpl::update_by_reallocation(int pos) {
     word old = curExtent.d;
     curExtent = curExtent & 01777;
-    free_from_current_extent();
+    free_from_current_extent(pos);
     ++mylen;
     m5 = 0;
     acc = get_id(old) << 39;
@@ -1047,91 +1052,86 @@ void MarsImpl::update_by_reallocation() {
 }
 
 void MarsImpl::find_end_word() {
+    int i;
   cmd17:
-    m16 = -mylen.d;
+    i = -mylen.d;
     work2 = myloc + mylen;
     // loop_here:
-    if (work2[m16] == endmrk) {
-        m16 = m16 + mylen + 1;
-        mylen = m16;
+    if (work2[i] == endmrk) {
+        mylen = i + mylen.d + 1;
         return;
     }
-    if (m16 != 0) {
-        ++m16;
+    if (i != 0) {
+        ++i;
         jump(cmd17);            // Possibly a typo/oversight, ought to be loop_here
     }
     throw Mars::ERR_INTERNAL;         // Originally "no end word"
 }
 
-// m16 points to the payload of a metadata block
-void MarsImpl::search_in_block() {
-    bool parent = m16[1].d & INDIRECT;
-    m5 = block_len(m16[-1]);
+// base points to the payload of a metadata block
+void MarsImpl::search_in_block(word *base) {
+    bool parent = base[1].d & INDIRECT;
+    int i = block_len(base[-1]);
     if (verbose)
-        std::cerr << "Comparing " << std::dec << m5.d/2 << " elements\n";
-    while (m5.d) {
-        if (m16[m5-2].d <= (temp.d ^ BITS(47)))
+        std::cerr << "Comparing " << std::dec << i/2 << " elements\n";
+    while (i) {
+        if (base[i-2].d <= (temp.d ^ BITS(47)))
             break;
-        m5.d -= 2;
+        i -= 2;
     }
-    m5.d -= 2;
-    Array[idx] = m5.d | ONEBIT(31);
+    i -= 2;
+    Array[idx] = i | ONEBIT(31);
     if (!parent) {
-        curkey = curMetaBlock[m5];
-        adescr = curMetaBlock[m5+1];
+        curkey = curMetaBlock[i];
+        adescr = curMetaBlock[i+1];
         return;
     }
     idx = idx + 2;
     if (idx > 7) {
         std::cerr << "Idx = " << idx << ": DB will be corrupted\n";
     }
-    get_secondary_block(m16[m5+1]);
-    m16 = Secondary+1;
-    search_in_block();
+    get_secondary_block(base[i+1]);
+    search_in_block(Secondary+1);
 }
 
 void MarsImpl::find(word k) {
     temp = k;          // the key to find, not necessarily bdvect[010]
     idx = 0;
     temp = temp.d ^ BITS(47);
-    m16 = Metadata+1;
     if (!metaflag.d) {
         get_root_block();
     }
-    m16 = Metadata+1;
-    search_in_block();
+    search_in_block(Metadata+1);
 }
 
 void MarsImpl::update(word arg) {
     d00012 = arg;
-    m5 = find_item(d00012.d) - 1;
-    if (m5 == mylen) {
+    int len = find_item(d00012.d) - 1;
+    if (mylen == len) {
         // The new length of data matches the first extent length
-        if (m5.d) {
+        if (len != 0) {
             do {
-                extPtr[m5] = usrloc[m5-1];
-            } while (--m5.d);
+                extPtr[len] = usrloc[len-1];
+            } while (--len);
         }
-        m5 = m16;
         make_extent_header();
         *extPtr = extentHeader;
         set_dirty_data();
         if (!next_extent(curExtent))
             return;       // No extents to free: done
-        m5[loc116+1] = curExtent & ~(BITS(19) << 20); // dropping the extent chain
+        curbuf[loc116+1] = curExtent & ~(BITS(19) << 20); // dropping the extent chain
         free(next_extent(curExtent)); // Free remaining extents
         set_dirty_tab();
         return;
     }
     make_extent_header();
-    m16 = curbuf;
-    acc = m16[1] >> 10;
+    acc = curbuf[1] >> 10;
     m5 = acc + 1;
-    acc = (m16[1].d - acc) & 01777;
+    acc = (curbuf[1].d - acc) & 01777;
     acc += curExtLength.d - 2;
     work = acc;
     if (acc >= mylen.d) {
-        update_by_reallocation();
+        update_by_reallocation(m5.d);
         set_dirty_tab();
         return;
     }
@@ -1141,17 +1141,16 @@ void MarsImpl::update(word arg) {
     if (acc < mylen.d) {
         throw Mars::ERR_OVERFLOW;
     }
-    m16 = curbuf;
     mylen = work;
-    update_by_reallocation();
+    update_by_reallocation(m5.d);
     usrloc = usrloc + mylen;
     mylen = (extentHeader & 077777) - mylen;
     extentHeader = usrloc[-1];
     allocator(01023);
     find_item(d00012.d);
     // This is likely chaining the extents
-    acc = (newDescr.d << 20) & BITS(48);
-    m16[loc116+1] = acc | curExtent.d;
+    acc = newDescr.d << 20;
+    curbuf[loc116+1] = acc | curExtent.d;
     set_dirty_both();
     return;
 }
@@ -1202,13 +1201,12 @@ Error MarsImpl::eval() try {
         allocator(01022);
         curDescr = newDescr;
         break;
-    case Mars::OP_SETMETA:
+    case Mars::OP_SETMETA:      // not yet covered by tests
         idx = 0;
         datumLen = META_SIZE;
-        m16 = Metadata-1;
-        get_block(adescr);
+        get_block(adescr, Metadata-1);
         break;
-    case 7:
+    case 7:                     // unclear
         jmpoff = A00317;
         a00334(desc2);
         break;
@@ -1302,8 +1300,7 @@ Error MarsImpl::eval() try {
             mars.dump();
         return Mars::ERR_SUCCESS;
     case Mars::OP_ADDMETA:
-        m16 = curMetaBlock;
-        m16[Array[idx]+1] = curDescr;
+        curMetaBlock[Array[idx]+1] = curDescr;
         if (key_manager(A01160))
             jump(next);
         break;
@@ -1360,28 +1357,29 @@ Error MarsImpl::eval() try {
         curcmd = curcmd >> 6;
         assign_and_incr(acc);
         break;
-    case Mars::OP_ASSIGN:
+    case Mars::OP_ASSIGN: {
         // bdvect[dst] = bdvect[src]
         // curcmd is ..... src dst 53
-        m16 = (curcmd >> 6) & 077;
-        m5 = (curcmd >> 12) & 077;
+        int dst = (curcmd.d >> 6) & 077;
+        int src = (curcmd.d >> 12) & 077;
         curcmd = curcmd >> 12;
-        abdv[m16] = abdv[m5];
-        break;
-    case 054:
+        abdv[dst] = abdv[src];
+    } break;
+    case 054: {
         // mem[bdvect[dst]] = bdvect[012]
         // curcmd is ..... dst 54
-        m16 = (curcmd >> 6) & 077;
+        int dst = (curcmd.d >> 6) & 077;
         curcmd = curcmd >> 6;
-        *abdv[m16] = curDescr;
-        break;
+        *abdv[dst] = curDescr;
+    } break;
     case Mars::OP_EXIT:
         if (mars.dump_diffs)
             mars.dump();
         return Mars::ERR_SUCCESS;
     default:
         // In the original binary, loss of control ensued.
-        std::cerr << std::format("Invalid micro-operation {:o} encountered\n", m5.d);
+        std::cerr << std::format("Invalid micro-operation {:o} encountered\n",
+                                 curcmd.d & 077);
         abort();
     }
     jump(cmd0);
@@ -1407,9 +1405,9 @@ bool MarsImpl::key_manager(KeyOp op) {
     case A01160: jump(a01160);
     }
   delkey:
-    m16 = curMetaBlock;
-    m5 = curMetaBlock + Array[idx];
-    loc116 = m5.d ^ curMetaBlock.d; // Array[idx] & 077777
+    // Was loc116 = curMetaBlock ^ (curMetaBlock + Array[idx])
+    // using a 15-bit register to compute, which is effectively as good as ...
+    loc116 = (Array[idx].d & 077777) ? ARBITRARY_NONZERO : 0;
     work2 = block_len(curMetaBlock[-1]);
     if (work2 < 2)
         std::cerr << "work2 @ delkey < 2\n";
@@ -1434,22 +1432,21 @@ bool MarsImpl::key_manager(KeyOp op) {
             // Exclude the deleted block from the chain
             set_header(make_block_header(prev_block(acc), next_block(d00025), block_len(acc)));
         }
-        m5 = target(delkey);
+        d00033 = target(delkey);
         jump(pr1232);           // Do something and go to delkey again
     }
     acc = loc116.d;
     while (true) {
         acc &= 077777;
         if (!acc) {
-            d00011 = m16[0];
+            d00011 = curMetaBlock[0];
             goto_ = target(a01242);
             d00033 = target(a00731);
         }
         jump(a01160);
       a00731:
         acc = d00011.d;
-        m16 = curMetaBlock;
-        m16[Array[idx]] = acc;
+        curMetaBlock[Array[idx]] = acc;
         acc = Array[idx].d;
     }
   a01136:
@@ -1458,8 +1455,7 @@ bool MarsImpl::key_manager(KeyOp op) {
     acc |= INDIRECT;
   addkey:
     newDescr = acc;
-    m16 = curMetaBlock;
-    newkey = m5 = curMetaBlock + Array[idx] + 2;
+    newkey = (curMetaBlock + Array[idx] + 2) & 077777;
     if (verbose) {
         size_t total = block_len(curMetaBlock[-1]);
         size_t downto = block_len(Array[idx]) + 2;
@@ -1473,10 +1469,10 @@ bool MarsImpl::key_manager(KeyOp op) {
     newkey[1] = newDescr;
     curMetaBlock[-1] = curMetaBlock[-1] + 2;
   a01160:                       // generic metablock update ???
-    usrloc = m16 - 1;
+    usrloc = curMetaBlock - 1;
     if (idx == 0) {
         mylen = META_SIZE;
-        if (m16[-1] == META_SIZE-1) {
+        if (curMetaBlock[-1] == META_SIZE-1) {
             // The root metablock is full
             if (usable_space() < 0101) {
                 metaflag = 0;
@@ -1496,9 +1492,9 @@ bool MarsImpl::key_manager(KeyOp op) {
         } else
             return false;
     }
-    if (block_len(m16[-1]) != 0100) {
+    if (block_len(curMetaBlock[-1]) != 0100) {
         // The current metablock has not reached the max allowed length
-        mylen = block_len(m16[-1]) + 1;
+        mylen = block_len(curMetaBlock[-1]) + 1;
         update(curBlockDescr);
         if (goto_.d) {
             goto_ = 0; jump(a01242);
@@ -1526,17 +1522,15 @@ bool MarsImpl::key_manager(KeyOp op) {
     d00025 = Secondary[0];
     Secondary[0] = make_block_header(prev_block(d00025), newDescr.d, 040);
     d00032 = make_block_header(newDescr.d, 0, 0);
-    m16 = Secondary+1;
     usrloc = Secondary;
     mylen = block_len(Secondary[0]) + 1;
     update(curBlockDescr);
-    m5 = target(a01136);
+    d00033 = target(a01136);
     // pr1232 can return in 3 ways:
-    // - continue execution (following m5)
+    // - continue execution (following d00033)
     // - terminating execution of the instruction (returning false)
     // - conditionaly skipping micro-instructions (returning true)
   pr1232:
-    d00033 = m5;
     desc2 = 1;
     acc = next_block(d00025);
     if (acc) {
@@ -1561,7 +1555,7 @@ bool MarsImpl::key_manager(KeyOp op) {
     for (;;) {
         d00012 = acc;
         acc >>= 15;
-        m16 = acc;
+        int i = acc & BITS(15);
         if (!(d00012.d & 077777)) {
             if (verbose) {
                 if (d00033 == target(a01136))
@@ -1577,12 +1571,12 @@ bool MarsImpl::key_manager(KeyOp op) {
         }
         // The following code is not covered by tests
         acc = d00012.d;
-        --m16;
-        if (m16.d) {
+        --i;
+        if (i) {
             acc += 2;
         }
         d00012 = acc - 1;
-        if (step(m16))
+        if (step(i))
             return true;
         acc = d00012.d;
     }

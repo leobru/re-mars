@@ -53,7 +53,7 @@ longtests:      $(LONGTESTS_SHA)
 clean:
 		rm -rf *.run
 		rm -f $(TESTS_EXE) $(TESTS_SHA) $(LONGTESTS_SHA)
-		rm -f *.o ../*.o gtests
+		rm -f *.o ../*.o *.gcno *.gcda ../*.gcno ../*.gcda gtests
 
 gtests:         $(OBJS) $(GTEST) ../mars.o
 		$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
