@@ -41,7 +41,7 @@ The semantics of micro-instructions (with the range of possible valid codes 00-5
 |  04  |   NEXT   | Step forward (with conditionality, see 14) |
 |  05  |  INSMETA | Makes and inserts a metadata block |
 |  06  |  SETMETA | Sets the current datum as the main metadata block  |
-|  07  |    ???   | Non-writing |
+|  07  |  GETWORD | Get a word at the given offset from the current datum  |
 |  10  |   INIT   | Initialize a container/catalog |
 |  11  |   FIND   | Find an entry by key |
 |  12  |  SETCTL  | Copy the value to the catalog descriptor |

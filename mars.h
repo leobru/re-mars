@@ -15,7 +15,7 @@ class Mars {
         ERR_INV_NAME = 4,           // 0 or with high bit set
         ERR_BAD_CATALOG = 5,        // data corruption
         ERR_OVERFLOW = 6,           // self-explanatory
-        ERR_STEP = 7,               // unclear
+        ERR_STEP = 7,               // offset into datum too large
         ERR_NO_NAME = 8,            // requested key name not found
         ERR_EXISTS = 9,             // key already exists
         ERR_NO_END_MARK = 10,       // end mark not found within specified range
@@ -37,6 +37,7 @@ class Mars {
         OP_NEXT = 4,
         OP_INSMETA = 5,
         OP_SETMETA = 6,
+        OP_GETWORD = 7,
         OP_INIT = 010,
         OP_FIND = 011,
         OP_SETCTL = 012,
