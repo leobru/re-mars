@@ -93,7 +93,7 @@ int experiment(Mars & mars, int step, size_t numrec) {
     mars.SetDB(052, 0, 01731);
 
     mars.trace_stores = false;
-    std::vector<int> a(numrec + (numrec >> 15));
+    std::vector<int> a(numrec);
     srandom(step);
     for (size_t i = 0; i < a.size(); ++i)
         a[i] = random();
