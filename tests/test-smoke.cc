@@ -6,23 +6,6 @@
 #include "fixture.h"
 #include "mars.h"
 
-static void run_command(std::string &result, const std::string &cmd)
-{
-    // Run a standalone test executable.
-    FILE *pipe = popen(cmd.c_str(), "r");
-    ASSERT_TRUE(pipe != nullptr);
-
-    // Capture output.
-    result = stream_contents(pipe);
-    std::cout << result;
-
-    // Check exit code.
-    int exit_status = pclose(pipe);
-    int exit_code   = WEXITSTATUS(exit_status);
-    ASSERT_NE(exit_status, -1);
-    ASSERT_EQ(exit_code, 0);
-}
-
 TEST(mars, diagnostics)
 {
     Mars mars(false);

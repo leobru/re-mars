@@ -8,11 +8,13 @@ CXXFLAGS        ?= -std=c++20
 # Superseded by test-smoke
 # TESTS           = test-initdb test-coverage
 #
-LONGTESTS       = test-maxsize
+# Superseded by test-long
+# LONGTESTS       = test-maxsize
 TESTS_SHA       = $(addsuffix .sha,$(TESTS))
 TESTS_EXE       = $(addsuffix .exe,$(TESTS))
 LONGTESTS_SHA   = $(addsuffix .sha,$(LONGTESTS))
 OBJS            = ../mars.o test-smoke.o test-stores.o test-random.o fixture.o
+LONG_OBJS	= ../mars.o test-long.o fixture.o
 GTEST           = gtest-all.o gtest_main.o
 
 # Find googletest sources
@@ -32,7 +34,8 @@ endif
 tests:          gtests $(TESTS_SHA)
 		./gtests
 
-longtests:      $(LONGTESTS_SHA)
+longtests:      glongtests $(LONGTESTS_SHA)
+		./glongtests
 
 %.sha: %.exe %.gold
 		test=`basename $< .exe`;\
@@ -56,6 +59,9 @@ clean:
 		rm -f *.o ../*.o *.gcno *.gcda ../*.gcno ../*.gcda gtests
 
 gtests:         $(OBJS) $(GTEST) ../mars.o
+		$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
+
+glongtests:	$(LONG_OBJS) $(GTEST) ../mars.o
 		$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
 
 gtest-all.o:    $(GTEST_DIR)/src/gtest-all.cc

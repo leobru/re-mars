@@ -56,5 +56,9 @@ inline std::string tobesm(std::string s) {
     return s;
 }
 
+//
+// Run a command, saving its stdout to the result string.
+//
+void run_command(std::string &result, const std::string &cmd);
 
 #endif // MARS_TESTS_UTIL_H

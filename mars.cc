@@ -109,7 +109,7 @@ struct MarsImpl {
     uint64_t & arch;
     wordref abdv, d00010, d00011, d00012,
         goto_, zoneKey, usrloc,
-        jmpoff, extentHeader, newDescr, d00025,
+        extentHeader, newDescr, d00025,
         temp, chainHead, d00032, remlen,
         work, work2, IOword;
     std::unordered_map<std::string, Page> DiskImage;
@@ -173,7 +173,6 @@ struct MarsImpl {
         goto_(data[BDSYS+014]),
         zoneKey(data[BDSYS+015]),
         usrloc(data[BDSYS+016]),
-        jmpoff(data[BDSYS+022]),
         extentHeader(data[BDSYS+023]),
         newDescr(data[BDSYS+024]),
         d00025(data[BDSYS+025]),
@@ -208,7 +207,11 @@ struct MarsImpl {
     void setctl(uint64_t);
     void free_extent(int), free(uint64_t);
     void find_end_mark(), find_end_word();
-    bool proc270(bool &), step(word), a00334(word);
+    enum Ops {
+        FROMBASE, TOBASE, COMPARE, ONEWORD, DONE
+    };
+    bool perform(Ops, bool &);
+    bool step(word), access_data(Ops, word);
     bool cmd46();
     void assign_and_incr(uint64_t);
     void setup();
@@ -336,10 +339,6 @@ union Accumulator {
     uint64_t& operator--() { --d; d &= MASK; return d; }
 
 } acc;
-
-enum Ops {
-    FROMBASE, TOBASE, COMPARE, ONEWORD, DONE
-};
 
 const char * msg[] = {
     "Zero key", "Page corrupted", "No such record", "Invalid name",
@@ -626,13 +625,13 @@ void MarsImpl::get_secondary_block(word descr) {
 }
 
 void MarsImpl::skip(Error e) {
-    acc = curcmd.d >> 6;
+    acc = curcmd >> 6;
     if (!acc || (acc & 077))
         throw e;
     // Removes the current micro-instruction,
     // the 00 after it, and the next 3 micro-instructions,
     // totaling 5. 5 x 6 bit = 30
-    acc = curcmd.d >> 30;
+    acc = curcmd >> 30;
 }
 
 void MarsImpl::setctl(uint64_t location) {
@@ -720,20 +719,22 @@ void MarsImpl::find_end_mark() {
     mylen = (found - start) / 8 + 1;
 }
 
-// Performs the operation requested in jmpoff
+// Performs the operation requested (op)
 // on the current extent and adjusts remaining
 // length and the user location.
 // If the operation was not complete, set done = false
 // for ONEWORD, usrloc is not updated (extent traversal only).
-bool MarsImpl::proc270(bool &done) {
-    int len = temp.d;
+// DONE is unused.
+bool MarsImpl::perform(Ops op, bool &done) {
+    int len = temp.d;           // data length to operate upon
     if (temp.d >= curExtLength.d) {
+        // The desired length is too long; adjust it
         temp = temp - curExtLength;
         len = curExtLength.d;
         done = false;
     }
-    // Now len = current extent length, temp = remaining length (may be 0)
-    switch (jmpoff.d) {
+    // Now len = current extent length or less, temp = remaining length (may be 0)
+    switch (op) {
     case FROMBASE:
         copy_words(usrloc, extPtr, len);
         break;
@@ -756,7 +757,7 @@ bool MarsImpl::proc270(bool &done) {
     case DONE:
         break;
     }
-    usrloc = usrloc.d + curExtLength.d;
+    usrloc = usrloc + curExtLength;
     return false;
 }
 
@@ -801,14 +802,14 @@ bool MarsImpl::step(word dir) {
     return false;
 }
 
-bool MarsImpl::a00334(word arg) {
+bool MarsImpl::access_data(Ops op, word arg) {
     bool done;
     temp = arg;
     curlen = curlen + arg;
     usrloc = myloc;
   a00270:
     done = true;
-    if (proc270(done)) {
+    if (perform(op, done)) {
         // COMPARE failed, skip an instruction
         return true;
     }
@@ -823,7 +824,7 @@ bool MarsImpl::a00334(word arg) {
             find_item(acc);
             jump(a00270);
         }
-        if (jmpoff == DONE
+        if (op == DONE
             // impossible? should compare with ONEWORD, or deliberate as a binary patch?
             || temp.d) {
             skip(Mars::ERR_STEP);
@@ -836,8 +837,7 @@ bool MarsImpl::a00334(word arg) {
 // Read word at offset 'desc2' of the datum 'arg'
 uint64_t MarsImpl::get_word(uint64_t arg) {
     find_item(arg);
-    jmpoff = ONEWORD;
-    a00334(desc2);
+    access_data(ONEWORD, desc2);
     return acc;
 }
 
@@ -858,7 +858,7 @@ bool MarsImpl::cmd46() {
     desc2 = acc -= curlen.d;
     acc = (myloc >> 33) & 017777;
     if (!acc) {
-        acc = curcmd.d >> 30;
+        acc = curcmd >> 30;
         return true;
     }
     mylen = acc;
@@ -883,16 +883,14 @@ void MarsImpl::overflow(word ext) {
 // free space.
 int MarsImpl::prepare_chunk(int z) {
     work = freeSpace[z-1] - 1;
-    --z;
     if (work < mylen) {
         remlen = mylen - work;
         mylen = work;
         usrloc = usrloc - work;
-        acc = z;
-        ++z;
+        acc = z - 1;
     } else {
         usrloc = usrloc - mylen + 1;
-        acc = z;
+        acc = z - 1;
         z = 0;
     }
     return z;
@@ -1199,8 +1197,7 @@ Error MarsImpl::eval() try {
         get_block(adescr, Metadata-1);
         break;
     case Mars::OP_GETWORD:      // reads word at offset 'desc2'
-        jmpoff = ONEWORD;       // of the current datum into 'desc1'
-        a00334(desc2);
+        access_data(ONEWORD, desc2); // of the current datum into 'desc1'
         break;
     case Mars::OP_INIT:
         mkctl();
@@ -1302,18 +1299,15 @@ Error MarsImpl::eval() try {
     case Mars::OP_STOP:
         jump(next);
     case Mars::OP_IFEQ:
-        jmpoff = COMPARE;
-        if (a00334(mylen))
+        if (access_data(COMPARE, mylen))
             jump(next);
         break;
     case Mars::OP_MODIFY:
-        jmpoff = TOBASE;
-        if (a00334(mylen))
+        if (access_data(TOBASE, mylen))
             jump(next);
         break;
     case Mars::OP_COPY:
-        jmpoff = FROMBASE;
-        if(a00334(mylen))
+        if(access_data(FROMBASE, mylen))
             jump(next);
         break;
     case 044:
@@ -1352,15 +1346,15 @@ Error MarsImpl::eval() try {
     case Mars::OP_ASSIGN: {
         // bdvect[dst] = bdvect[src]
         // curcmd is ..... src dst 53
-        int dst = (curcmd.d >> 6) & 077;
-        int src = (curcmd.d >> 12) & 077;
+        int dst = (curcmd >> 6) & 077;
+        int src = (curcmd >> 12) & 077;
         curcmd = curcmd >> 12;
         abdv[dst] = abdv[src];
     } break;
     case 054: {
         // mem[bdvect[dst]] = bdvect[012]
         // curcmd is ..... dst 54
-        int dst = (curcmd.d >> 6) & 077;
+        int dst = (curcmd >> 6) & 077;
         curcmd = curcmd >> 6;
         *abdv[dst] = curDescr;
     } break;
