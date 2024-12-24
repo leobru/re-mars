@@ -807,31 +807,32 @@ bool MarsImpl::access_data(Ops op, word arg) {
     temp = arg;
     curlen = curlen + arg;
     usrloc = myloc;
-  a00270:
-    done = true;
-    if (perform(op, done)) {
-        // COMPARE failed, skip an instruction
-        return true;
-    }
-    if (done) {
-        extPtr = extPtr + temp;
-        curExtLength = curExtLength - temp;
-        acc = (*extPtr).d;
-        desc1 = acc;
-    } else {
-        acc = next_extent(curExtent);
-        if (acc) {
-            find_item(acc);
-            jump(a00270);
-        }
-        if (op == DONE
-            // impossible? should compare with ONEWORD, or deliberate as a binary patch?
-            || temp.d) {
-            skip(Mars::ERR_STEP);
+    for (;;) {
+        done = true;
+        if (perform(op, done)) {
+            // COMPARE failed, skip an instruction
             return true;
         }
+        if (done) {
+            extPtr = extPtr + temp;
+            curExtLength = curExtLength - temp;
+            acc = (*extPtr).d;
+            desc1 = acc;
+        } else {
+            acc = next_extent(curExtent);
+            if (acc) {
+                find_item(acc);
+                continue;
+            }
+            if (op == DONE
+                // impossible? should compare with ONEWORD, or deliberate as a binary patch?
+                || temp.d) {
+                skip(Mars::ERR_STEP);
+                return true;
+            }
+        }
+        return false;
     }
-    return false;
 }
 
 // Read word at offset 'desc2' of the datum 'arg'
@@ -1041,21 +1042,21 @@ void MarsImpl::update_by_reallocation(int pos) {
     }
 }
 
+// Looked like an off-by-one bug; however, in the binary code,
+// the procedure was not functional at all.
+// The loop enclosed the whole body of the procedure, so it would not terminate.
+// Likely intended for completeness along with find_end_mark() but never used.
 void MarsImpl::find_end_word() {
     int i;
-  cmd17:
     i = -mylen.d;
     work2 = myloc + mylen;
-    // loop_here:
-    if (work2[i] == endmrk) {
-        mylen = i + mylen.d + 1;
-        return;
-    }
-    if (i != 0) {
-        ++i;
-        jump(cmd17);            // Possibly a typo/oversight, ought to be loop_here
-    }
-    throw Mars::ERR_INTERNAL;         // Originally "no end word"
+    do {
+        if (work2[i] == endmrk) {
+            mylen = i + mylen.d + 1;
+            return;
+        }
+    } while (++i != 0); // "i++" in the binary
+    throw Mars::ERR_INTERNAL;
 }
 
 // base points to the payload of a metadata block
@@ -1382,6 +1383,7 @@ Error MarsImpl::eval() try {
     return e;
 }
 
+// Performs key insertion and deletion in the BTree
 bool MarsImpl::key_manager(KeyOp op) {
     enum { LOC_DELKEY, LOC_A00731, LOC_A01136 } dest;
     switch (op) {
