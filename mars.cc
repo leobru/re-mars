@@ -108,7 +108,7 @@ struct MarsImpl {
     // Fields of BDSYS
     uint64_t & arch;
     wordref abdv, d00010, d00011, d00012,
-        goto_, zoneKey, usrloc,
+        zoneKey, usrloc,
         extentHeader, newDescr, d00025,
         temp, chainHead, d00032, remlen,
         work, work2, IOword;
@@ -170,7 +170,6 @@ struct MarsImpl {
         d00010(data[BDSYS+010]),
         d00011(data[BDSYS+011]),
         d00012(data[BDSYS+012]),
-        goto_(data[BDSYS+014]),
         zoneKey(data[BDSYS+015]),
         usrloc(data[BDSYS+016]),
         extentHeader(data[BDSYS+023]),
@@ -216,6 +215,7 @@ struct MarsImpl {
     void assign_and_incr(uint64_t);
     void setup();
     Error eval();
+    bool one_insn();
     void overflow(word);
     int prepare_chunk(int);
     void allocator(int);
@@ -1153,18 +1153,32 @@ Error MarsImpl::eval() try {
     }
     // enter2:                       // continue execution after a callback?
     acc = orgcmd.d;
-    jump(next);
-  cmd0:
-    acc = curcmd >> 6;
-  next:
-    if (!acc) {
-        finalize(0);
-        if (mars.dump_diffs)
-            mars.dump();
-        return Mars::ERR_SUCCESS;
+    while (acc) {
+        curcmd = acc;
+        if (one_insn())
+            acc = curcmd >> 6;
     }
-    curcmd = acc;
-    goto_ = 0;
+    finalize(0);
+    if (mars.dump_diffs)
+        mars.dump();
+    return Mars::ERR_SUCCESS;
+} catch (Error e) {
+    if (e != Mars::ERR_SUCCESS) {
+        if (erhndl.d) {
+            // returning to erhndl instead of the point of call
+        }
+        data[7] = e;            // imitating M7 = e
+        std::cerr << std::format("ERROR {} ({})\n", int(e), msg[e-1]);
+        d00010 = *(uint64_t*)msg[e-1];
+        finalize(*((uint64_t*)msg[e-1]+1));
+    }
+    if (mars.dump_diffs)
+        mars.dump();
+    return e;
+}
+
+// Returns true when advancing the instruction word is needed.
+bool MarsImpl::one_insn() {
     // The switch is entered with acc = 0
     if (verbose)
         std::cerr << std::format("Executing microcode {:02o}\n", curcmd.d & 077);
@@ -1180,11 +1194,11 @@ Error MarsImpl::eval() try {
         break;
     case Mars::OP_PREV:
         if (step(1))
-            jump(next);
+            return false;
         break;
     case Mars::OP_NEXT:
         if (step(0))
-            jump(next);
+            return false;
         break;
     case Mars::OP_INSMETA:
         d00011 = 0;
@@ -1220,12 +1234,12 @@ Error MarsImpl::eval() try {
         if (curkey == key)
             break;
         skip(Mars::ERR_NO_NAME);
-        jump(next);
+        return false;
     case Mars::OP_NOMATCH:
         if (curkey != key)
             break;
         skip(Mars::ERR_EXISTS);
-        jump(next);
+        return false;
     case Mars::OP_STRLEN:
         find_end_mark();
         break;
@@ -1258,16 +1272,16 @@ Error MarsImpl::eval() try {
         d00011 = key;
         adescr = acc = curDescr.d;
         if (key_manager(ADDKEY))
-            jump(next);
+            return false;
         break;
     case Mars::OP_DELKEY:
         newkey = 0;              // looks dead
         if (key_manager(DELKEY))
-            jump(next);
+            return false;
         break;
     case Mars::OP_LOOP:
         acc = orgcmd.d;
-        jump(next);
+        return false;
     case Mars::OP_ROOT:
         DBkey = ROOTKEY;
         dbdesc = arch;
@@ -1292,24 +1306,24 @@ Error MarsImpl::eval() try {
     case Mars::OP_ADDMETA:
         curMetaBlock[Array[idx]+1] = curDescr;
         if (key_manager(A01160))
-            jump(next);
+            return false;
         break;
     case Mars::OP_SKIP:
         acc = curcmd >> 12;
-        jump(next);
+        return false;
     case Mars::OP_STOP:
-        jump(next);
+        return false;
     case Mars::OP_IFEQ:
         if (access_data(COMPARE, mylen))
-            jump(next);
+            return false;
         break;
     case Mars::OP_MODIFY:
         if (access_data(TOBASE, mylen))
-            jump(next);
+            return false;
         break;
     case Mars::OP_COPY:
         if(access_data(FROMBASE, mylen))
-            jump(next);
+            return false;
         break;
     case 044:
         adescr = desc1;
@@ -1319,7 +1333,7 @@ Error MarsImpl::eval() try {
         break;
     case 046:
         if (cmd46())
-            jump(next);
+            return false;
         break;
     case Mars::OP_CALL:
         acc = desc1.d;
@@ -1331,7 +1345,7 @@ Error MarsImpl::eval() try {
         // curcmd is ..... src 50
         assign_and_incr(&orgcmd - &data[BDVECT]);
         acc = orgcmd;
-        jump(next);
+        return false;
     case 051:
         // myloc := mem[bdvect[src]++]
         // curcmd is ..... src 51
@@ -1360,32 +1374,20 @@ Error MarsImpl::eval() try {
         *abdv[dst] = curDescr;
     } break;
     case Mars::OP_EXIT:
-        if (mars.dump_diffs)
-            mars.dump();
-        return Mars::ERR_SUCCESS;
+        throw Mars::ERR_SUCCESS;
     default:
         // In the original binary, loss of control ensued.
         std::cerr << std::format("Invalid micro-operation {:o} encountered\n",
                                  curcmd.d & 077);
         abort();
     }
-    jump(cmd0);
-} catch (Error e) {
-    if (erhndl.d) {
-        // savm16 = erhndl;  // returning to erhndl instead of the point of call
-    }
-    data[7] = e;                // imitating M7 = e
-    std::cerr << std::format("ERROR {} ({})\n", int(e), msg[e-1]);
-    d00010 = *(uint64_t*)msg[e-1];
-    finalize(*((uint64_t*)msg[e-1]+1));
-    if (mars.dump_diffs)
-        mars.dump();
-    return e;
+    return true;
 }
 
 // Performs key insertion and deletion in the BTree
 bool MarsImpl::key_manager(KeyOp op) {
     enum { LOC_DELKEY, LOC_A00731, LOC_A01136 } dest;
+    bool recurse = false;
     switch (op) {
     case ADDKEY: jump(addkey);
     case DELKEY: jump(delkey);
@@ -1427,7 +1429,7 @@ bool MarsImpl::key_manager(KeyOp op) {
         acc &= 077777;
         if (!acc) {
             d00011 = curMetaBlock[0];
-            goto_ = 1;
+            recurse = true;
             dest = LOC_A00731;
         }
         jump(a01160);
@@ -1473,8 +1475,8 @@ bool MarsImpl::key_manager(KeyOp op) {
             mylen = META_SIZE;
         }
         update(metaflag);       // update the root metablock
-        if (goto_.d) {
-            goto_ = 0; jump(a01242);
+        if (recurse) {
+            recurse = false; jump(a01242);
         } else
             return false;
     }
@@ -1482,8 +1484,8 @@ bool MarsImpl::key_manager(KeyOp op) {
         // The current metablock has not reached the max allowed length
         mylen = block_len(curMetaBlock[-1]) + 1;
         update(curBlockDescr);
-        if (goto_.d) {
-            goto_ = 0; jump(a01242);
+        if (recurse) {
+            recurse = false; jump(a01242);
         } else
             return false;
     }
@@ -1527,10 +1529,7 @@ bool MarsImpl::key_manager(KeyOp op) {
     curMetaBlock = Metadata+1;
     if (idx == 0) {
         set_dirty_tab();
-        if (goto_.d) {
-            goto_ = 0; jump(a01242);
-        } else
-            return false;
+        return false;
     }
     idx = idx - 2;
     if (idx != 0) {
