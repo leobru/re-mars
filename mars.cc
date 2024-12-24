@@ -215,7 +215,7 @@ struct MarsImpl {
     void assign_and_incr(uint64_t);
     void setup();
     Error eval();
-    bool one_insn();
+    uint64_t one_insn();
     void overflow(word);
     int prepare_chunk(int);
     void allocator(int);
@@ -1152,12 +1152,11 @@ Error MarsImpl::eval() try {
         IOcall(IOword);
     }
     // enter2:                       // continue execution after a callback?
-    acc = orgcmd.d;
-    while (acc) {
-        curcmd = acc;
-        if (one_insn())
-            acc = curcmd >> 6;
-    }
+    uint64_t next = orgcmd.d;
+    do {
+        curcmd = next;
+        next = one_insn();
+    } while (next);
     finalize(0);
     if (mars.dump_diffs)
         mars.dump();
@@ -1178,7 +1177,7 @@ Error MarsImpl::eval() try {
 }
 
 // Returns true when advancing the instruction word is needed.
-bool MarsImpl::one_insn() {
+uint64_t MarsImpl::one_insn() {
     // The switch is entered with acc = 0
     if (verbose)
         std::cerr << std::format("Executing microcode {:02o}\n", curcmd.d & 077);
@@ -1194,11 +1193,11 @@ bool MarsImpl::one_insn() {
         break;
     case Mars::OP_PREV:
         if (step(1))
-            return false;
+            return acc;
         break;
     case Mars::OP_NEXT:
         if (step(0))
-            return false;
+            return acc;
         break;
     case Mars::OP_INSMETA:
         d00011 = 0;
@@ -1234,12 +1233,12 @@ bool MarsImpl::one_insn() {
         if (curkey == key)
             break;
         skip(Mars::ERR_NO_NAME);
-        return false;
+        return acc;
     case Mars::OP_NOMATCH:
         if (curkey != key)
             break;
         skip(Mars::ERR_EXISTS);
-        return false;
+        return acc;
     case Mars::OP_STRLEN:
         find_end_mark();
         break;
@@ -1272,16 +1271,15 @@ bool MarsImpl::one_insn() {
         d00011 = key;
         adescr = acc = curDescr.d;
         if (key_manager(ADDKEY))
-            return false;
+            return acc;
         break;
     case Mars::OP_DELKEY:
         newkey = 0;              // looks dead
         if (key_manager(DELKEY))
-            return false;
+            return acc;
         break;
     case Mars::OP_LOOP:
-        acc = orgcmd.d;
-        return false;
+        return orgcmd.d;
     case Mars::OP_ROOT:
         DBkey = ROOTKEY;
         dbdesc = arch;
@@ -1300,30 +1298,27 @@ bool MarsImpl::one_insn() {
     case Mars::OP_SAVE:
         acc = dirty.d;
         save();
-        if (mars.dump_diffs)
-            mars.dump();
-        return Mars::ERR_SUCCESS;
+        throw Mars::ERR_SUCCESS;
     case Mars::OP_ADDMETA:
         curMetaBlock[Array[idx]+1] = curDescr;
         if (key_manager(A01160))
-            return false;
+            return acc;
         break;
     case Mars::OP_SKIP:
-        acc = curcmd >> 12;
-        return false;
+        return curcmd >> 12;
     case Mars::OP_STOP:
-        return false;
+        return 0;
     case Mars::OP_IFEQ:
         if (access_data(COMPARE, mylen))
-            return false;
+            return acc;
         break;
     case Mars::OP_MODIFY:
         if (access_data(TOBASE, mylen))
-            return false;
+            return acc;
         break;
     case Mars::OP_COPY:
         if(access_data(FROMBASE, mylen))
-            return false;
+            return acc;
         break;
     case 044:
         adescr = desc1;
@@ -1333,7 +1328,7 @@ bool MarsImpl::one_insn() {
         break;
     case 046:
         if (cmd46())
-            return false;
+            return acc;
         break;
     case Mars::OP_CALL:
         acc = desc1.d;
@@ -1344,8 +1339,7 @@ bool MarsImpl::one_insn() {
         // cmd := mem[bdvect[src]++]
         // curcmd is ..... src 50
         assign_and_incr(&orgcmd - &data[BDVECT]);
-        acc = orgcmd;
-        return false;
+        return orgcmd.d;
     case 051:
         // myloc := mem[bdvect[src]++]
         // curcmd is ..... src 51
@@ -1381,7 +1375,7 @@ bool MarsImpl::one_insn() {
                                  curcmd.d & 077);
         abort();
     }
-    return true;
+    return curcmd >> 6;
 }
 
 // Performs key insertion and deletion in the BTree
