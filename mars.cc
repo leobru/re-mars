@@ -220,7 +220,7 @@ struct MarsImpl {
     int prepare_chunk(int);
     void allocator(int);
     enum KeyOp { ADDKEY, DELKEY, A01160 };
-    bool key_manager(KeyOp);
+    uint64_t key_manager(KeyOp);
     void mkctl(), find(word);
     void update_by_reallocation(int), search_in_block(word*), update(word);
     void setDirty(int x) {
@@ -1213,7 +1213,7 @@ uint64_t MarsImpl::one_insn() {
         datumLen = META_SIZE;
         get_block(adescr, Metadata-1);
         break;
-    case Mars::OP_GETWORD:      // reads word at offset 'desc2'
+    case Mars::OP_SEEK:      // reads word at offset 'desc2'
         access_data(ONEWORD, desc2); // of the current datum into 'desc1'
         break;
     case Mars::OP_INIT:
@@ -1271,14 +1271,10 @@ uint64_t MarsImpl::one_insn() {
     case Mars::OP_ADDKEY:
         d00011 = key;
         adescr = acc = curDescr.d;
-        if (key_manager(ADDKEY))
-            return acc;
-        break;
+        return key_manager(ADDKEY);
     case Mars::OP_DELKEY:
         newkey = 0;              // looks dead
-        if (key_manager(DELKEY))
-            return acc;
-        break;
+        return key_manager(DELKEY);
     case Mars::OP_LOOP:
         return orgcmd.d;
     case Mars::OP_ROOT:
@@ -1302,9 +1298,7 @@ uint64_t MarsImpl::one_insn() {
         throw Mars::ERR_SUCCESS;
     case Mars::OP_ADDMETA:
         curMetaBlock[Array[idx]+1] = curDescr;
-        if (key_manager(A01160))
-            return acc;
-        break;
+        return key_manager(A01160);
     case Mars::OP_SKIP:
         return curcmd >> 12;
     case Mars::OP_STOP:
@@ -1380,8 +1374,8 @@ uint64_t MarsImpl::one_insn() {
 }
 
 // Performs key insertion and deletion in the BTree
-bool MarsImpl::key_manager(KeyOp op) {
-    enum { LOC_DELKEY, LOC_A00731, LOC_A01136 } dest;
+uint64_t MarsImpl::key_manager(KeyOp op) {
+    enum { LOC_DELKEY, LOC_A00731, LOC_ADDKEY } dest;
     bool recurse = false;
     switch (op) {
     case ADDKEY: jump(addkey);
@@ -1432,10 +1426,6 @@ bool MarsImpl::key_manager(KeyOp op) {
         curMetaBlock[Array[idx]] = d00011;
         acc = Array[idx].d;
     }
-  a01136:
-    acc = d00032.d;
-    acc >>= 29;
-    acc |= INDIRECT;
   addkey:
     newDescr = acc;
     newkey = (curMetaBlock + Array[idx] + 2) & 077777;
@@ -1472,8 +1462,8 @@ bool MarsImpl::key_manager(KeyOp op) {
         update(metaflag);       // update the root metablock
         if (recurse) {
             recurse = false; jump(a01242);
-        } else
-            return false;
+        }
+        return curcmd >> 6;
     }
     if (block_len(curMetaBlock[-1]) != 0100) {
         // The current metablock has not reached the max allowed length
@@ -1481,8 +1471,8 @@ bool MarsImpl::key_manager(KeyOp op) {
         update(curBlockDescr);
         if (recurse) {
             recurse = false; jump(a01242);
-        } else
-            return false;
+        }
+        return curcmd >> 6;
     }
     work = (idx * 2) + META_SIZE;
     if (Metadata[0] == 036) {
@@ -1508,11 +1498,11 @@ bool MarsImpl::key_manager(KeyOp op) {
     usrloc = Secondary;
     mylen = block_len(Secondary[0]) + 1;
     update(curBlockDescr);
-    dest = LOC_A01136;
+    dest = LOC_ADDKEY;
     // pr1232 can return in 3 ways:
     // - continue execution (following dest)
-    // - terminating execution of the instruction (returning false)
-    // - conditionaly skipping micro-instructions (returning true)
+    // - terminating execution of the instruction (returning curcmd >> 6)
+    // - conditionaly skipping micro-instructions afer step() (returning acc)
   pr1232:
     desc2 = 1;
     acc = next_block(d00025);
@@ -1524,7 +1514,7 @@ bool MarsImpl::key_manager(KeyOp op) {
     curMetaBlock = Metadata+1;
     if (idx == 0) {
         set_dirty_tab();
-        return false;
+        return curcmd >> 6;
     }
     idx = idx - 2;
     if (idx != 0) {
@@ -1538,10 +1528,11 @@ bool MarsImpl::key_manager(KeyOp op) {
         int i = acc & BITS(15);
         if (!(d00012.d & 077777)) {
             switch (dest) {
-            case LOC_A01136:
+            case LOC_ADDKEY:
+                acc = (d00032.d >> 29) | INDIRECT;
                 if (verbose)
-                    std::cerr << "Jump target a01136\n";
-                jump(a01136);
+                    std::cerr << "Jump target addkey\n";
+                jump(addkey);
             case LOC_DELKEY:
                 if (verbose)
                     std::cerr << "Jump target delkey\n";
@@ -1560,7 +1551,7 @@ bool MarsImpl::key_manager(KeyOp op) {
         }
         d00012 = acc - 1;
         if (step(i))
-            return true;
+            return acc;
         acc = d00012.d;
     }
 }

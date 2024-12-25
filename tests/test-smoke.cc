@@ -21,9 +21,9 @@ TEST(mars, diagnostics)
     ASSERT_EQ(mars.getd(one, 0, 0), Mars::ERR_SUCCESS);
     ASSERT_EQ(mars.getd(one, 0, 1), Mars::ERR_TOO_LONG);
     mars.data[Mars::BDVECT+042] = 2;
-    ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_GETWORD)), Mars::ERR_SUCCESS);
+    ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_SEEK)), Mars::ERR_SUCCESS);
     mars.data[Mars::BDVECT+042] = 5;
-    ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_GETWORD)), Mars::ERR_STEP);
+    ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_SEEK)), Mars::ERR_STEP);
     // The deld(one); operation is implemented using micro-instruction word chaining
     mars.data[Mars::BDVECT] = 077770;
     mars.data[077770] = Mars::mcprog(Mars::OP_MATCH, Mars::OP_CHAIN);

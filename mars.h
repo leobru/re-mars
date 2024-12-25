@@ -37,7 +37,7 @@ class Mars {
         OP_NEXT = 4,
         OP_INSMETA = 5,
         OP_SETMETA = 6,
-        OP_GETWORD = 7,
+        OP_SEEK = 7,
         OP_INIT = 010,
         OP_FIND = 011,
         OP_SETCTL = 012,
