@@ -202,7 +202,7 @@ struct MarsImpl {
     void get_block(word, word*), get_root_block(), get_secondary_block(word);
     void free_from_current_extent(int);
     uint64_t get_word(uint64_t);
-    void skip(Error);
+    uint64_t skip(Error);
     void setctl(uint64_t);
     void free_extent(int), free(uint64_t);
     void find_end_mark(), find_end_word();
@@ -322,7 +322,7 @@ inline uint64_t make_block_header(uint64_t prev, uint64_t next, uint64_t len) {
     return prev << 29 | next << 10 | len;
 }
 
-union Accumulator {
+struct Accumulator {
     static const uint64_t MASK = BITS(48);
     uint64_t d;
     operator uint64_t() { return d; }
@@ -506,14 +506,14 @@ uint64_t MarsImpl::find_item(uint64_t arg) {
     if (!work.d)
         throw Mars::ERR_ZEROKEY;      // Attempting to find a placeholder?
     work2 = work.d << 29;
-    acc = curbuf[1] & (BITS(10) << 10);
-    if (!acc)
+    uint64_t record = curbuf[1].d & (BITS(10) << 10);
+    if (!record)
         throw Mars::ERR_NO_RECORD;    // Attempting to find a deleted record?
     // Records within the zone may be non-contiguous but sorted;
     // need to search only from the indicated position toward lower addresses.
-    if (acc >= work.d)
-        acc = work.d;
-    loc116 = acc >> 10;
+    if (record >= work.d)
+        record = work.d;
+    loc116 = record >> 10;
     for (;;) {
         curExtent = curbuf[loc116+1];
         if (get_id(curExtent) == get_id(work2)) {
@@ -624,14 +624,17 @@ void MarsImpl::get_secondary_block(word descr) {
     get_block(descr, Secondary-1);
 }
 
-void MarsImpl::skip(Error e) {
-    acc = curcmd >> 6;
-    if (!acc || (acc & 077))
+// If the micro-instruction after tue current one is OP_COND (00)
+// and there are instructions after it to be skipped, skip them;
+// otherwise, throw an error.
+uint64_t MarsImpl::skip(Error e) {
+    auto next = curcmd >> 6;
+    if (!next || (next & 077))
         throw e;
     // Removes the current micro-instruction,
     // the 00 after it, and the next 3 micro-instructions,
     // totaling 5. 5 x 6 bit = 30
-    acc = curcmd >> 30;
+    return curcmd >> 30;
 }
 
 void MarsImpl::setctl(uint64_t location) {
@@ -747,7 +750,6 @@ bool MarsImpl::perform(Ops op, bool &done) {
     // which is being compared, is never empty?
         do {
             if (extPtr[len-1] != usrloc[len-1]) {
-                acc = curcmd >> 12;
                 return true;
             }
         } while (--len);
@@ -775,7 +777,7 @@ bool MarsImpl::step(word dir) {
         if ((acc & 01777) == block_len(curMetaBlock[-1])) {
             auto next = next_block(curMetaBlock[-1]);
             if (!next) {
-                skip(Mars::ERR_NO_NEXT);
+                acc = skip(Mars::ERR_NO_NEXT);
                 return true;
             }
             get_secondary_block(next);
@@ -787,7 +789,7 @@ bool MarsImpl::step(word dir) {
         if (!pos) {
             auto prev = prev_block(curMetaBlock[-1]);
             if (!prev) {
-                skip(Mars::ERR_NO_PREV);
+                acc = skip(Mars::ERR_NO_PREV);
                 return true;
             }
             get_secondary_block(prev);
@@ -811,6 +813,7 @@ bool MarsImpl::access_data(Ops op, word arg) {
         done = true;
         if (perform(op, done)) {
             // COMPARE failed, skip an instruction
+            acc = curcmd >> 12;
             return true;
         }
         if (done) {
@@ -827,7 +830,7 @@ bool MarsImpl::access_data(Ops op, word arg) {
             if (op == DONE
                 // impossible? should compare with ONEWORD, or deliberate as a binary patch?
                 || temp.d) {
-                skip(Mars::ERR_STEP);
+                acc = skip(Mars::ERR_STEP);
                 return true;
             }
         }
@@ -1232,13 +1235,11 @@ uint64_t MarsImpl::one_insn() {
     case Mars::OP_MATCH:
         if (curkey == key)
             break;
-        skip(Mars::ERR_NO_NAME);
-        return acc;
+        return skip(Mars::ERR_NO_NAME);
     case Mars::OP_NOMATCH:
         if (curkey != key)
             break;
-        skip(Mars::ERR_EXISTS);
-        return acc;
+        return skip(Mars::ERR_EXISTS);
     case Mars::OP_STRLEN:
         find_end_mark();
         break;
