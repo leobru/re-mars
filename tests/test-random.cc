@@ -66,7 +66,7 @@ TEST(mars, randomdel)
     mars.InitDB(052, 0, 0100);
     mars.SetDB(052, 0, 0100);
     mars.root();
-    mars.data[Mars::BDVECT+6] = 3; // minimize syncing
+    mars.disableSync = 3; // minimize syncing
     int space = mars.avail();
     result = std::format("Initially: {}\n", space);
 

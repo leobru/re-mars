@@ -91,10 +91,10 @@ struct MarsImpl {
     // the registers are mapped to the lower addresses of the RAM.
 
     // Fields of BDVECT
-    wordref outadr, orgcmd, curcmd, syncw, givenp, key,
+    wordref outadr, orgcmd, curcmd, disableSync, givenp, key,
         erhndl, curDescr, myloc, loc14, mylen, bdbuf, bdtab,
         metaflag, dbdesc, DBkey, savedp, freeSpace, adescr, newkey,
-        curkey, endmrk, desc1, desc2, IOpat, curExtLength, extPtr, datumLen,
+        curkey, endmrk, desc1, offset, IOpat, curExtLength, extPtr, datumLen,
         curMetaBlock, dblen, curlen, loc116,
         curExtent, curbuf, curZone, curBlockDescr,
         dirty;
@@ -122,7 +122,7 @@ struct MarsImpl {
         outadr(data[BDVECT+1]),
         orgcmd(data[BDVECT+3]),
         curcmd(data[BDVECT+5]),
-        syncw(data[BDVECT+6]),
+        disableSync(data[BDVECT+6]),
         givenp(data[BDVECT+7]),
         key(data[BDVECT+010]),
         erhndl(data[BDVECT+011]),
@@ -142,7 +142,7 @@ struct MarsImpl {
         curkey(data[BDVECT+037]),
         endmrk(data[BDVECT+040]),
         desc1(data[BDVECT+041]),
-        desc2(data[BDVECT+042]),
+        offset(data[BDVECT+042]),
         IOpat(data[BDVECT+044]),
         curExtLength(data[BDVECT+045]),
         extPtr(data[BDVECT+046]),
@@ -207,7 +207,7 @@ struct MarsImpl {
     void free_extent(int), free(uint64_t);
     void find_end_mark(), find_end_word();
     enum Ops {
-        FROMBASE, TOBASE, COMPARE, ONEWORD, DONE
+        FROMBASE, TOBASE, COMPARE, SEEK, DONE
     };
     bool perform(Ops, bool &);
     bool step(word), access_data(Ops, word);
@@ -342,7 +342,7 @@ struct Accumulator {
 
 const char * msg[] = {
     "Zero key", "Page corrupted", "No such record", "Invalid name",
-    "1st page corrupted", "Overflow", "Step too big", "No such name",
+    "1st page corrupted", "Overflow", "Out of bounds", "No such name",
     "Name already exists", "No end symbol", "Internal error", "Record too long",
     "DB is locked", "No current record", "No prev. record", "No next record",
     "Wrong password" };
@@ -448,8 +448,8 @@ void MarsImpl::save(bool force_tab = false) {
 void MarsImpl::finalize(word err) {
     d00011 = err;
     bool force_tab = false;
-    if (syncw != 0) {
-        if (syncw != 1)
+    if (disableSync != 0) {
+        if (disableSync != 1)
             return;
         if (bdtab[1].d & LOCKKEY) {
             bdtab[1].d &= ~LOCKKEY;
@@ -544,7 +544,7 @@ void MarsImpl::totext() {
                                      (v >> 46) & 3, (v >> 42) & 15,
                                      (v >> 41) & 1, (v >> 37) & 15,
                                      (v >> 33) & 15));
-    desc2 = Mars::tobesm(std::format("\172\033\0\0\0\0"));
+    offset = Mars::tobesm(std::format("\172\033\0\0\0\0"));
 }
 
 void MarsImpl::set_header(word arg) {
@@ -726,7 +726,7 @@ void MarsImpl::find_end_mark() {
 // on the current extent and adjusts remaining
 // length and the user location.
 // If the operation was not complete, set done = false
-// for ONEWORD, usrloc is not updated (extent traversal only).
+// for SEEK, usrloc is not updated (extent traversal only).
 // DONE is unused.
 bool MarsImpl::perform(Ops op, bool &done) {
     int len = temp.d;           // data length to operate upon
@@ -754,7 +754,7 @@ bool MarsImpl::perform(Ops op, bool &done) {
             }
         } while (--len);
         break;
-    case ONEWORD:
+    case SEEK:
         return false;
     case DONE:
         break;
@@ -828,9 +828,9 @@ bool MarsImpl::access_data(Ops op, word arg) {
                 continue;
             }
             if (op == DONE
-                // impossible? should compare with ONEWORD, or deliberate as a binary patch?
+                // impossible? should compare with SEEK, or deliberate as a binary patch?
                 || temp.d) {
-                acc = skip(Mars::ERR_STEP);
+                acc = skip(Mars::ERR_SEEK);
                 return true;
             }
         }
@@ -838,10 +838,11 @@ bool MarsImpl::access_data(Ops op, word arg) {
     }
 }
 
-// Read word at offset 'desc2' of the datum 'arg'
+// Read word at offset 'offset' of the datum 'arg'
 uint64_t MarsImpl::get_word(uint64_t arg) {
     find_item(arg);
-    access_data(ONEWORD, desc2);
+    // Not expecting it to fail
+    access_data(SEEK, offset);
     return acc;
 }
 
@@ -853,13 +854,13 @@ void MarsImpl::assign_and_incr(uint64_t dst) {
 }
 
 // Performs operations of upper bits in myloc
-// using value in curlen, assigning to desc2 and mylen.
+// using value in curlen, assigning to offset and mylen.
 // Conditionally skips the next 4 instructions.
 // From the code is appears that the max expected
 // length of the datum was 017777.
 bool MarsImpl::cmd46() {
     acc = (myloc >> 18) & BITS(15);
-    desc2 = acc -= curlen.d;
+    offset = acc -= curlen.d;
     acc = (myloc >> 33) & 017777;
     if (!acc) {
         acc = curcmd >> 30;
@@ -1213,8 +1214,8 @@ uint64_t MarsImpl::one_insn() {
         datumLen = META_SIZE;
         get_block(adescr, Metadata-1);
         break;
-    case Mars::OP_SEEK:      // reads word at offset 'desc2'
-        access_data(ONEWORD, desc2); // of the current datum into 'desc1'
+    case Mars::OP_SEEK:               // also reads word at offset 'offset'
+        access_data(SEEK, offset);    // of the current datum into 'desc1'
         break;
     case Mars::OP_INIT:
         mkctl();
@@ -1307,11 +1308,11 @@ uint64_t MarsImpl::one_insn() {
         if (access_data(COMPARE, mylen))
             return acc;
         break;
-    case Mars::OP_MODIFY:
+    case Mars::OP_WRITE:
         if (access_data(TOBASE, mylen))
             return acc;
         break;
-    case Mars::OP_COPY:
+    case Mars::OP_READ:
         if(access_data(FROMBASE, mylen))
             return acc;
         break;
@@ -1375,7 +1376,7 @@ uint64_t MarsImpl::one_insn() {
 
 // Performs key insertion and deletion in the BTree
 uint64_t MarsImpl::key_manager(KeyOp op) {
-    enum { LOC_DELKEY, LOC_A00731, LOC_ADDKEY } dest;
+    enum { LOC_NONE, LOC_DELKEY, LOC_A00731, LOC_ADDKEY } dest = LOC_NONE;
     bool recurse = false;
     switch (op) {
     case ADDKEY: jump(addkey);
@@ -1400,7 +1401,7 @@ uint64_t MarsImpl::key_manager(KeyOp op) {
         if (!idx)               // That was the root metablock?
             jump(a01160);       // Do not free it
         free(curBlockDescr.d);
-        desc2 = 1;
+        offset = 1;
         d00025 = Secondary[0];  // Save the block chain
         d00032 = make_block_header(prev_block(Secondary[0]), 0, 0);
         acc = prev_block(Secondary[0]);
@@ -1504,7 +1505,7 @@ uint64_t MarsImpl::key_manager(KeyOp op) {
     // - terminating execution of the instruction (returning curcmd >> 6)
     // - conditionaly skipping micro-instructions afer step() (returning acc)
   pr1232:
-    desc2 = 1;
+    offset = 1;
     acc = next_block(d00025);
     if (acc) {
         get_word(acc);
@@ -1541,6 +1542,8 @@ uint64_t MarsImpl::key_manager(KeyOp op) {
                 if (verbose)
                     std::cerr << "Jump target a00731\n";
                 jump(a00731);
+            default:
+                abort();
             }
         }
         // The following code is not covered by tests

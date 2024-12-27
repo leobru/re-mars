@@ -41,7 +41,7 @@ The semantics of micro-instructions (with the range of possible valid codes 00-5
 |  04  |   NEXT   | Step forward (with conditionality, see 14) |
 |  05  |  INSMETA | Makes and inserts a metadata block |
 |  06  |  SETMETA | Sets the current datum as the main metadata block  |
-|  07  |  GETWORD | Get a word at the given offset from the current datum  |
+|  07  |   SEEK   | Seek to the given offset within the current datum  |
 |  10  |   INIT   | Initialize a container/catalog |
 |  11  |   FIND   | Find an entry by key |
 |  12  |  SETCTL  | Copy the value to the catalog descriptor |
@@ -68,8 +68,8 @@ The semantics of micro-instructions (with the range of possible valid codes 00-5
 |  37  |   SKIP   | Skip the next instruction |
 |  40  |   STOP   | Stops the execution of the micro-program |
 |  41  |   IFEQ   | Compare the user data to the current entry and skip next 2 instructions if no match |
-|  42  |  MODIFY  | Modify the value of the current data extent in place |
-|  43  |   COPY   | Copy a single extent of data to the user area ??? |
+|  42  |   WRITE  | Modify the value of the current datum in place |
+|  43  |   READ   | Copy a word range of the current datum to the user area |
 |  44  |    ???   | bdvec[035] (address of descriptor) = bdvec[041] (first word of the copy of the descriptor) |
 |  45  |   LOCK   | Setting the flag "database is busy", unlocked at the end of execution of the microprogram |
 |  46  |    ???   | Non-writing |

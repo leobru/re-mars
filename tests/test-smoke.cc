@@ -20,10 +20,10 @@ TEST(mars, diagnostics)
     ASSERT_EQ(mars.putd(one, 0, 0), Mars::ERR_EXISTS);
     ASSERT_EQ(mars.getd(one, 0, 0), Mars::ERR_SUCCESS);
     ASSERT_EQ(mars.getd(one, 0, 1), Mars::ERR_TOO_LONG);
-    mars.data[Mars::BDVECT+042] = 2;
+    mars.offset = 2;            // within the datum of length 2
     ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_SEEK)), Mars::ERR_SUCCESS);
-    mars.data[Mars::BDVECT+042] = 5;
-    ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_SEEK)), Mars::ERR_STEP);
+    mars.offset = 5;            // outside of datum
+    ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_SEEK)), Mars::ERR_SEEK);
     // The deld(one); operation is implemented using micro-instruction word chaining
     mars.data[Mars::BDVECT] = 077770;
     mars.data[077770] = Mars::mcprog(Mars::OP_MATCH, Mars::OP_CHAIN);
@@ -108,7 +108,8 @@ TEST(mars, coverage)
         auto e = mars.putd(i+1, PAGE1+1, i);
         EXPECT_EQ(e, i < 59 ? Mars::ERR_SUCCESS : Mars::ERR_OVERFLOW);
     }
-
+    // Functionally a no-op
+    mars.eval(Mars::mcprog(Mars::OP_BEGIN, Mars::OP_SETMETA));
     uint64_t k = mars.last();
     while (k) {
         int len = mars.getlen();

@@ -15,7 +15,7 @@ class Mars {
         ERR_INV_NAME = 4,           // 0 or with high bit set
         ERR_BAD_CATALOG = 5,        // data corruption
         ERR_OVERFLOW = 6,           // self-explanatory
-        ERR_STEP = 7,               // offset into datum too large
+        ERR_SEEK = 7,               // offset into datum too large
         ERR_NO_NAME = 8,            // requested key name not found
         ERR_EXISTS = 9,             // key already exists
         ERR_NO_END_MARK = 10,       // end mark not found within specified range
@@ -63,8 +63,8 @@ class Mars {
         OP_SKIP = 037,
         OP_STOP = 040,
         OP_IFEQ = 041,
-        OP_MODIFY = 042,
-        OP_COPY = 043,
+        OP_WRITE = 042,
+        OP_READ = 043,
         OP_LOCK = 045,
         OP_CALL = 047,
         OP_CHAIN = 050,
@@ -135,6 +135,15 @@ class Mars {
     static const int BDSYS = 02000;
     static const int BDTAB = 04000;
     static const int BDBUF = 06000;
+
+    typedef word& wordref;
+    // BDVECT fields used by the API
+    wordref disableSync = data[BDVECT+6];
+    wordref key = data[BDVECT+010];
+    wordref myloc = data[BDVECT+013];
+    wordref mylen = data[BDVECT+015];
+    wordref offset = data[BDVECT+042];
+    wordref datumLen = data[BDVECT+047];
 
     // Page size (02000 words) minus 3.
     static const int MAXCHUNK = 01775;
