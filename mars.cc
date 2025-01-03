@@ -217,7 +217,8 @@ struct MarsImpl {
     uint64_t one_insn();
     void overflow(word);
     int prepare_chunk(int);
-    void allocator(int);
+    void handle_chunk();
+    void allocator(), allocator1023(), allocator1047(int);
     enum KeyOp { ADDKEY, DELKEY, A01160 };
     uint64_t key_manager(KeyOp);
     void mkctl(), find(word);
@@ -900,59 +901,66 @@ int MarsImpl::prepare_chunk(int z) {
     return z;
 }
 
-// The 3 entry points are disambiguated by the original code addresses
+void MarsImpl::handle_chunk() {
+    get_zone(acc);
+    uint64_t id = curbuf[1] >> 10;
+    do {
+        if (id == get_id(curbuf[id+1]))
+            break;
+        curbuf[id+2] = curbuf[id+1];
+        --id;
+    } while (id);
+    ++id;
+    loc116 = id;
+    acc = (id << 39) | chainHead.d;
+}
+
+void MarsImpl::allocator() {
+    make_extent_header();
+    allocator1023();
+}
+
+// The 2 allocator helpers are disambiguated by the original code addresses
 // for lack of a better understanding of their semantics.
-void MarsImpl::allocator(int addr) {
-    int i;
-    int loc = 0;
-    switch (addr) {
-    case 01022:
-        make_extent_header();
-        // FALL THROUGH
-    case 01023:
-        chainHead = 0;
-        work = freeSpace[curZone];
-        ++mylen;
-        if (mylen.d >= work.d) {
-            if (verbose)
-                std::cerr << "mylen = " << mylen.d << " work = " << work.d << '\n';
-            // If the datum is larger than MAXCHUNK, it will have to be split
-            if (mylen < Mars::MAXCHUNK) {
-                // Find a zone with enough free space
-                for (size_t i = 0; i < dblen.d; ++i) {
-                    if (mylen < freeSpace[i]) {
-                        acc = i;
-                        jump(chunk);
-                    }
+void MarsImpl::allocator1023() {
+    int i = 0;
+    chainHead = 0;
+    work = freeSpace[curZone];
+    ++mylen;
+    if (mylen.d < work.d) {
+        // The datum fits in the current zone!
+        acc = curZone.d;
+    } else {
+        if (verbose)
+            std::cerr << "mylen = " << mylen.d << " work = " << work.d << '\n';
+        // If the datum is larger than MAXCHUNK, it will have to be split
+        if (mylen < Mars::MAXCHUNK) {
+            // Find a zone with enough free space
+            for (size_t i = 0; i < dblen.d; ++i) {
+                if (mylen < freeSpace[i]) {
+                    acc = i;
+                    handle_chunk();
+                    allocator1047(0);
+                    return;
                 }
             }
-            // End reached, or the length is too large: must split
-            usrloc = usrloc + mylen - 1;
-            i = dblen.d;
-            while (freeSpace[i-1] < 2) {
-                if (--i)
-                    continue;
-                overflow(chainHead);
-            }
-            loc = prepare_chunk(i);
-            jump(chunk);
         }
-        acc = curZone.d;
-    chunk: {
-        get_zone(acc);
-        uint64_t id = curbuf[1] >> 10;
-        do {
-            if (id == get_id(curbuf[id+1]))
-                break;
-            curbuf[id+2] = curbuf[id+1];
-            --id;
-        } while (id);
-        ++id;
-        loc116 = id;
-        acc = (id << 39) | chainHead.d;
+        // End reached, or the length is too large: must split
+        usrloc = usrloc + mylen - 1;
+        i = dblen.d;
+        while (freeSpace[i-1] < 2) {
+            if (--i)
+                continue;
+            overflow(chainHead);
         }
-        // FALL THROUGH
-    case 01047: {               // acc has the extent id in bits 48-40
+        i = prepare_chunk(i);
+    }
+    handle_chunk();
+    allocator1047(i);
+}
+
+void MarsImpl::allocator1047(int loc) {
+    for (;;) {               // acc has the extent id in bits 48-40
         chainHead = acc;
         newDescr = (get_id(chainHead) << 10) | curZone.d;
         int len = mylen.d;
@@ -991,10 +999,10 @@ void MarsImpl::allocator(int addr) {
                 overflow(chainHead);
             }
             loc = prepare_chunk(loc);
-            jump(chunk);
+            handle_chunk();
+            continue;
         }
         overflow(chainHead);       // will throw
-    }
     }
 }
 
@@ -1017,13 +1025,13 @@ void MarsImpl::mkctl() {
     Cursor[-1] = ROOT_METABLOCK;
     d00011 = 0;
     make_metablock();
-    allocator(01022);
+    allocator();
     mylen = dblen;              // length of the free space array
     // This trick results in max possible DB length = 753 zones.
     // bdbuf[0] = 01731 - mylen.d;
     // Invoking OP_INSERT for the freeSpace array
     usrloc = myloc;
-    allocator(01022);
+    allocator();
     bdtab[01736-dblen.d] = 01731 - dblen.d; // This is the right way
     curDescr = newDescr;          // unused
 }
@@ -1034,7 +1042,7 @@ void MarsImpl::update_by_reallocation(int pos) {
     free_from_current_extent(pos);
     ++mylen;
     acc = get_id(old) << 39;
-    allocator(01047);
+    allocator1047(0);
     acc = next_extent(old);
     if (acc) {
         free(acc);
@@ -1143,7 +1151,7 @@ void MarsImpl::update(word arg) {
     usrloc = usrloc + mylen;
     mylen = (extentHeader & 077777) - mylen;
     extentHeader = usrloc[-1];
-    allocator(01023);
+    allocator1023();
     find_item(d00012.d);
     // Chain the first extent and the tail
     curbuf[loc116+1] = (newDescr.d << 20) | curExtent.d;
@@ -1206,7 +1214,7 @@ uint64_t MarsImpl::one_insn() {
     case Mars::OP_INSMETA:
         d00011 = 0;
         make_metablock();
-        allocator(01022);
+        allocator();
         curDescr = newDescr;
         break;
     case Mars::OP_SETMETA:      // not yet covered by tests
@@ -1253,7 +1261,7 @@ uint64_t MarsImpl::one_insn() {
         break;
     case Mars::OP_INSERT:
         usrloc = myloc;
-        allocator(01022);
+        allocator();
         curDescr = newDescr;
         break;
     case Mars::OP_GET:
@@ -1454,7 +1462,7 @@ uint64_t MarsImpl::key_manager(KeyOp op) {
                 throw Mars::ERR_OVERFLOW;
             }
             // Copy it somewhere and make a new root metablock
-            allocator(01022);
+            allocator();
             // With the 0 key pointing to the newly made block
             RootBlock[2] = newDescr | INDIRECT;
             RootBlock[0] = 2;
@@ -1490,7 +1498,7 @@ uint64_t MarsImpl::key_manager(KeyOp op) {
     Secondary[040] = make_block_header(curBlockDescr.d, next_block(Secondary[0]), 040);
     usrloc.d += 040;
     mylen = META_SIZE;
-    allocator(01022);
+    allocator();
     Secondary[040] = d00025;
     d00011 = Secondary[META_SIZE];
     d00025 = Secondary[0];
