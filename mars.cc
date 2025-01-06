@@ -109,7 +109,7 @@ struct MarsImpl {
     uint64_t & arch;
     wordref abdv,
         usrloc,
-        extentHeader, newDescr,
+        newDescr,
         remlen;
     std::unordered_map<std::string, Page> DiskImage;
 
@@ -167,7 +167,6 @@ struct MarsImpl {
         arch(data[BDSYS+4].d),
         abdv(data[BDSYS+3]),
         usrloc(data[BDSYS+016]),
-        extentHeader(data[BDSYS+023]),
         newDescr(data[BDSYS+024]),
         remlen(data[BDSYS+034]) // assigned in prepare_chunk(), used in allocator1047()
         { }
@@ -176,7 +175,7 @@ struct MarsImpl {
     void get_zone(uint64_t);
     void save(bool);
     void finalize(word);
-    void make_extent_header();
+    uint64_t make_extent_header();
     void make_metablock(uint64_t key);
     uint64_t usable_space();
     uint64_t find_item(uint64_t);
@@ -207,12 +206,13 @@ struct MarsImpl {
     void overflow(word);
     int prepare_chunk(int);
     uint64_t handle_chunk(int zone, word head);
-    void allocator(), allocator1023(), allocator1047(int, uint64_t);
+    void allocator(), allocator1023(uint64_t extentHeader);
+    void allocator1047(int loc, uint64_t head, uint64_t extentHeader);
     enum KeyOp { ADDKEY, DELKEY, A01160 };
     uint64_t key_manager(KeyOp, uint64_t key = ARBITRARY_NONZERO);
     void check_space(unsigned need);
     void mkctl(), find(word);
-    void update_by_reallocation(int), search_in_block(word*, word), update(word);
+    void update_by_reallocation(int, uint64_t), search_in_block(word*, word), update(word);
     void setDirty(int x) {
         dirty = dirty.d | (curZone.d ? x+1 : 1);
     }
@@ -449,8 +449,8 @@ void MarsImpl::finalize(word err) {
     save(force_tab);
 }
 
-// Sets 'extentHeader'
-void MarsImpl::make_extent_header() {
+// Returns the constructed extent header
+uint64_t MarsImpl::make_extent_header() {
     using namespace std::chrono;
     const year_month_day ymd{floor<days>(system_clock::now())};
     unsigned d{ymd.day()}, m{ymd.month()};
@@ -461,7 +461,7 @@ void MarsImpl::make_extent_header() {
         y % 10;
     // This is the only use of loc14
     // and of this bit range of the extent header structure
-    extentHeader = (loc14 & (BITS(18) << 15)) | mylen | (stamp << 33);
+    return (loc14.d & (BITS(18) << 15)) | mylen.d | (stamp << 33);
 }
 
 // Prepare a metadata block, set usrloc to its address
@@ -469,7 +469,7 @@ void MarsImpl::make_metablock(uint64_t key) {
     mylen = META_SIZE;
     data[FAKEBLK] = 2;
     data[FAKEBLK+1] = key;
-    data[FAKEBLK+2] = Cursor[-1].d;
+    data[FAKEBLK+2] = Cursor[-1];
     usrloc = FAKEBLK;
 }
 
@@ -897,13 +897,12 @@ uint64_t MarsImpl::handle_chunk(int zone, word head) {
 }
 
 void MarsImpl::allocator() {
-    make_extent_header();
-    allocator1023();
+    allocator1023(make_extent_header());
 }
 
 // The 2 allocator helpers are disambiguated by the original code addresses
 // for lack of a better understanding of their semantics.
-void MarsImpl::allocator1023() {
+void MarsImpl::allocator1023(uint64_t extentHeader) {
     int i = 0;
     auto free = freeSpace[curZone].d;
     int zone;
@@ -919,7 +918,7 @@ void MarsImpl::allocator1023() {
             // Find a zone with enough free space
             for (size_t i = 0; i < dblen.d; ++i) {
                 if (mylen < freeSpace[i]) {
-                    allocator1047(0, handle_chunk(i, 0));
+                    allocator1047(0, handle_chunk(i, 0), extentHeader);
                     return;
                 }
             }
@@ -935,10 +934,10 @@ void MarsImpl::allocator1023() {
         zone = i - 1;
         i = prepare_chunk(i);
     }
-    allocator1047(i, handle_chunk(zone, 0));
+    allocator1047(i, handle_chunk(zone, 0), extentHeader);
 }
 
-void MarsImpl::allocator1047(int loc, uint64_t head) {
+void MarsImpl::allocator1047(int loc, uint64_t head, uint64_t extentHeader) {
     for (;;) {               // head has the extent id in bits 48-40
         newDescr = (get_id(head) << 10) | curZone.d;
         int len = mylen.d;
@@ -1013,12 +1012,12 @@ void MarsImpl::mkctl() {
     curDescr = newDescr;          // unused
 }
 
-void MarsImpl::update_by_reallocation(int pos) {
+void MarsImpl::update_by_reallocation(int pos, uint64_t extentHeader) {
     word old = curExtent.d;
     curExtent = curExtent & 01777;
     free_from_current_extent(pos);
     ++mylen;
-    allocator1047(0, get_id(old) << 39);
+    allocator1047(0, get_id(old) << 39, extentHeader);
     auto next = next_extent(old);
     if (next) {
         free(next);
@@ -1089,8 +1088,7 @@ void MarsImpl::update(word arg) {
                 extPtr[len] = usrloc[len-1];
             } while (--len);
         }
-        make_extent_header();
-        *extPtr = extentHeader;
+        *extPtr = make_extent_header();
         set_dirty_data();
         if (next_extent(curExtent)) {
             curbuf[loc116+1] = curExtent & ~(BITS(19) << 20); // dropping the extent chain
@@ -1099,7 +1097,7 @@ void MarsImpl::update(word arg) {
         }
         return;
     }
-    make_extent_header();
+    auto extentHeader = make_extent_header();
     acc = curbuf[1] >> 10;
     int pos = (acc + 1) & BITS(15);
     // Compute the max extent length to avoid fragmentation
@@ -1109,7 +1107,7 @@ void MarsImpl::update(word arg) {
     if (acc >= mylen.d) {
         // The new length will fit in one zone,
         // reallocation is guaranteed to succeed
-        update_by_reallocation(pos);
+        update_by_reallocation(pos, extentHeader);
         set_dirty_tab();
         return;
     }
@@ -1118,11 +1116,10 @@ void MarsImpl::update(word arg) {
     }
     // Put as much as possible in the current zone
     mylen = curLen;
-    update_by_reallocation(pos);
+    update_by_reallocation(pos, extentHeader);
     usrloc = usrloc + mylen;
-    mylen = (extentHeader & 077777) - mylen;
-    extentHeader = usrloc[-1];
-    allocator1023();
+    mylen = (extentHeader & 077777) - mylen.d;
+    allocator1023(usrloc[-1].d);
     find_item(saved.d);
     // Chain the first extent and the tail
     curbuf[loc116+1] = (newDescr.d << 20) | curExtent.d;
