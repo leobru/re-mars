@@ -107,7 +107,7 @@ struct MarsImpl {
 
     // Fields of BDSYS
     uint64_t & arch;
-    wordref abdv, d00010, d00011,
+    wordref abdv,
         usrloc,
         extentHeader, newDescr,
         remlen;
@@ -166,8 +166,6 @@ struct MarsImpl {
         // Fields of BDSYS
         arch(data[BDSYS+4].d),
         abdv(data[BDSYS+3]),
-        d00010(data[BDSYS+010]),
-        d00011(data[BDSYS+011]),
         usrloc(data[BDSYS+016]),
         extentHeader(data[BDSYS+023]),
         newDescr(data[BDSYS+024]),
@@ -179,7 +177,7 @@ struct MarsImpl {
     void save(bool);
     void finalize(word);
     void make_extent_header();
-    void make_metablock();
+    void make_metablock(uint64_t key);
     uint64_t usable_space();
     uint64_t find_item(uint64_t);
     void info(uint64_t);
@@ -438,7 +436,7 @@ void MarsImpl::save(bool force_tab = false) {
 
 // The argument is nonzero (a part of the error message) if there is an error
 void MarsImpl::finalize(word err) {
-    d00011 = err;
+    data[BDSYS+011] = err;
     bool force_tab = false;
     if (disableSync != 0) {
         if (disableSync != 1)
@@ -467,14 +465,12 @@ void MarsImpl::make_extent_header() {
 }
 
 // Prepare a metadata block, set usrloc to its address
-void MarsImpl::make_metablock() {
+void MarsImpl::make_metablock(uint64_t key) {
     mylen = META_SIZE;
-    d00010 = 2;
-    usrloc = &d00010;           // to match traced stores with the original
-    data[FAKEBLK].d = 2;
-    data[FAKEBLK+1].d = d00011.d; // appears to be always 0 when make_metablock() is called
-    data[FAKEBLK+2].d = Cursor[-1].d;
-    usrloc.d = FAKEBLK;
+    data[FAKEBLK] = 2;
+    data[FAKEBLK+1] = key;
+    data[FAKEBLK+2] = Cursor[-1].d;
+    usrloc = FAKEBLK;
 }
 
 // Usable space is one word (extent handle) less than free space
@@ -1005,8 +1001,7 @@ void MarsImpl::mkctl() {
     } while (nz);
     myloc = freeSpace = bdbuf; // freeSpace[0] is now the same as bdbuf[0]
     Cursor[-1] = ROOT_METABLOCK;
-    d00011 = 0;
-    make_metablock();
+    make_metablock(0);
     allocator();
     mylen = dblen;              // length of the free space array
     // This trick results in max possible DB length = 753 zones.
@@ -1155,7 +1150,7 @@ Error MarsImpl::eval() try {
         }
         data[7] = e;            // imitating M7 = e
         std::cerr << std::format("ERROR {} ({})\n", int(e), msg[e-1]);
-        d00010 = *(uint64_t*)msg[e-1];
+        data[BDSYS+010] = *(uint64_t*)msg[e-1];
         finalize(*((uint64_t*)msg[e-1]+1));
     }
     if (mars.dump_diffs)
@@ -1187,8 +1182,7 @@ uint64_t MarsImpl::one_insn() {
             return acc;
         break;
     case Mars::OP_INSMETA:      // not yet covered by tests
-        d00011 = 0;
-        make_metablock();
+        make_metablock(0);
         allocator();
         curDescr = newDescr;
         break;

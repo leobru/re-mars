@@ -69,7 +69,6 @@ TEST(mars, initdb_stores)
     EXPECT_EQ(mars.get_store(01420), 0'0000'0000'0000'2000u);
     EXPECT_EQ(mars.get_store(02011), 0'0000'0000'0000'0000u);
 //  EXPECT_EQ(mars.get_store(01415), 0'0000'0000'0000'0041u); // overwritten
-    EXPECT_EQ(mars.get_store(02010), 0'0000'0000'0000'0002u);
 //  EXPECT_EQ(mars.get_store(02023), 0'0000'0000'0000'0041u); // overwritten
 //  EXPECT_EQ(mars.get_store(01415), 0'0000'0000'0000'0042u); // overwritten
     EXPECT_EQ(mars.get_store(01644), 0'0000'0000'0000'0000u);
@@ -493,7 +492,6 @@ TEST(mars, newd_stores)
     EXPECT_EQ(mars.get_store(01420), 0'0000'0000'0000'2000u);
 //  EXPECT_EQ(mars.get_store(02011), 0'0000'0000'0000'0000u); // overwritten
 //  EXPECT_EQ(mars.get_store(01415), 0'0000'0000'0000'0041u); // overwritten
-    EXPECT_EQ(mars.get_store(02010), 0'0000'0000'0000'0002u);
 //  EXPECT_EQ(mars.get_store(02023), 0'0000'0000'0000'0041u); // overwritten
 //  EXPECT_EQ(mars.get_store(01415), 0'0000'0000'0000'0042u); // overwritten
     EXPECT_EQ(mars.get_store(01644), 0'0000'0000'0000'0000u);
