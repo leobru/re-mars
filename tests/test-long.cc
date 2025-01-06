@@ -1,5 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
+#include <set>
+#include <numeric>
 #include <fstream>
 #include <format>
 #include <gtest/gtest.h>
@@ -33,4 +35,49 @@ TEST(mars, maxsize)
     EXPECT_EQ(ostr.str(), "Error 2 while putting 65536\n");
     run_command(result, "sha1sum 520[0-4]??");
     EXPECT_EQ(result, file_contents("test-maxsize.gold"));
+}
+
+static void del_forward(Mars & mars, std::set<int> &gold) {
+    mars.first();
+    auto it = gold.begin();
+    for (int i = 0; i < 10000; ++i) {
+        mars.next();
+        ++it;
+    }
+    mars.eval(Mars::mcprog(Mars::OP_FREE, Mars::OP_DELKEY));
+    gold.erase(it);
+}
+
+static void del_back(Mars & mars, std::set<int> &gold) {
+    mars.last();
+    auto it = gold.rbegin();
+    for (int i = 0; i < 10000; ++i) {
+        mars.prev();
+        ++it;
+    }
+    mars.eval(Mars::mcprog(Mars::OP_FREE, Mars::OP_DELKEY));
+    gold.erase(*it);
+}
+
+TEST(mars, stepdel)
+{
+    Mars mars(false);
+    mars.InitDB(052, 0, 0427);
+    mars.SetDB(052, 0, 0427);
+    mars.root();
+    std::set<int> gold;
+    for (int i = 1; i <= 65530; ++i) {
+        gold.insert(i);
+        ASSERT_EQ(mars.putd(i, 0, 0), Mars::ERR_SUCCESS);
+    }
+    for (int i = 0; i < 2048; ++i)
+        del_forward(mars, gold);
+
+    for (int i = 0; i < 2048; ++i)
+        del_back(mars, gold);
+
+    int sum = 0;
+    for (auto cur = mars.first(); cur != 65530; cur = mars.next())
+        sum += cur;
+    EXPECT_EQ(sum, std::accumulate(gold.begin(), --gold.end(), 0));
 }

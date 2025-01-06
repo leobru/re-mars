@@ -211,7 +211,8 @@ struct MarsImpl {
     uint64_t handle_chunk(int zone, word head);
     void allocator(), allocator1023(), allocator1047(int, uint64_t);
     enum KeyOp { ADDKEY, DELKEY, A01160 };
-    uint64_t key_manager(KeyOp);
+    uint64_t key_manager(KeyOp, uint64_t key = ARBITRARY_NONZERO);
+    void check_space(unsigned need);
     void mkctl(), find(word);
     void update_by_reallocation(int), search_in_block(word*, word), update(word);
     void setDirty(int x) {
@@ -1185,13 +1186,13 @@ uint64_t MarsImpl::one_insn() {
         if (step(0))
             return acc;
         break;
-    case Mars::OP_INSMETA:
+    case Mars::OP_INSMETA:      // not yet covered by tests
         d00011 = 0;
         make_metablock();
         allocator();
         curDescr = newDescr;
         break;
-    case Mars::OP_SETMETA:      // not yet covered by tests
+    case Mars::OP_SETMETA:
         idx = 0;
         datumLen = META_SIZE;
         get_block(adescr, RootBlock-1);
@@ -1252,9 +1253,8 @@ uint64_t MarsImpl::one_insn() {
         setctl(dbdesc.d);
         break;
     case Mars::OP_ADDKEY:
-        d00011 = key;
         adescr = acc = curDescr.d;
-        return key_manager(ADDKEY);
+        return key_manager(ADDKEY, key.d);
     case Mars::OP_DELKEY:
         newkey = 0;              // looks dead
         return key_manager(DELKEY);
@@ -1356,8 +1356,16 @@ uint64_t MarsImpl::one_insn() {
     return curcmd >> 6;
 }
 
+void MarsImpl::check_space(unsigned need) {
+    if (usable_space() < need) {
+        Cursor[-1] = 0;
+        free(curDescr.d);
+        throw Mars::ERR_OVERFLOW;
+    }
+}
+
 // Performs key insertion and deletion in the BTree
-uint64_t MarsImpl::key_manager(KeyOp op) {
+uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
     enum { LOC_NONE, LOC_DELKEY, LOC_A00731, LOC_ADDKEY } dest = LOC_NONE;
     bool recurse = false;
     int len;
@@ -1402,13 +1410,13 @@ uint64_t MarsImpl::key_manager(KeyOp op) {
     while (true) {
         acc &= 077777;
         if (!acc) {
-            d00011 = curMetaBlock[0];
+            key = curMetaBlock[0].d;
             recurse = true;
             dest = LOC_A00731;
         }
         jump(a01160);
       a00731:
-        curMetaBlock[Cursor[idx]] = d00011;
+        curMetaBlock[Cursor[idx]] = key;
         acc = Cursor[idx].d;
     }
   addkey:
@@ -1423,7 +1431,7 @@ uint64_t MarsImpl::key_manager(KeyOp op) {
         curMetaBlock[i] = curMetaBlock[i-2];
         curMetaBlock[i+1] = curMetaBlock[i-1];
     }
-    newkey[0] = d00011;
+    newkey[0] = key;
     newkey[1] = newDescr;
     curMetaBlock[-1] = curMetaBlock[-1] + 2;
   a01160:                       // generic metablock update ???
@@ -1432,11 +1440,7 @@ uint64_t MarsImpl::key_manager(KeyOp op) {
         mylen = META_SIZE;
         if (curMetaBlock[-1] == META_SIZE-1) {
             // The root metablock is full
-            if (usable_space() < 0101) {
-                Cursor[-1] = 0;
-                free(curDescr.d);
-                throw Mars::ERR_OVERFLOW;
-            }
+            check_space(0101);
             // Copy it somewhere and make a new root metablock
             allocator();
             // With the 0 key pointing to the newly made block
@@ -1464,11 +1468,7 @@ uint64_t MarsImpl::key_manager(KeyOp op) {
         // The current metadata block is full, account for another one
         need = need + 044;
     }
-    if (usable_space() < need) {
-        Cursor[-1] = 0;
-        free(curDescr.d);
-        throw Mars::ERR_OVERFLOW;
-    }
+    check_space(need);
     // Split the block in two
     chain = Secondary[040];
     Secondary[040] = make_block_header(curBlockDescr.d, next_block(Secondary[0]), 040);
@@ -1476,7 +1476,7 @@ uint64_t MarsImpl::key_manager(KeyOp op) {
     mylen = META_SIZE;
     allocator();
     Secondary[040] = chain;
-    d00011 = Secondary[META_SIZE];
+    key = Secondary[META_SIZE].d;
     chain = Secondary[0];
     Secondary[0] = make_block_header(prev_block(chain), newDescr.d, 040);
     newHeader = make_block_header(newDescr.d, 0, 0);
@@ -1573,8 +1573,7 @@ Error Mars::InitDB(int lun, int start, int len) {
     return impl.eval();
 }
 
-// Replicating what the NEWD option does in the PAIB Pascal API function
-// to match the sequence of store ops as close as possible
+// A cleaned-up version of the original NEWD operation in the BESM-6 Pascal library
 Error Mars::newd(const char * k, int lun, int start, int len) {
     int lnuzzzz = to_lnuzzzz(lun, start, len);
     if (verbose)
@@ -1582,10 +1581,6 @@ Error Mars::newd(const char * k, int lun, int start, int len) {
     impl.key = *reinterpret_cast<const uint64_t*>(k);
     data[077776] = lnuzzzz;
     data[077777] = (impl.key.d << 10) & BITS(48);
-    impl.key = *reinterpret_cast<const uint64_t*>(k);
-    impl.mylen = 1;
-    impl.myloc = ARBITRARY_NONZERO;
-    impl.orgcmd = 0;
     impl.myloc = 077776;
     impl.mylen = 2;
     impl.orgcmd = mcprog(OP_ROOT, OP_FIND, OP_NOMATCH, OP_INSERT, OP_ADDKEY);
