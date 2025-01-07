@@ -579,10 +579,10 @@ void MarsImpl::get_block(word descr, word * dest) {
     word usrloc(mars, 0);
     usrloc = dest;
     curMetaBlock = dest + 2;
-    if (loc116 == curBlockDescr)
-        return;
-    curBlockDescr = loc116;
-    copy_chained(find_item(curBlockDescr.d), usrloc);
+    if (loc116 != curBlockDescr) {
+        curBlockDescr = loc116;
+        copy_chained(find_item(curBlockDescr.d), usrloc);
+    }
 }
 
 // Requests the root block into the main RootBlock array
@@ -1464,10 +1464,8 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
     }
     cnt = Cursor[idx] >> 15;
     for (;;) {
-        uint64_t stepCnt = cnt;
-        cnt >>= 15;
-        int i = cnt & BITS(15);
-        if (!(stepCnt & 077777)) {
+        int i = (cnt >> 15) & BITS(15);
+        if (!(cnt & 077777)) {
             switch (dest) {
             case LOC_ADDKEY:
                 toAdd = (newHeader >> 29) | INDIRECT;
@@ -1488,14 +1486,12 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
         }
         // The following code is triggered, e.g. by using DELKEY
         // after stepping backwards or forwards.
-        cnt = stepCnt;
         if (--i) {
             cnt += 2;
         }
-        stepCnt = cnt - 1;
         if (step(i))
             return cont;         // never happens?
-        cnt = stepCnt;
+        cnt = cnt - 1;
     }
 }
 
