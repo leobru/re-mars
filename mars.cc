@@ -100,6 +100,7 @@ struct MarsImpl {
         dirty;
 
     uint64_t & idx;
+    uint64_t cont;              // continuation instruction word
 // RootBlock[-1] (loc54) is also used
     word * const Cursor;
     word * const RootBlock;
@@ -755,7 +756,7 @@ bool MarsImpl::step(word dir) {
         if ((cur & 01777) == block_len(curMetaBlock[-1])) {
             auto next = next_block(curMetaBlock[-1]);
             if (!next) {
-                acc = skip(Mars::ERR_NO_NEXT);
+                cont = skip(Mars::ERR_NO_NEXT);
                 return true;
             }
             get_secondary_block(next);
@@ -767,7 +768,7 @@ bool MarsImpl::step(word dir) {
         if (!pos) {
             auto prev = prev_block(curMetaBlock[-1]);
             if (!prev) {
-                acc = skip(Mars::ERR_NO_PREV);
+                cont = skip(Mars::ERR_NO_PREV);
                 return true;
             }
             get_secondary_block(prev);
@@ -791,7 +792,7 @@ bool MarsImpl::access_data(Ops op, word arg) {
         done = true;
         if (perform(op, done, tail, usrloc)) {
             // COMPARE failed, skip an instruction
-            acc = curcmd >> 12;
+            cont = curcmd >> 12;
             return true;
         }
         if (done) {
@@ -808,7 +809,7 @@ bool MarsImpl::access_data(Ops op, word arg) {
             if (op == DONE
                 // impossible? should compare with SEEK, or deliberate as a binary patch?
                 || tail) {
-                acc = skip(Mars::ERR_SEEK);
+                cont = skip(Mars::ERR_SEEK);
                 return true;
             }
         }
@@ -842,7 +843,7 @@ bool MarsImpl::cmd46() {
     offset = len -= curlen.d;
     len = (myloc >> 33) & 017777;
     if (!len) {
-        acc = curcmd >> 30;
+        cont = curcmd >> 30;
         return true;
     }
     mylen = len;
@@ -1166,11 +1167,11 @@ uint64_t MarsImpl::one_insn() {
         break;
     case Mars::OP_PREV:
         if (step(1))
-            return acc;
+            return cont;
         break;
     case Mars::OP_NEXT:
         if (step(0))
-            return acc;
+            return cont;
         break;
     case Mars::OP_INSMETA:      // not yet covered by tests
         curDescr = allocator(make_metablock(0));
@@ -1268,15 +1269,15 @@ uint64_t MarsImpl::one_insn() {
         return 0;
     case Mars::OP_IFEQ:
         if (access_data(COMPARE, mylen))
-            return acc;
+            return cont;
         break;
     case Mars::OP_WRITE:
         if (access_data(TOBASE, mylen))
-            return acc;
+            return cont;
         break;
     case Mars::OP_READ:
         if(access_data(FROMBASE, mylen))
-            return acc;
+            return cont;
         break;
     case 044:                   // macro for OP_ASSIGN 35 41
         adescr = desc1;
@@ -1286,7 +1287,7 @@ uint64_t MarsImpl::one_insn() {
         break;
     case 046:
         if (cmd46())
-            return acc;
+            return cont;
         break;
     case Mars::OP_CALL:
         acc = desc1.d;
@@ -1463,7 +1464,7 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
     // pr1232 can return in 3 ways:
     // - continue execution (following dest)
     // - terminating execution of the instruction (returning curcmd >> 6)
-    // - conditionaly skipping micro-instructions afer step() (returning acc)
+    // - conditionaly skipping micro-instructions afer step() (returning cont)
   pr1232:
     if (auto next = next_block(chain)) {
         set_header(newHeader | (get_word(next, 1) & BITS(29)));
@@ -1510,7 +1511,7 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
         }
         stepCnt = acc - 1;
         if (step(i))
-            return acc;         // never happens?
+            return cont;         // never happens?
         acc = stepCnt;
     }
 }
