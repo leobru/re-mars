@@ -171,14 +171,14 @@ struct MarsImpl {
     void save(bool);
     void finalize(word);
     uint64_t make_extent_header();
-    word make_metablock(uint64_t key);
+    word* make_metablock(uint64_t key);
     uint64_t usable_space();
     uint64_t find_item(uint64_t);
     void info(uint64_t);
     void totext();
     void set_header(word);
-    void copy_words(word dst, word src, int len);
-    void copy_chained(int len, word &usrloc);
+    void copy_words(word* dst, word* src, int len);
+    void copy_chained(int len, word* &usrloc);
     void cpyout(uint64_t);
     void lock();
     void get_block(word, word*), get_root_block(), get_secondary_block(word);
@@ -450,12 +450,12 @@ uint64_t MarsImpl::make_extent_header() {
 }
 
 // Prepares a metadata block, retuirns its address
-word MarsImpl::make_metablock(uint64_t key) {
+word* MarsImpl::make_metablock(uint64_t key) {
     mylen = META_SIZE;
     data[FAKEBLK] = 2;
     data[FAKEBLK+1] = key;
     data[FAKEBLK+2] = Cursor[-1];
-    return word(mars, FAKEBLK);
+    return &data[FAKEBLK];
 }
 
 // Usable space is one word (extent handle) less than free space
@@ -523,9 +523,9 @@ void MarsImpl::set_header(word arg) {
     set_dirty_data();
 }
 
-void MarsImpl::copy_words(word dst, word src, int len) {
+void MarsImpl::copy_words(word *dst, word* src, int len) {
     if (verbose)
-        std::cerr << std::format("{:o}(8) words from {:o} to {:o}\n", len, src.d, dst.d);
+        std::cerr << std::format("{:o}(8) words from {:o} to {:o}\n", len, src - data, dst - data);
     // Using backwards store order to match the original binary for ease of debugging.
     while (len) {
         dst[len-1] = src[len-1];
@@ -534,12 +534,12 @@ void MarsImpl::copy_words(word dst, word src, int len) {
 }
 
 // Copies chained extents to user memory (len = length of the first extent)
-void MarsImpl::copy_chained(int len, word &usrloc) { // a01423
+void MarsImpl::copy_chained(int len, word* &usrloc) { // a01423
     for (;;) {
         if (len) {
             if (verbose)
                 std::cerr << "From DB: ";
-            copy_words(usrloc, extPtr, len);
+            copy_words(usrloc, data + extPtr.d, len);
         }
         usrloc = usrloc + len;
         if (!next_extent(curExtent))
@@ -550,7 +550,7 @@ void MarsImpl::copy_chained(int len, word &usrloc) { // a01423
 
 void MarsImpl::cpyout(uint64_t descr) {
     info(descr);
-    auto usrloc = myloc;
+    auto usrloc = data + myloc.d;
     if (mylen != 0 && mylen < datumLen)
         throw Mars::ERR_TOO_LONG;
     // Skip the first word (the header) of the found item
@@ -581,7 +581,7 @@ void MarsImpl::get_block(word descr, word * dest) {
     curMetaBlock = dest + 2;
     if (loc116 != curBlockDescr) {
         curBlockDescr = loc116;
-        copy_chained(find_item(curBlockDescr.d), usrloc);
+        copy_chained(find_item(curBlockDescr.d), dest);
     }
 }
 
@@ -708,11 +708,11 @@ bool MarsImpl::perform(Ops op, bool &done, unsigned &tail, word &usrloc) {
     // Now len = current extent length or less, tail = remaining length (may be 0)
     switch (op) {
     case FROMBASE:
-        copy_words(usrloc, extPtr, len);
+        copy_words(data + usrloc.d, data + extPtr.d, len);
         break;
     case TOBASE:
         set_dirty_data();
-        copy_words(extPtr, usrloc, len);
+        copy_words(data + extPtr.d, data + usrloc.d, len);
         break;
     case COMPARE:
     // Check for 0 length is not needed, perhaps because the key part of datum
@@ -910,12 +910,9 @@ uint64_t MarsImpl::allocator1023(uint64_t extentHeader, word usrloc) {
         }
         // End reached, or the length is too large: must split
         usrloc = usrloc + mylen - 1;
-        i = dblen.d;
-        while (freeSpace[i-1] < 2) {
-            if (--i)
-                continue;
+        for (i = dblen.d; freeSpace[i-1] < 2 && --i;);
+        if (i == 0)
             overflow(0);
-        }
         zone = i - 1;
         i = prepare_chunk(i, remlen, usrloc);
     }
@@ -930,7 +927,7 @@ uint64_t MarsImpl::allocator1047(int loc, uint64_t head, uint64_t extentHeader, 
         // Correcting the free space pointer and incrementing extent count
         curbuf[1] = curbuf[1] - mylen + 02000;
         int destLoc = curbuf[1].d & 01777;
-        word dest(mars, curbuf.d + destLoc + 1);
+        word *dest = &curbuf[destLoc+1];
         if (!loc) {
             --len;
             ++dest;
@@ -938,7 +935,7 @@ uint64_t MarsImpl::allocator1047(int loc, uint64_t head, uint64_t extentHeader, 
         if (len) {
             if (verbose)
                 std::cerr << "To DB: ";
-            copy_words(dest, usrloc, len);
+            copy_words(dest, data + usrloc.d, len);
         }
         curbuf[loc116+1] = (mylen.d << 10) | destLoc | head;
         if (verbose)
@@ -986,7 +983,7 @@ void MarsImpl::mkctl() {
     } while (nz);
     myloc = freeSpace = bdbuf; // freeSpace[0] is now the same as bdbuf[0]
     Cursor[-1] = ROOT_METABLOCK;
-    allocator(make_metablock(0));
+    allocator(make_metablock(0)-data);
     mylen = dblen;              // length of the free space array
     // This trick results in max possible DB length = 753 zones.
     // bdbuf[0] = 01731 - mylen.d;
@@ -1062,7 +1059,6 @@ void MarsImpl::find(word k) {
 }
 
 void MarsImpl::update(word arg, word usrloc) {
-    word saved(arg);
     int len = find_item(arg.d) - 1;
     if (mylen == len) {
         // The new length of data matches the first extent length
@@ -1081,12 +1077,12 @@ void MarsImpl::update(word arg, word usrloc) {
         return;
     }
     auto extentHeader = make_extent_header();
-    auto curLen = curbuf[1] >> 10;
-    int pos = (curLen + 1) & BITS(15);
+    auto curFree = curbuf[1] >> 10;
+    int pos = (curFree + 1) & BITS(15);
     // Compute the max extent length to avoid fragmentation
-    curLen = (curbuf[1].d - curLen) & 01777;
-    curLen += curExtLength.d - 2;
-    if (curLen >= mylen.d) {
+    curFree = (curbuf[1].d - curFree) & 01777;
+    curFree += curExtLength.d - 2;
+    if (curFree >= mylen.d) {
         // The new length will fit in one zone,
         // reallocation is guaranteed to succeed
         update_by_reallocation(pos, extentHeader, usrloc);
@@ -1097,12 +1093,12 @@ void MarsImpl::update(word arg, word usrloc) {
         throw Mars::ERR_OVERFLOW;
     }
     // Put as much as possible in the current zone
-    mylen = curLen;
+    mylen = curFree;
     update_by_reallocation(pos, extentHeader, usrloc);
     usrloc = usrloc + mylen;
     mylen = (extentHeader & 077777) - mylen.d;
     auto newDescr = allocator1023(usrloc[-1].d, usrloc);
-    find_item(saved.d);
+    find_item(arg.d);
     // Chain the first extent and the tail
     curbuf[loc116+1] = (newDescr << 20) | curExtent.d;
     set_dirty_both();
@@ -1159,7 +1155,7 @@ uint64_t MarsImpl::one_insn() {
             return cont;
         break;
     case Mars::OP_INSMETA:      // not yet covered by tests
-        curDescr = allocator(make_metablock(0));
+        curDescr = allocator(make_metablock(0)-data);
         break;
     case Mars::OP_SETMETA:
         idx = 0;
