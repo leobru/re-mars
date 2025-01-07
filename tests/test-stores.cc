@@ -127,7 +127,6 @@ TEST(mars, initdb_stores)
     EXPECT_EQ(mars.get_store(01644), 0'0000'0000'0000'0000u);
     EXPECT_EQ(mars.get_store(01641), 0'0000'0000'0000'4000u);
     EXPECT_EQ(mars.get_store(01516), 0'0000'0000'0000'0002u); // latest
-    EXPECT_EQ(mars.get_store(02024), 0'0000'0000'0000'4000u); // latest
     EXPECT_EQ(mars.get_store(04001), 0'0000'0000'0000'5731u); // latest
 
     // To DB: 3(8) words from 6000 to 5733
@@ -546,7 +545,6 @@ TEST(mars, newd_stores)
     EXPECT_EQ(mars.get_store(01644), 0'0000'0000'0000'0000u);
     EXPECT_EQ(mars.get_store(01641), 0'0000'0000'0000'4000u);
     EXPECT_EQ(mars.get_store(01516), 0'0000'0000'0000'0002u); // latest
-    EXPECT_EQ(mars.get_store(02024), 0'0000'0000'0000'4000u); // latest
     EXPECT_EQ(mars.get_store(04001), 0'0000'0000'0000'5732u); // latest
 
     // To DB: 2(8) words from 6000 to 5734
@@ -1032,7 +1030,6 @@ TEST(mars, putd_stores)
     EXPECT_EQ(mars.get_store(01644), 0'0000'0000'0000'0000u);
     EXPECT_EQ(mars.get_store(01641), 0'0000'0000'0000'4000u);
 //  EXPECT_EQ(mars.get_store(01516), 0'0000'0000'0000'0003u); // overwritten
-    EXPECT_EQ(mars.get_store(02024), 0'0000'0000'0000'6000u);
     EXPECT_EQ(mars.get_store(04001), 0'0000'0000'0000'7717u);
 
     // To DB: 12(8) words from 10000 to 5721
@@ -1061,7 +1058,6 @@ TEST(mars, putd_stores)
     // Executing microcode 26
 //  EXPECT_EQ(mars.get_store(02011), 0'0000'0000'0000'0173u); // overwritten
     EXPECT_EQ(mars.get_store(01435), 0'0000'0000'0000'6000u); // latest
-    EXPECT_EQ(mars.get_store(02024), 0'0000'0000'0000'6000u);
     EXPECT_EQ(mars.get_store(01436), 0'0000'0000'0000'1460u);
 
     // Expanding 0 elements
@@ -1191,7 +1187,6 @@ TEST(mars, modd_stores)
 //  EXPECT_EQ(mars.get_store(01647), 0'0000'0000'0000'0001u); // overwritten
 //  EXPECT_EQ(mars.get_store(01647), 0'0000'0000'0000'0001u); // overwritten
     EXPECT_EQ(mars.get_store(01415), 0'0000'0000'0000'0010u); // latest
-    EXPECT_EQ(mars.get_store(02024), 0'0000'0000'0000'6000u);
 //  EXPECT_EQ(mars.get_store(04001), 0'0000'0000'0000'7722u); // overwritten
 
     // To DB: 7(8) words from 10001 to 5724

@@ -109,7 +109,6 @@ struct MarsImpl {
     uint64_t & arch;
     wordref abdv,
         usrloc,
-        newDescr,
         remlen;
     std::unordered_map<std::string, Page> DiskImage;
 
@@ -167,7 +166,6 @@ struct MarsImpl {
         arch(data[BDSYS+4].d),
         abdv(data[BDSYS+3]),
         usrloc(data[BDSYS+016]),
-        newDescr(data[BDSYS+024]),
         remlen(data[BDSYS+034]) // assigned in prepare_chunk(), used in allocator1047()
         { }
     void IOflush();
@@ -206,8 +204,8 @@ struct MarsImpl {
     void overflow(word);
     int prepare_chunk(int);
     uint64_t handle_chunk(int zone, word head);
-    void allocator(), allocator1023(uint64_t extentHeader);
-    void allocator1047(int loc, uint64_t head, uint64_t extentHeader);
+    uint64_t allocator(), allocator1023(uint64_t extentHeader);
+    uint64_t allocator1047(int loc, uint64_t head, uint64_t extentHeader);
     enum KeyOp { ADDKEY, DELKEY, A01160 };
     uint64_t key_manager(KeyOp, uint64_t key = ARBITRARY_NONZERO);
     void check_space(unsigned need);
@@ -896,13 +894,13 @@ uint64_t MarsImpl::handle_chunk(int zone, word head) {
     return (id << 39) | head.d;
 }
 
-void MarsImpl::allocator() {
-    allocator1023(make_extent_header());
+uint64_t MarsImpl::allocator() {
+    return allocator1023(make_extent_header());
 }
 
 // The 2 allocator helpers are disambiguated by the original code addresses
 // for lack of a better understanding of their semantics.
-void MarsImpl::allocator1023(uint64_t extentHeader) {
+uint64_t MarsImpl::allocator1023(uint64_t extentHeader) {
     int i = 0;
     auto free = freeSpace[curZone].d;
     int zone;
@@ -918,8 +916,7 @@ void MarsImpl::allocator1023(uint64_t extentHeader) {
             // Find a zone with enough free space
             for (size_t i = 0; i < dblen.d; ++i) {
                 if (mylen < freeSpace[i]) {
-                    allocator1047(0, handle_chunk(i, 0), extentHeader);
-                    return;
+                    return allocator1047(0, handle_chunk(i, 0), extentHeader);
                 }
             }
         }
@@ -934,10 +931,11 @@ void MarsImpl::allocator1023(uint64_t extentHeader) {
         zone = i - 1;
         i = prepare_chunk(i);
     }
-    allocator1047(i, handle_chunk(zone, 0), extentHeader);
+    return allocator1047(i, handle_chunk(zone, 0), extentHeader);
 }
 
-void MarsImpl::allocator1047(int loc, uint64_t head, uint64_t extentHeader) {
+uint64_t MarsImpl::allocator1047(int loc, uint64_t head, uint64_t extentHeader) {
+    uint64_t newDescr;
     for (;;) {               // head has the extent id in bits 48-40
         newDescr = (get_id(head) << 10) | curZone.d;
         int len = mylen.d;
@@ -964,10 +962,10 @@ void MarsImpl::allocator1047(int loc, uint64_t head, uint64_t extentHeader) {
         if (!loc) {
             dest[-1] = extentHeader;
             set_dirty_both();
-            return;
+            return newDescr;
         }
         set_dirty_data();
-        head = newDescr.d << 20;
+        head = newDescr << 20;
         mylen = remlen;
         if (--loc) {
             while (freeSpace[loc-1] < 2) {
@@ -1007,9 +1005,8 @@ void MarsImpl::mkctl() {
     // bdbuf[0] = 01731 - mylen.d;
     // Invoking OP_INSERT for the freeSpace array
     usrloc = myloc;
-    allocator();
+    curDescr = allocator();
     bdtab[01736-dblen.d] = 01731 - dblen.d; // This is the right way
-    curDescr = newDescr;          // unused
 }
 
 void MarsImpl::update_by_reallocation(int pos, uint64_t extentHeader) {
@@ -1017,7 +1014,7 @@ void MarsImpl::update_by_reallocation(int pos, uint64_t extentHeader) {
     curExtent = curExtent & 01777;
     free_from_current_extent(pos);
     ++mylen;
-    allocator1047(0, get_id(old) << 39, extentHeader);
+    /* newDescr = */ allocator1047(0, get_id(old) << 39, extentHeader);
     auto next = next_extent(old);
     if (next) {
         free(next);
@@ -1119,10 +1116,10 @@ void MarsImpl::update(word arg) {
     update_by_reallocation(pos, extentHeader);
     usrloc = usrloc + mylen;
     mylen = (extentHeader & 077777) - mylen.d;
-    allocator1023(usrloc[-1].d);
+    auto newDescr = allocator1023(usrloc[-1].d);
     find_item(saved.d);
     // Chain the first extent and the tail
-    curbuf[loc116+1] = (newDescr.d << 20) | curExtent.d;
+    curbuf[loc116+1] = (newDescr << 20) | curExtent.d;
     set_dirty_both();
 }
 
@@ -1180,8 +1177,7 @@ uint64_t MarsImpl::one_insn() {
         break;
     case Mars::OP_INSMETA:      // not yet covered by tests
         make_metablock(0);
-        allocator();
-        curDescr = newDescr;
+        curDescr = allocator();
         break;
     case Mars::OP_SETMETA:
         idx = 0;
@@ -1227,8 +1223,7 @@ uint64_t MarsImpl::one_insn() {
         break;
     case Mars::OP_INSERT:
         usrloc = myloc;
-        allocator();
-        curDescr = newDescr;
+        curDescr = allocator();
         break;
     case Mars::OP_GET:
         cpyout(adescr.d);
@@ -1362,6 +1357,7 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
     int len;
     unsigned need;
     word chain(mars, 0), newHeader(mars, 0);
+    uint64_t newDescr;
     switch (op) {
     case ADDKEY: jump(addkey);
     case DELKEY: jump(delkey);
@@ -1411,7 +1407,6 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
         acc = Cursor[idx].d;
     }
   addkey:
-    newDescr = acc;
     newkey = (curMetaBlock + Cursor[idx] + 2) & 077777;
     if (verbose) {
         size_t total = block_len(curMetaBlock[-1]);
@@ -1423,7 +1418,7 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
         curMetaBlock[i+1] = curMetaBlock[i-1];
     }
     newkey[0] = key;
-    newkey[1] = newDescr;
+    newkey[1] = acc;
     curMetaBlock[-1] = curMetaBlock[-1] + 2;
   a01160:                       // generic metablock update ???
     usrloc = curMetaBlock - 1;
@@ -1433,9 +1428,8 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
             // The root metablock is full
             check_space(0101);
             // Copy it somewhere and make a new root metablock
-            allocator();
             // With the 0 key pointing to the newly made block
-            RootBlock[2] = newDescr | INDIRECT;
+            RootBlock[2] = allocator() | INDIRECT;
             RootBlock[0] = 2;
             mylen = META_SIZE;
         }
@@ -1465,12 +1459,12 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
     Secondary[040] = make_block_header(curBlockDescr.d, next_block(Secondary[0]), 040);
     usrloc.d += 040;
     mylen = META_SIZE;
-    allocator();
+    newDescr = allocator();
     Secondary[040] = chain;
     key = Secondary[META_SIZE].d;
     chain = Secondary[0];
-    Secondary[0] = make_block_header(prev_block(chain), newDescr.d, 040);
-    newHeader = make_block_header(newDescr.d, 0, 0);
+    Secondary[0] = make_block_header(prev_block(chain), newDescr, 040);
+    newHeader = make_block_header(newDescr, 0, 0);
     usrloc = Secondary;
     mylen = block_len(Secondary[0]) + 1;
     update(curBlockDescr);
