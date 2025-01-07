@@ -295,39 +295,29 @@ uint64_t get_id(uint64_t x) {
         return x >> 39;
 }
 
-template<class T> uint64_t prev_block(const T & x) {
+uint64_t prev_block(const word & x) {
         return x.d >> 29;
+}
+
+uint64_t prev_block(uint64_t x) {
+        return x >> 29;
 }
 
 template<class T> uint64_t next_block(const T & x) {
     return (x.d >> 10) & BITS(19);
 }
 
-template<class T> uint64_t block_len(const T & x) {
+uint64_t block_len(const word & x) {
         return x.d & BITS(10);
+}
+
+uint64_t block_len(uint64_t x) {
+        return x & BITS(10);
 }
 
 inline uint64_t make_block_header(uint64_t prev, uint64_t next, uint64_t len) {
     return prev << 29 | next << 10 | len;
 }
-
-struct Accumulator {
-    static const uint64_t MASK = BITS(48);
-    uint64_t d;
-    operator uint64_t() { return d; }
-    uint64_t& operator=(uint64_t x) { d = x & MASK; return d; }
-    uint64_t& operator=(word x) { d = x.d & MASK; return d; }
-    uint64_t& operator&=(uint64_t x) { d &= x; return d; }
-    uint64_t& operator|=(uint64_t x) { d |= x; d &= MASK; return d; }
-    uint64_t& operator^=(uint64_t x) { d ^= x; d &= MASK; return d; }
-    uint64_t& operator+=(uint64_t x) { d += x; d &= MASK; return d; }
-    uint64_t& operator-=(uint64_t x) { d -= x; d &= MASK; return d; }
-    uint64_t& operator<<=(int x) { d <<= x; d &= MASK; return d; }
-    uint64_t& operator>>=(int x) { d >>= x; return d; }
-    uint64_t& operator++() { ++d; d &= MASK; return d; }
-    uint64_t& operator--() { --d; d &= MASK; return d; }
-
-} acc;
 
 const char * msg[] = {
     "Zero key", "Page corrupted", "No such record", "Invalid name",
@@ -902,7 +892,6 @@ uint64_t MarsImpl::allocator1023(uint64_t extentHeader, word usrloc) {
     int i = 0;
     auto free = freeSpace[curZone].d;
     int zone, remlen;
-    assert(usrloc.mars);
     ++mylen;
     if (mylen.d < free) {
         // The datum fits in the current zone!
@@ -1075,7 +1064,6 @@ void MarsImpl::find(word k) {
 void MarsImpl::update(word arg, word usrloc) {
     word saved(arg);
     int len = find_item(arg.d) - 1;
-    assert(usrloc.mars);
     if (mylen == len) {
         // The new length of data matches the first extent length
         if (len != 0) {
@@ -1093,13 +1081,12 @@ void MarsImpl::update(word arg, word usrloc) {
         return;
     }
     auto extentHeader = make_extent_header();
-    acc = curbuf[1] >> 10;
-    int pos = (acc + 1) & BITS(15);
+    auto curLen = curbuf[1] >> 10;
+    int pos = (curLen + 1) & BITS(15);
     // Compute the max extent length to avoid fragmentation
-    acc = (curbuf[1].d - acc) & 01777;
-    acc += curExtLength.d - 2;
-    auto curLen = acc;
-    if (acc >= mylen.d) {
+    curLen = (curbuf[1].d - curLen) & 01777;
+    curLen += curExtLength.d - 2;
+    if (curLen >= mylen.d) {
         // The new length will fit in one zone,
         // reallocation is guaranteed to succeed
         update_by_reallocation(pos, extentHeader, usrloc);
@@ -1152,10 +1139,8 @@ Error MarsImpl::eval() try {
 
 // Returns the updated instruction word
 uint64_t MarsImpl::one_insn() {
-    // The switch is entered with acc = 0
     if (verbose)
         std::cerr << std::format("Executing microcode {:02o}\n", curcmd.d & 077);
-    acc = 0;
     switch (curcmd.d & 077) {
     case 0:
         break;
@@ -1234,7 +1219,7 @@ uint64_t MarsImpl::one_insn() {
         setctl(dbdesc.d);
         break;
     case Mars::OP_ADDKEY:
-        adescr = acc = curDescr.d;
+        adescr = curDescr;
         return key_manager(ADDKEY, key.d);
     case Mars::OP_DELKEY:
         newkey = 0;              // looks dead
@@ -1257,7 +1242,6 @@ uint64_t MarsImpl::one_insn() {
         totext();
         break;
     case Mars::OP_SAVE:
-        acc = dirty.d;
         save();
         throw Mars::ERR_SUCCESS;
     case Mars::OP_ADDMETA:
@@ -1290,7 +1274,7 @@ uint64_t MarsImpl::one_insn() {
             return cont;
         break;
     case Mars::OP_CALL:
-        acc = desc1.d;
+        // acc = desc1.d;
         // Then an indirect jump to outadr;
         // expected to return to enter2?
         break;
@@ -1352,7 +1336,8 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
     int len;
     unsigned need;
     word chain(mars, 0), newHeader(mars, 0);
-    uint64_t newDescr;
+    uint64_t newDescr, cnt;
+    word toAdd = adescr;
     switch (op) {
     case ADDKEY: jump(addkey);
     case DELKEY: jump(delkey);
@@ -1365,7 +1350,6 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
     len = block_len(curMetaBlock[-1]);
     if (len < 2)
         std::cerr << "len @ delkey < 2\n";
-    // work = curMetaBlock + len;
     // Removing the element pointed by the iterator from the metablock
     for (size_t i = block_len(Cursor[idx]); i < block_len(curMetaBlock[-1]); ++i) {
         curMetaBlock[i] = curMetaBlock[i+2];
@@ -1378,20 +1362,19 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
         free(curBlockDescr.d);
         chain = Secondary[0];  // Save the block chain
         newHeader = make_block_header(prev_block(Secondary[0]), 0, 0);
-        acc = prev_block(Secondary[0]);
-        if (acc) {
-            acc = get_word(acc, 1);  // Read the previous block if it exists ?
-            Secondary[0] = make_block_header(prev_block(acc), 0, block_len(acc));
+        if (auto prev = prev_block(Secondary[0])) {
+            prev = get_word(prev, 1);  // Read the previous block if it exists ?
+            Secondary[0] = make_block_header(prev_block(prev), 0, block_len(prev));
             // Exclude the deleted block from the chain
-            set_header(make_block_header(prev_block(acc), next_block(chain), block_len(acc)));
+            set_header(make_block_header(prev_block(prev), next_block(chain), block_len(prev)));
         }
         dest = LOC_DELKEY;
         jump(pr1232);           // Do something and go to delkey again
     }
-    acc = loc116.d;
+    cnt = loc116.d;
     while (true) {
-        acc &= 077777;
-        if (!acc) {
+        cnt &= 077777;
+        if (!cnt) {
             key = curMetaBlock[0].d;
             recurse = true;
             dest = LOC_A00731;
@@ -1399,7 +1382,7 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
         jump(a01160);
       a00731:
         curMetaBlock[Cursor[idx]] = key;
-        acc = Cursor[idx].d;
+        toAdd = Cursor[idx];
     }
   addkey:
     newkey = (curMetaBlock + Cursor[idx] + 2) & 077777;
@@ -1413,7 +1396,7 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
         curMetaBlock[i+1] = curMetaBlock[i-1];
     }
     newkey[0] = key;
-    newkey[1] = acc;
+    newkey[1] = toAdd;
     curMetaBlock[-1] = curMetaBlock[-1] + 2;
   a01160:                       // generic metablock update ???
     if (idx == 0) {
@@ -1479,15 +1462,15 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
     if (idx != 0) {
         get_secondary_block(Cursor[idx-1]);
     }
-    acc = Cursor[idx] >> 15;
+    cnt = Cursor[idx] >> 15;
     for (;;) {
-        uint64_t stepCnt = acc;
-        acc >>= 15;
-        int i = acc & BITS(15);
+        uint64_t stepCnt = cnt;
+        cnt >>= 15;
+        int i = cnt & BITS(15);
         if (!(stepCnt & 077777)) {
             switch (dest) {
             case LOC_ADDKEY:
-                acc = (newHeader >> 29) | INDIRECT;
+                toAdd = (newHeader >> 29) | INDIRECT;
                 if (verbose)
                     std::cerr << "Jump target addkey\n";
                 jump(addkey);
@@ -1505,14 +1488,14 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
         }
         // The following code is triggered, e.g. by using DELKEY
         // after stepping backwards or forwards.
-        acc = stepCnt;
+        cnt = stepCnt;
         if (--i) {
-            acc += 2;
+            cnt += 2;
         }
-        stepCnt = acc - 1;
+        stepCnt = cnt - 1;
         if (step(i))
             return cont;         // never happens?
-        acc = stepCnt;
+        cnt = stepCnt;
     }
 }
 

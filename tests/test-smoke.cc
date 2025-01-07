@@ -81,6 +81,7 @@ TEST(mars, coverage)
     std::string fname = tobesm("TEST");
     ASSERT_EQ(mars.newd(fname.c_str(), 052, 1, 2), Mars::ERR_SUCCESS);
     ASSERT_EQ(mars.opend(fname.c_str()), Mars::ERR_SUCCESS);
+    mars.disableSync = 3;
 
     const int PAGE1 = 010000;
     const int PAGE2 = 012000;
@@ -119,6 +120,7 @@ TEST(mars, coverage)
     }
 
     EXPECT_EQ(mars.cleard(false), Mars::ERR_SUCCESS);
+    mars.eval(Mars::OP_SAVE);
     delete &mars;
 
     run_command(result, "sha1sum 52000[0-2]");
