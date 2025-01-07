@@ -108,8 +108,7 @@ struct MarsImpl {
     // Fields of BDSYS
     uint64_t & arch;
     wordref abdv,
-        usrloc,
-        remlen;
+        usrloc;
     std::unordered_map<std::string, Page> DiskImage;
 
     // History of all stores, for debug.
@@ -165,8 +164,7 @@ struct MarsImpl {
         // Fields of BDSYS
         arch(data[BDSYS+4].d),
         abdv(data[BDSYS+3]),
-        usrloc(data[BDSYS+016]),
-        remlen(data[BDSYS+034]) // assigned in prepare_chunk(), used in allocator1047()
+        usrloc(data[BDSYS+016])
         { }
     void IOflush();
     void IOcall(word);
@@ -202,10 +200,10 @@ struct MarsImpl {
     Error eval();
     uint64_t one_insn();
     void overflow(word);
-    int prepare_chunk(int);
+    int prepare_chunk(int, int &remlen);
     uint64_t handle_chunk(int zone, word head);
     uint64_t allocator(), allocator1023(uint64_t extentHeader);
-    uint64_t allocator1047(int loc, uint64_t head, uint64_t extentHeader);
+    uint64_t allocator1047(int loc, uint64_t head, uint64_t extentHeader, int remlen);
     enum KeyOp { ADDKEY, DELKEY, A01160 };
     uint64_t key_manager(KeyOp, uint64_t key = ARBITRARY_NONZERO);
     void check_space(unsigned need);
@@ -867,10 +865,10 @@ void MarsImpl::overflow(word ext) {
 // returns 0 if no more chunks remain
 // otherwise z to continue finding
 // free space for the remaining data.
-int MarsImpl::prepare_chunk(int z) {
+int MarsImpl::prepare_chunk(int z, int &remlen) {
     auto free = freeSpace[z-1].d - 1;
     if (free < mylen.d) {
-        remlen = mylen - free;
+        remlen = mylen.d - free;
         mylen = free;
         usrloc = usrloc - free;
     } else {
@@ -903,7 +901,7 @@ uint64_t MarsImpl::allocator() {
 uint64_t MarsImpl::allocator1023(uint64_t extentHeader) {
     int i = 0;
     auto free = freeSpace[curZone].d;
-    int zone;
+    int zone, remlen;
     ++mylen;
     if (mylen.d < free) {
         // The datum fits in the current zone!
@@ -916,7 +914,7 @@ uint64_t MarsImpl::allocator1023(uint64_t extentHeader) {
             // Find a zone with enough free space
             for (size_t i = 0; i < dblen.d; ++i) {
                 if (mylen < freeSpace[i]) {
-                    return allocator1047(0, handle_chunk(i, 0), extentHeader);
+                    return allocator1047(0, handle_chunk(i, 0), extentHeader, 0);
                 }
             }
         }
@@ -929,12 +927,12 @@ uint64_t MarsImpl::allocator1023(uint64_t extentHeader) {
             overflow(0);
         }
         zone = i - 1;
-        i = prepare_chunk(i);
+        i = prepare_chunk(i, remlen);
     }
-    return allocator1047(i, handle_chunk(zone, 0), extentHeader);
+    return allocator1047(i, handle_chunk(zone, 0), extentHeader, remlen);
 }
 
-uint64_t MarsImpl::allocator1047(int loc, uint64_t head, uint64_t extentHeader) {
+uint64_t MarsImpl::allocator1047(int loc, uint64_t head, uint64_t extentHeader, int remlen) {
     uint64_t newDescr;
     for (;;) {               // head has the extent id in bits 48-40
         newDescr = (get_id(head) << 10) | curZone.d;
@@ -974,7 +972,7 @@ uint64_t MarsImpl::allocator1047(int loc, uint64_t head, uint64_t extentHeader) 
                 overflow(head);
             }
             int zone = loc - 1;
-            loc = prepare_chunk(loc);
+            loc = prepare_chunk(loc, remlen);
             head = handle_chunk(zone, head);
             continue;
         }
@@ -1014,7 +1012,7 @@ void MarsImpl::update_by_reallocation(int pos, uint64_t extentHeader) {
     curExtent = curExtent & 01777;
     free_from_current_extent(pos);
     ++mylen;
-    /* newDescr = */ allocator1047(0, get_id(old) << 39, extentHeader);
+    /* newDescr = */ allocator1047(0, get_id(old) << 39, extentHeader, 0);
     auto next = next_extent(old);
     if (next) {
         free(next);
