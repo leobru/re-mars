@@ -1,0 +1,108 @@
+шифр 419900зс5^
+dis 40(2048-630)^
+dis 41(2148)^
+dis 52(1234-wr)^
+ОЗУ 32^
+еев1а3
+*name
+*call ficmemory
+*perso:410440
+*assem
+ start:,name,
+ *bdvect*:,sc,168
+ *erstop*:,lc,1
+ *bdv*:,lc,1
+ *bderrn*:,lc,1
+ *bdc*:,lc,7
+ p/bdsys:,pc,1024
+ p/bdtab:,pc,1024
+ p/bdbuf:,pc,1024
+ main:,subp,
+ ,uj,main
+ ,end,
+*no list
+*pascal
+(*=p-,t-*)PROGRAM main (OUTPUT,BDVECT,bderrn);
+type word = record case integer of 0:(i:integer); 1:(a:alfa);
+2:(c:char) end;
+var i,j, before, after:integer;bderrn:integer;
+a:array [1..1024] _of integer;
+bdvect, sav: array[0..167] of word;
+PROCEDURE PASSETAR(I: INTEGER); EXTERNAL;
+PROCEDURE PASACD(VAR I: INTEGER); FORTRAN;
+procedure pasbd; external;
+procedure pasbdi; external;
+procedure root;
+_(
+        bdvect[3].i := 31c;
+        pasbd;
+_);
+procedure first;
+_(
+        bdvect[3].i := 0401c;
+        pasbd;
+_);
+procedure last;
+_(
+        bdvect[3].i := 02c;
+        pasbd;
+_);
+procedure prev;
+_(
+        bdvect[3].i := 03c;
+        pasbd;
+_);
+procedure next;
+_(
+        bdvect[3].i := 04c;
+        pasbd;
+_);
+procedure rm;
+_(
+        bdvect[3].i := 2723c;
+        pasbd;
+_);
+
+procedure delforward;
+var i: integer;
+_(
+    first;
+    for i := 1 to 1000 do next;
+    rm;
+_);
+
+procedure delback;
+var i: integer;
+_(
+    last;
+    for i := 1 to 1000 do prev;
+    rm;
+_);
+
+BEGIN
+    j := 427520000C;
+    PASACD(j);
+    PASSETAR(j);
+    root;
+%    besm(0770002B);
+%    besm(0770000B);
+    for j := 1 to 6553 do _(
+    putd(j, j:0);
+    writeln(' Done populating', j:0);
+    _);
+    for j := 1 to 2048 do _(
+    delforward;
+    writeln(' Delforward: done ', j:0);
+    _);
+    for j := 1 to 2048 do _(
+    delback;
+    writeln(' Delback: done ', j:0);
+    _);
+    
+END.
+*no load list
+*main start
+*execute
+*end file
+``````
+еконец
