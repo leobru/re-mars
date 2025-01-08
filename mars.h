@@ -93,7 +93,7 @@ class Mars {
 
     struct word {
         class Mars * const mars = nullptr;
-        uint64_t d;
+        union { uint64_t d; word *p; };
         word(Mars& base, uint64_t x) : mars(&base), d(x) { }
         word(uint64_t x = 0) : d(x) { }
         uint64_t& operator=(long unsigned int x) { return store(x); }
@@ -103,9 +103,8 @@ class Mars {
         uint64_t& operator=(long long unsigned int x) { return store(x); }
         uint64_t& store(uint64_t x);
         word& operator=(word x);
-        word& operator=(word * x);
-        inline word& operator*() const;
-        inline word& operator[](word x) const;
+        word& operator+=(word x);
+        word& operator-=(word x);
         word operator+(word x) const { return word(*mars, d + x.d); }
         word operator-(word x) const { return word(*mars, d - x.d); }
         word operator&(word x) const { return d & x.d; }
