@@ -190,6 +190,7 @@ struct MarsImpl {
     uint64_t allocator1047(int loc, uint64_t head, uint64_t extentHeader, int remlen, word* &usrloc);
     enum KeyOp { ADDKEY, DELKEY, A01160 };
     uint64_t key_manager(KeyOp, uint64_t key = ARBITRARY_NONZERO);
+    bool pr12x2(bool withHeader, word chain, word newHeader);
     void check_space(unsigned need);
     void mkctl(), find(word);
     void update_by_reallocation(int, uint64_t, word* &usrloc), search_in_block(word*, word), update(word, word *usrloc);
@@ -1306,9 +1307,41 @@ void MarsImpl::check_space(unsigned need) {
     }
 }
 
+bool MarsImpl::pr12x2(bool withHeader, word chain, word newHeader) {
+    if (withHeader) {
+        if (auto next = next_block(chain)) {
+            set_header(newHeader | (get_word(next, 1) & BITS(29)));
+        }
+    }
+    curMetaBlock = RootBlock+1;
+    if (idx == 0) {
+        set_dirty_tab();
+        cont = curcmd >> 6;
+        return true;
+    }
+    idx -= 2;
+    if (idx != 0) {
+        get_secondary_block(Cursor[idx-1]);
+    }
+    uint64_t cnt = Cursor[idx] >> 15;
+    for (;;) {
+        int i = (cnt >> 15) & BITS(15);
+        if (!(cnt & 077777)) {
+            return false;
+        }
+        // The following code is triggered, e.g. by using DELKEY
+        // after stepping backwards or forwards.
+        if (--i) {
+            cnt += 2;
+        }
+        if (step(i))
+            return true;         // never happens?
+        cnt = cnt - 1;
+    }
+}
+
 // Performs key insertion and deletion in the BTree
 uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
-    enum { LOC_NONE, LOC_DELKEY, LOC_A00731, LOC_ADDKEY } dest = LOC_NONE;
     bool recurse = false;
     int len;
     unsigned need;
@@ -1345,16 +1378,16 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
             // Exclude the deleted block from the chain
             set_header(make_block_header(prev_block(prev), next_block(chain), block_len(prev)));
         }
-        dest = LOC_DELKEY;
-        jump(pr1232);           // Do something and go to delkey again
+        pr12x2(true, chain, newHeader);
+        jump(delkey);           // Do something and go to delkey again
     }
     cnt = loc116.d;
     while (true) {
         cnt &= 077777;
         if (!cnt) {
-            key = curMetaBlock[0].d;
+            // The first entry in a metablock has been deleted
+            key = curMetaBlock[0].d; // the new key at position 0
             recurse = true;
-            dest = LOC_A00731;
         }
         jump(a01160);
       a00731:
@@ -1389,7 +1422,10 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
         }
         update(Cursor[-1], curMetaBlock - 1); // update the root metablock
         if (recurse) {
-            recurse = false; jump(a01242);
+            recurse = false;
+            if (pr12x2(false, chain, newHeader))
+                return cont;
+            jump(a00731);
         }
         return curcmd >> 6;
     }
@@ -1398,7 +1434,10 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
         mylen = block_len(curMetaBlock[-1]) + 1;
         update(curBlockDescr, curMetaBlock - 1);
         if (recurse) {
-            recurse = false; jump(a01242);
+            recurse = false;
+            if (pr12x2(false, chain, newHeader))
+                return cont;
+            jump(a00731);
         }
         return curcmd >> 6;
     }
@@ -1420,56 +1459,10 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
     newHeader = make_block_header(newDescr, 0, 0);
     mylen = block_len(Secondary[0]) + 1;
     update(curBlockDescr, Secondary);
-    dest = LOC_ADDKEY;
-    // pr1232 can return in 3 ways:
-    // - continue execution (following dest)
-    // - terminating execution of the instruction (returning curcmd >> 6)
-    // - conditionaly skipping micro-instructions afer step() (returning cont)
-  pr1232:
-    if (auto next = next_block(chain)) {
-        set_header(newHeader | (get_word(next, 1) & BITS(29)));
-    }
-  a01242:
-    curMetaBlock = RootBlock+1;
-    if (idx == 0) {
-        set_dirty_tab();
-        return curcmd >> 6;
-    }
-    idx -= 2;
-    if (idx != 0) {
-        get_secondary_block(Cursor[idx-1]);
-    }
-    cnt = Cursor[idx] >> 15;
-    for (;;) {
-        int i = (cnt >> 15) & BITS(15);
-        if (!(cnt & 077777)) {
-            switch (dest) {
-            case LOC_ADDKEY:
-                toAdd = (newHeader >> 29) | INDIRECT;
-                if (verbose)
-                    std::cerr << "Jump target addkey\n";
-                jump(addkey);
-            case LOC_DELKEY:
-                if (verbose)
-                    std::cerr << "Jump target delkey\n";
-                jump(delkey);
-            case LOC_A00731:
-                if (verbose)
-                    std::cerr << "Jump target a00731\n";
-                jump(a00731);
-            default:
-                abort();
-            }
-        }
-        // The following code is triggered, e.g. by using DELKEY
-        // after stepping backwards or forwards.
-        if (--i) {
-            cnt += 2;
-        }
-        if (step(i))
-            return cont;         // never happens?
-        cnt = cnt - 1;
-    }
+    if (pr12x2(true, chain, newHeader))
+        return cont;
+    toAdd = (newHeader >> 29) | INDIRECT;
+    jump(addkey);
 }
 
 void MarsImpl::setup() {
