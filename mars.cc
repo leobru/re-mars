@@ -74,12 +74,13 @@ struct MarsImpl {
     wordref outadr, orgcmd, curcmd, givenp, key,
         erhndl, curDescr, myloc, loc14, mylen,
         savedp, adescr,
-        curkey, endmrk, desc1, offset, curExtLength,
+        curkey, endmrk, offset,
         loc116,
         curExtent, curBlockDescr;
 
     pwordref bdbuf, bdtab, freeSpace, newkey, extPtr, curMetaBlock, curbuf;
-    uintref disableSync, dbdesc, DBkey, IOpat, datumLen, dblen, curlen, idx, curZone,
+    uintref disableSync, dbdesc, DBkey, desc1, IOpat,
+        curExtLength, datumLen, dblen, curlen, idx, curZone,
         dirty;
 
     uint64_t cont;              // continuation instruction word
@@ -113,9 +114,7 @@ struct MarsImpl {
         adescr(data[BDVECT+035]),
         curkey(data[BDVECT+037]),
         endmrk(data[BDVECT+040]),
-        desc1(data[BDVECT+041]),
         offset(data[BDVECT+042]),
-        curExtLength(data[BDVECT+045]),
         loc116(data[BDVECT+0116]),
         curExtent(data[BDVECT+0220]),
         curBlockDescr(data[BDVECT+0246]),
@@ -131,7 +130,9 @@ struct MarsImpl {
         disableSync(data[BDVECT+6].d),
         dbdesc(data[BDVECT+030].d),
         DBkey(data[BDVECT+031].d),
+        desc1(data[BDVECT+041].d),
         IOpat(data[BDVECT+044].d),
+        curExtLength(data[BDVECT+045].d),
         datumLen(data[BDVECT+047].d),
         dblen(data[BDVECT+051].d),
         curlen(data[BDVECT+053].d),
@@ -478,20 +479,20 @@ uint64_t MarsImpl::find_item(uint64_t arg) {
     }
     extPtr = curbuf + get_extstart(curExtent) + 1;
     curExtLength =  get_extlength(curExtent);
-    return curExtLength.d;
+    return curExtLength;
 }
 
 // Assumes that arg points to a datum with the standard header.
 // Puts the full header to desc1, and its length to datumLen.
 void MarsImpl::info(uint64_t arg) {
     find_item(arg);
-    desc1 = *extPtr;
-    datumLen = desc1.d & 077777;
+    desc1 = extPtr->d;
+    datumLen = desc1 & 077777;
     curlen = 0;
 }
 
 void MarsImpl::totext() {
-    uint64_t v = desc1.d;
+    uint64_t v = desc1;
     endmrk = Mars::tobesm(std::format("\017{:05o}", v & 077777));
     desc1 = Mars::tobesm(std::format("\017{:c}{:c}{:c}{:c}{:c}",
                                      (v >> 46) & 3, (v >> 42) & 15,
@@ -538,7 +539,7 @@ void MarsImpl::cpyout(uint64_t descr) {
     // Skip the first word (the header) of the found item
     ++extPtr;
     --curExtLength;
-    copy_chained(curExtLength.d, usrloc);
+    copy_chained(curExtLength, usrloc);
 }
 
 // Not really a mutex
@@ -609,7 +610,7 @@ void MarsImpl::free_extent(int pos) {
     for (;--pos != 0;) {
         if ((curbuf[pos+1].d & 01777) >= locIdx)
             continue;
-        curbuf[pos+1] = curbuf[pos+1] + curExtLength;
+        curbuf[pos+1] += curExtLength;
     }
     unsigned freeIdx = curbuf[1].d & 01777;
     if (freeIdx != locIdx) {
@@ -617,7 +618,7 @@ void MarsImpl::free_extent(int pos) {
             throw Mars::ERR_INTERNAL;
         int diff = locIdx - freeIdx;
         word * freeLoc = curbuf + freeIdx;
-        word * loc = freeLoc + curExtLength.d;
+        word * loc = freeLoc + curExtLength;
         // Move the extent data up to make the free area
         // contiguous
         do {
@@ -678,10 +679,10 @@ void MarsImpl::find_end_mark() {
 // DONE is unused.
 bool MarsImpl::perform(Ops op, bool &done, unsigned &tail, word* &usrloc) {
     int len = tail;             // data length to operate upon
-    if (tail >= curExtLength.d) {
+    if (tail >= curExtLength) {
         // The desired length is too long; adjust it
-        tail -= curExtLength.d;
-        len = curExtLength.d;
+        tail -= curExtLength;
+        len = curExtLength;
         done = false;
     }
     // Now len = current extent length or less, tail = remaining length (may be 0)
@@ -707,7 +708,7 @@ bool MarsImpl::perform(Ops op, bool &done, unsigned &tail, word* &usrloc) {
     case DONE:
         break;
     }
-    usrloc = usrloc + curExtLength.d;
+    usrloc = usrloc + curExtLength;
     return false;
 }
 
@@ -765,10 +766,10 @@ bool MarsImpl::access_data(Ops op, word arg) {
             return true;
         }
         if (done) {
-            extPtr = extPtr + tail;
-            curExtLength = curExtLength - tail;
+            extPtr += tail;
+            curExtLength -= tail;
             // Side effect: SEEK returns the word at offset in desc1
-            desc1 = *extPtr;
+            desc1 = extPtr->d;
         } else {
             auto next = next_extent(curExtent);
             if (next) {
@@ -791,7 +792,7 @@ uint64_t MarsImpl::get_word(uint64_t arg, uint64_t offset) {
     find_item(arg);
     // Not expecting it to fail
     access_data(SEEK, offset);
-    return desc1.d;
+    return desc1;
 }
 
 void MarsImpl::assign_and_incr(uint64_t dst) {
@@ -1061,7 +1062,7 @@ void MarsImpl::update(word arg, word* usrloc) {
     int pos = (curFree + 1) & BITS(15);
     // Compute the max extent length to avoid fragmentation
     curFree = (curbuf[1].d - curFree) & 01777;
-    curFree += curExtLength.d - 2;
+    curFree += curExtLength - 2;
     if (curFree >= mylen.d) {
         // The new length will fit in one zone,
         // reallocation is guaranteed to succeed
