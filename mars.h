@@ -105,10 +105,10 @@ class Mars {
         word& operator=(word x);
         word& operator+=(word x);
         word& operator-=(word x);
-        word operator+(word x) const { return word(*mars, d + x.d); }
-        word operator-(word x) const { return word(*mars, d - x.d); }
-        word operator&(word x) const { return d & x.d; }
-        word operator|(word x) const { return d | x.d; }
+        uint64_t operator+(word x) const { return d + x.d; }
+        uint64_t operator-(word x) const { return d - x.d; }
+        uint64_t operator&(word x) const { return d & x.d; }
+        uint64_t operator|(word x) const { return d | x.d; }
         uint64_t operator>>(int x) const { return d >> x; }
         bool operator==(const word & x) const { return d == x.d; }
         bool operator!=(const word & x) const { return d != x.d; }
