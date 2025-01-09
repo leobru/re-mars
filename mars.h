@@ -92,29 +92,16 @@ class Mars {
     }
 
     struct word {
-        class Mars * const mars = nullptr;
-        union { uint64_t d; word *p; };
-        word(Mars& base, uint64_t x) : mars(&base), d(x) { }
+        union { uint64_t d; uint64_t *u; };
         word(uint64_t x = 0) : d(x) { }
-        uint64_t& operator=(long unsigned int x) { return store(x); }
-        uint64_t& operator=(int x) { return store(x); }
-        uint64_t& operator=(long x) { return store(x); }
-        uint64_t& operator=(long long int x) { return store(x); }
-        uint64_t& operator=(long long unsigned int x) { return store(x); }
-        uint64_t& store(uint64_t x);
-        word& operator=(word x);
-        word& operator+=(word x);
-        word& operator-=(word x);
-        uint64_t operator+(word x) const { return d + x.d; }
-        uint64_t operator-(word x) const { return d - x.d; }
-        uint64_t operator&(word x) const { return d & x.d; }
-        uint64_t operator|(word x) const { return d | x.d; }
-        uint64_t operator>>(int x) const { return d >> x; }
+        uint64_t& operator=(long unsigned int x) { return d = x; }
+        uint64_t& operator=(int x) { return d = x; }
+        uint64_t& operator=(long x) { return d = x; }
+        uint64_t& operator=(long long int x) { return d = x; }
+        uint64_t& operator=(long long unsigned int x) { return d = x; }
+        word(uint64_t *x) : u(x) { }
         bool operator==(const word & x) const { return d == x.d; }
         bool operator!=(const word & x) const { return d != x.d; }
-        bool operator<(const word & x) const { return d < x.d; }
-        word& operator++() { (*this) = d + 1; return *this; }
-        word& operator--() { (*this) = d - 1; return *this; }
     };
 
     struct bdvect_t {

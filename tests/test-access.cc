@@ -62,9 +62,9 @@ TEST(mars, write)
     ASSERT_EQ(e, Mars::ERR_SUCCESS);
     EXPECT_EQ(mars.datumLen.d, len);
     ASSERT_EQ(mars.getd(key, base, 0), Mars::ERR_SUCCESS);
-    uint64_t expect = std::accumulate(&mars.data[orig], &mars.data[orig+len], Mars::word(mars, 0)).d -
+    auto expect = std::accumulate(&mars.data[orig].d, &mars.data[orig+len].d, 0) -
         12345*3 - 999 - 1000 - 1001 + 3;
-    EXPECT_EQ(std::accumulate(&mars.data[base], &mars.data[base+len], Mars::word(mars, 0)).d, expect);
+    EXPECT_EQ(std::accumulate(&mars.data[base].d, &mars.data[base+len].d, 0), expect);
 }
 
 TEST(mars, compare_match)
