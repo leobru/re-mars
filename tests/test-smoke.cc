@@ -10,10 +10,16 @@ TEST(mars, diagnostics)
 {
     Mars mars(false);
     uint64_t zero = 0, one = 1;
+    mars.SetDB(0, 0, 1);
+    ASSERT_EQ(mars.data[7], Mars::ERR_BAD_CATALOG);    
     mars.InitDB(0, 0, 1);
     mars.root();
     mars.next();
     ASSERT_EQ(mars.data[7], Mars::ERR_NO_CURR);
+    ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_BEGIN, Mars::OP_PREV)),
+              Mars::ERR_NO_PREV);
+    ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_BEGIN, Mars::OP_NEXT)),
+              Mars::ERR_NO_NEXT);
     ASSERT_EQ(mars.getd(zero, 0, 0), Mars::ERR_INV_NAME);
     ASSERT_EQ(mars.getd(one, 0, 0), Mars::ERR_NO_NAME);
     ASSERT_EQ(mars.putd(one, 0, 2), Mars::ERR_SUCCESS);
@@ -32,8 +38,8 @@ TEST(mars, diagnostics)
     ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_FIND, Mars::OP_CHAIN)), Mars::ERR_SUCCESS);
     ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_BEGIN, Mars::OP_FREE, Mars::OP_DELKEY)),
               Mars::ERR_NO_RECORD);
-    ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_BEGIN, Mars::OP_NEXT)),
-              Mars::ERR_NO_NEXT);
+    ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_BEGIN, Mars::OP_SETMETA)),
+              Mars::ERR_ZEROKEY);
     ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_LOCK, Mars::OP_LOCK)), Mars::ERR_LOCKED);
 }
 
