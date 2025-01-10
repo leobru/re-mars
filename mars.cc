@@ -87,7 +87,8 @@ struct MarsImpl {
 
     // Fields of BDVECT
     // uintref outadr;
-    puintref bdbuf, bdtab, freeSpace, newkey, extPtr, curMetaBlock, curbuf;
+    puintref bdbuf, bdtab, freeSpace, newkey, extPtr, curbuf;
+    Metablock * &curMetaBlock;
     uintref orgcmd, curcmd,
         disableSync, givenp, key, erhndl,
         curDescr,
@@ -125,8 +126,9 @@ struct MarsImpl {
         freeSpace(data[BDVECT+034].u),
         newkey(data[BDVECT+036].u),
         extPtr(data[BDVECT+046].u),
-        curMetaBlock(data[BDVECT+050].u),
         curbuf(data[BDVECT+0241].u),
+
+        curMetaBlock(reinterpret_cast<Metablock*&>(data[BDVECT+050].u)),
 
         orgcmd(data[BDVECT+3].d),
         curcmd(data[BDVECT+5].d),
@@ -212,7 +214,7 @@ struct MarsImpl {
     void check_space(unsigned need);
     void mkctl(), find(uint64_t);
     void update_by_reallocation(int, uint64_t, uint64_t* &usrloc);
-    void search_in_block(uint64_t*, uint64_t);
+    void search_in_block(Metablock*, uint64_t);
     void update(uint64_t, uint64_t *usrloc);
     void setDirty(int x) {
         dirty |= curZone ? x+1 : 1;
@@ -536,7 +538,7 @@ void MarsImpl::lock() {
 void MarsImpl::get_block(uint64_t descr, uint64_t * dest) {
     Cursor[idx/2].block_id = descr;
     loc116 = descr & BITS(19);
-    curMetaBlock = dest + 2;
+    curMetaBlock = reinterpret_cast<Metablock*>(dest + 1);
     if (loc116 != curBlockDescr) {
         curBlockDescr = loc116;
         copy_chained(find_item(curBlockDescr), dest);
@@ -700,8 +702,8 @@ bool MarsImpl::step(uint64_t dir) {
     if (!dir) {
         // Step forward
         pos += 2;
-        if ((pos & 01777) == block_len(curMetaBlock[-1])) {
-            auto next = next_block(curMetaBlock[-1]);
+        if ((pos & 01777) == block_len(curMetaBlock->words)) {
+            auto next = next_block(curMetaBlock->words);
             if (!next) {
                 cont = skip(Mars::ERR_NO_NEXT);
                 return true;
@@ -713,7 +715,7 @@ bool MarsImpl::step(uint64_t dir) {
     } else {
         // Step back
         if (!pos) {
-            auto prev = prev_block(curMetaBlock[-1]);
+            auto prev = prev_block(curMetaBlock->words);
             if (!prev) {
                 cont = skip(Mars::ERR_NO_PREV);
                 return true;
@@ -726,8 +728,8 @@ bool MarsImpl::step(uint64_t dir) {
     }
     cur.pos = pos;
     cur.steps = ONEBIT(16);
-    curkey = curMetaBlock[pos];
-    adescr = curMetaBlock[pos+1];
+    curkey = curMetaBlock->element[pos/2].key;
+    adescr = curMetaBlock->element[pos/2].id;
     return false;
 }
 
@@ -983,29 +985,29 @@ void MarsImpl::find_end_word() {
 }
 
 // base points to the payload of a metadata block
-void MarsImpl::search_in_block(uint64_t *base, uint64_t what) {
-    bool parent = base[1] & INDIRECT;
-    int i = block_len(base[-1]);
+void MarsImpl::search_in_block(Metablock *base, uint64_t what) {
+    bool parent = base->element[0].indirect;
+    int i = block_len(base->words);
     if (verbose)
         std::cerr << std::format("Comparing {} elements\n", i/2);
     for (; i; i -= 2) {
-        if (base[i-2] <= what)
+        if (base->element[i/2-1].key <= what)
             break;
     }
     i -= 2;
     Cursor[idx/2].pos = i;
     Cursor[idx/2].steps = ONEBIT(16);
     if (!parent) {
-        curkey = curMetaBlock[i];
-        adescr = curMetaBlock[i+1];
+        curkey = curMetaBlock->element[i/2].key;
+        adescr = curMetaBlock->element[i/2].id;
         return;
     }
     idx += 2;
     if (idx > 7) {
         std::cerr << "Idx = " << idx << ": DB will be corrupted\n";
     }
-    get_secondary_block(base[i+1]);
-    search_in_block(Secondary+1, what);
+    get_secondary_block(base->element[i/2].id);
+    search_in_block(reinterpret_cast<Metablock*>(Secondary), what);
 }
 
 void MarsImpl::find(uint64_t k) {
@@ -1014,18 +1016,15 @@ void MarsImpl::find(uint64_t k) {
         // There was an overflow, re-reading is needed
         get_root_block();
     }
-    search_in_block(RootBlock+1, k);
+    search_in_block(reinterpret_cast<Metablock*>(RootBlock), k);
 }
 
 void MarsImpl::update(uint64_t arg, uint64_t* usrloc) {
     uint64_t len = find_item(arg) - 1;
     if (mylen == len) {
         // The new length of data matches the first extent length
-        if (len != 0) {
-            do {
-                extPtr[len] = usrloc[len-1];
-            } while (--len);
-        }
+        for (; len--;)
+            extPtr[len+1] = usrloc[len];
         *extPtr = make_extent_header();
         set_dirty_data();
         if (next_extent(curExtent)) {
@@ -1200,7 +1199,7 @@ uint64_t MarsImpl::one_insn() {
         save();
         throw Mars::ERR_SUCCESS;
     case Mars::OP_ADDMETA:
-        curMetaBlock[Cursor[idx/2].pos + 1] = curDescr;
+        curMetaBlock->element[Cursor[idx/2].pos/2].id = curDescr;
         return key_manager(A01160);
     case Mars::OP_SKIP:
         return curcmd >> 12;
@@ -1290,7 +1289,7 @@ bool MarsImpl::pr12x2(bool withHeader, uint64_t chain, uint64_t newHeader) {
             set_header(newHeader | (get_word(next, 1) & BITS(29)));
         }
     }
-    curMetaBlock = RootBlock+1;
+    curMetaBlock = reinterpret_cast<Metablock*>(RootBlock);
     if (idx == 0) {
         set_dirty_tab();
         cont = curcmd >> 6;
@@ -1328,15 +1327,15 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
     // Was loc116 = curMetaBlock ^ (curMetaBlock + Cursor[idx+1])
     // using a 15-bit register to compute, which is effectively as good as ...
     loc116 = Cursor[idx/2].pos ? ARBITRARY_NONZERO : 0;
-    len = block_len(curMetaBlock[-1]);
+    len = block_len(curMetaBlock->words);
     if (len < 2)
         std::cerr << "len @ delkey < 2\n";
     // Removing the element pointed by the iterator from the metablock
-    for (size_t i = Cursor[idx/2].pos; i < block_len(curMetaBlock[-1]); ++i) {
-        curMetaBlock[i] = curMetaBlock[i+2];
+    for (size_t i = Cursor[idx/2].pos; i < block_len(curMetaBlock->words); ++i) {
+        curMetaBlock->element[i/2] = curMetaBlock->element[i/2+1];
     }
-    curMetaBlock[-1] -= 2;
-    if (block_len(curMetaBlock[-1]) == 0) {
+    curMetaBlock->words -= 2;
+    if (block_len(curMetaBlock->words) == 0) {
         // The current metablock became empty
         if (!idx)               // That was the root metablock?
             jump(a01160);       // Do not free it
@@ -1357,40 +1356,40 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
         cnt &= 077777;
         if (!cnt) {
             // The first entry in a metablock has been deleted
-            key = curMetaBlock[0]; // the new key at position 0
+            key = curMetaBlock->element[0].key; // the new key at position 0
             recurse = true;
         }
         jump(a01160);
       a00731:
-        curMetaBlock[Cursor[idx/2].pos] = key;
+        curMetaBlock->element[Cursor[idx/2].pos/2].key = key;
     }
   addkey:
-    newkey = &curMetaBlock[Cursor[idx/2].pos + 2];
+    newkey = &curMetaBlock->element[Cursor[idx/2].pos/2 + 1].key;
     if (verbose) {
-        size_t total = block_len(curMetaBlock[-1]);
+        size_t total = block_len(curMetaBlock->words);
         size_t downto = Cursor[idx/2].pos + 2;
         std::cerr << std::format("Expanding {} elements\n", (total-downto)/2);
     }
-    for (int i = block_len(curMetaBlock[-1]); i != Cursor[idx/2].pos + 2; i -= 2) {
-        curMetaBlock[i] = curMetaBlock[i-2];
-        curMetaBlock[i+1] = curMetaBlock[i-1];
+    for (int i = block_len(curMetaBlock->words); i != Cursor[idx/2].pos + 2; i -= 2) {
+        curMetaBlock->element[i/2] = curMetaBlock->element[i/2-1];
+        // curMetaBlock->element[i+1] = curMetaBlock->element[i-1];
     }
     newkey[0] = key;
     newkey[1] = toAdd;
-    curMetaBlock[-1] += 2;
+    curMetaBlock->words += 2;
   a01160:                       // generic metablock update ???
     if (idx == 0) {
         mylen = META_SIZE;
-        if (curMetaBlock[-1] == META_SIZE-1) {
+        if (curMetaBlock->words == META_SIZE-1) {
             // The root metablock is full
             check_space(0101);
             // Copy it somewhere and make a new root metablock
             // With the 0 key pointing to the newly made block
-            RootBlock[2] = allocator(curMetaBlock - 1) | INDIRECT;
+            RootBlock[2] = allocator((uint64_t*)curMetaBlock) | INDIRECT;
             RootBlock[0] = 2;
             mylen = META_SIZE;
         }
-        update(Cursor[0].block_id, curMetaBlock - 1); // update the root metablock
+        update(Cursor[0].block_id, (uint64_t*)curMetaBlock); // update the root metablock
         if (recurse) {
             recurse = false;
             if (pr12x2(false, chain, newHeader))
@@ -1399,10 +1398,10 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
         }
         return curcmd >> 6;
     }
-    if (block_len(curMetaBlock[-1]) != 0100) {
+    if (block_len(curMetaBlock->words) != 0100) {
         // The current metablock has not reached the max allowed length
-        mylen = block_len(curMetaBlock[-1]) + 1;
-        update(curBlockDescr, curMetaBlock - 1);
+        mylen = block_len(curMetaBlock->words) + 1;
+        update(curBlockDescr, (uint64_t*)curMetaBlock);
         if (recurse) {
             recurse = false;
             if (pr12x2(false, chain, newHeader))
@@ -1421,7 +1420,7 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
     auto old = Secondary[040];
     Secondary[040] = make_block_header(curBlockDescr, next_block(Secondary[0]), 040);
     mylen = META_SIZE;
-    newDescr = allocator(curMetaBlock - 1 + 040);
+    newDescr = allocator((uint64_t*)curMetaBlock + 040);
     Secondary[040] = old;
     key = Secondary[META_SIZE];
     auto header = Secondary[0];
