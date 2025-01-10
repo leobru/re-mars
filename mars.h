@@ -99,7 +99,6 @@ class Mars {
         uint64_t& operator=(long x) { return d = x; }
         uint64_t& operator=(long long int x) { return d = x; }
         uint64_t& operator=(long long unsigned int x) { return d = x; }
-        word(uint64_t *x) : u(x) { }
         bool operator==(const word & x) const { return d == x.d; }
         bool operator!=(const word & x) const { return d != x.d; }
     };

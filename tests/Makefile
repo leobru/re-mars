@@ -13,7 +13,7 @@ CXXFLAGS        ?= -std=c++20
 TESTS_SHA       = $(addsuffix .sha,$(TESTS))
 TESTS_EXE       = $(addsuffix .exe,$(TESTS))
 LONGTESTS_SHA   = $(addsuffix .sha,$(LONGTESTS))
-OBJS            = ../mars.o test-smoke.o test-random.o test-access.o fixture.o
+OBJS            = ../mars.o test-smoke.o test-random.o test-access.o test-dir.o fixture.o
 LONG_OBJS	= ../mars.o test-long.o fixture.o
 GTEST           = gtest-all.o gtest_main.o
 

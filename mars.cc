@@ -65,6 +65,22 @@ struct MarsImpl {
     typedef uint64_t &uintref;
     typedef uint64_t* &puintref;
 
+    struct CursorElt {
+        uint64_t block_id;
+        unsigned pos: 15;
+        unsigned steps: 16;
+    };
+
+    struct BlockElt {
+        uint64_t key;
+        uint64_t id: 47;
+        bool indirect:1;
+    };
+    struct Metablock {
+        uint64_t words;
+        BlockElt element[];
+    };
+
     Mars & mars;
     word * const data;
     bool & verbose;
@@ -90,8 +106,7 @@ struct MarsImpl {
         dirty;
 
     uint64_t cont;              // continuation instruction word
-// RootBlock[-1] (loc54) is also used
-    uint64_t * const Cursor;
+    CursorElt * const Cursor;
     uint64_t * const RootBlock;
     uint64_t * const Secondary;
 
@@ -102,7 +117,6 @@ struct MarsImpl {
 
     MarsImpl(Mars & up) :
         mars(up), data(up.data), verbose(up.verbose),
-        // Cursor is BDVECT+020 to BDVECT+027
 
         // outadr(data[BDVECT+1].u),
 
@@ -144,7 +158,7 @@ struct MarsImpl {
         curBlockDescr(data[BDVECT+0246].d),
         dirty(data[BDVECT+0247].d),
 
-        Cursor(&data[BDVECT+021].d), // normally used to access Cursor[-1] to Cursor[6]
+        Cursor(reinterpret_cast<CursorElt*>(&data[BDVECT+020].d)),
         // RootBlock[-1] (loc54) is also used
         RootBlock(&data[BDVECT+055].d), // spans 041 words, up to 0115
         // Secondary[-1] loc116 is also used
@@ -247,32 +261,16 @@ uint64_t get_extstart(uint64_t x) {
         return x & BITS(10);
 }
 
-uint64_t get_id(const word & x) {
-        return x.d >> 39;
-}
-
 uint64_t get_id(uint64_t x) {
         return x >> 39;
-}
-
-uint64_t prev_block(const word & x) {
-        return x.d >> 29;
 }
 
 uint64_t prev_block(uint64_t x) {
         return x >> 29;
 }
 
-uint64_t next_block(const word & x) {
-    return (x.d >> 10) & BITS(19);
-}
-
 uint64_t next_block(uint64_t x) {
     return (x >> 10) & BITS(19);
-}
-
-uint64_t block_len(const word & x) {
-        return x.d & BITS(10);
 }
 
 uint64_t block_len(uint64_t x) {
@@ -417,7 +415,7 @@ uint64_t* MarsImpl::make_metablock(uint64_t key) {
     mylen = META_SIZE;
     data[FAKEBLK] = 2;
     data[FAKEBLK+1] = key;
-    data[FAKEBLK+2] = Cursor[-1];
+    data[FAKEBLK+2] = Cursor[0].block_id;
     return &data[FAKEBLK].d;
 }
 
@@ -536,7 +534,7 @@ void MarsImpl::lock() {
 // into memory pointed to by 'dest', if 'curBlockDescr' does
 // not have the same ID already.
 void MarsImpl::get_block(uint64_t descr, uint64_t * dest) {
-    Cursor[idx-1] = descr;
+    Cursor[idx/2].block_id = descr;
     loc116 = descr & BITS(19);
     curMetaBlock = dest + 2;
     if (loc116 != curBlockDescr) {
@@ -692,32 +690,24 @@ bool MarsImpl::perform(Ops op, bool &done, unsigned &tail, uint64_t* &usrloc) {
     return false;
 }
 
-void print_cursor(uint64_t * Cursor, int idx) {
-    for (int i = 0; i <= idx; i += 2)
-        std::cout << std::format("{:11o}{}", Cursor[i] & 017777777777, i < idx ? '-' : '\n');
-}
-
 // Returns true if skipping of micro-instructions is needed.
 // dir == 0: forward, otherwise back.
 bool MarsImpl::step(uint64_t dir) {
-    uint64_t cur = Cursor[idx];
-    if (!cur)
+    CursorElt & cur = Cursor[idx/2];
+    if (!cur.steps && !cur.pos)
         throw Mars::ERR_NO_CURR;
-    // std::cout << "Before step " << dir << ": ";
-    // print_cursor(Cursor, idx);
-    int pos = cur & BITS(15);
+    int pos = cur.pos;
     if (!dir) {
         // Step forward
-        cur += 2;
-        pos = cur;
-        if ((cur & 01777) == block_len(curMetaBlock[-1])) {
+        pos += 2;
+        if ((pos & 01777) == block_len(curMetaBlock[-1])) {
             auto next = next_block(curMetaBlock[-1]);
             if (!next) {
                 cont = skip(Mars::ERR_NO_NEXT);
                 return true;
             }
             get_secondary_block(next);
-            Cursor[idx-2] = Cursor[idx-2] + (1<<15);
+            ++Cursor[idx/2-1].steps;
             pos = 0;
         }
     } else {
@@ -729,16 +719,15 @@ bool MarsImpl::step(uint64_t dir) {
                 return true;
             }
             get_secondary_block(prev);
-            Cursor[idx-2] = Cursor[idx-2] - (1<<15);
+            --Cursor[idx/2-1].steps;
             pos = block_len(Secondary[0]);
         }
         pos = pos - 2;
     }
-    Cursor[idx] = pos | ONEBIT(31);
-    curkey = curMetaBlock[pos & BITS(15)];
-    adescr = curMetaBlock[(pos+1) & BITS(15)];
-    // std::cout << "After step: ";
-    // print_cursor(Cursor, idx);
+    cur.pos = pos;
+    cur.steps = ONEBIT(16);
+    curkey = curMetaBlock[pos];
+    adescr = curMetaBlock[pos+1];
     return false;
 }
 
@@ -952,7 +941,7 @@ void MarsImpl::mkctl() {
     } while (nz);
     freeSpace = bdbuf;     // freeSpace[0] is now the same as bdbuf[0]
     myloc = bdbuf - &data[0].d;
-    Cursor[-1] = ROOT_METABLOCK;
+    Cursor[0].block_id = ROOT_METABLOCK;
     allocator(make_metablock(0));
     mylen = dblen;              // length of the free space array
     // This trick results in max possible DB length = 753 zones.
@@ -998,14 +987,14 @@ void MarsImpl::search_in_block(uint64_t *base, uint64_t what) {
     bool parent = base[1] & INDIRECT;
     int i = block_len(base[-1]);
     if (verbose)
-        std::cerr << "Comparing " << std::dec << i/2 << " elements\n";
-    while (i) {
+        std::cerr << std::format("Comparing {} elements\n", i/2);
+    for (; i; i -= 2) {
         if (base[i-2] <= what)
             break;
-        i -= 2;
     }
     i -= 2;
-    Cursor[idx] = i | ONEBIT(31);
+    Cursor[idx/2].pos = i;
+    Cursor[idx/2].steps = ONEBIT(16);
     if (!parent) {
         curkey = curMetaBlock[i];
         adescr = curMetaBlock[i+1];
@@ -1021,7 +1010,7 @@ void MarsImpl::search_in_block(uint64_t *base, uint64_t what) {
 
 void MarsImpl::find(uint64_t k) {
     idx = 0;
-    if (!Cursor[-1]) {
+    if (!Cursor[0].block_id) {
         // There was an overflow, re-reading is needed
         get_root_block();
     }
@@ -1211,7 +1200,7 @@ uint64_t MarsImpl::one_insn() {
         save();
         throw Mars::ERR_SUCCESS;
     case Mars::OP_ADDMETA:
-        curMetaBlock[(Cursor[idx] + 1) & BITS(15)] = curDescr;
+        curMetaBlock[Cursor[idx/2].pos + 1] = curDescr;
         return key_manager(A01160);
     case Mars::OP_SKIP:
         return curcmd >> 12;
@@ -1289,7 +1278,7 @@ uint64_t MarsImpl::one_insn() {
 
 void MarsImpl::check_space(unsigned need) {
     if (usable_space() < need) {
-        Cursor[-1] = 0;
+        Cursor[0].block_id = 0;
         free(curDescr);
         throw Mars::ERR_OVERFLOW;
     }
@@ -1309,23 +1298,17 @@ bool MarsImpl::pr12x2(bool withHeader, uint64_t chain, uint64_t newHeader) {
     }
     idx -= 2;
     if (idx != 0) {
-        get_secondary_block(Cursor[idx-1]);
+        get_secondary_block(Cursor[idx/2].block_id);
     }
-    uint64_t cnt = Cursor[idx] >> 15;
-    for (;;) {
-        int i = (cnt >> 15) & BITS(15);
-        if (!(cnt & 077777)) {
-            return false;
-        }
-        // The following code is triggered, e.g. by using DELKEY
-        // after stepping backwards or forwards.
-        if (--i) {
-            cnt += 2;
-        }
-        if (step(i))
+    uint64_t cnt = Cursor[idx/2].steps;
+    bool pos = cnt & ONEBIT(16);
+    // The following code is triggered, e.g. by using DELKEY
+    // after stepping backwards or forwards.
+    for (;cnt & BITS(15); pos ? --cnt : ++cnt) {
+        if (step(!pos))
             return true;         // never happens?
-        cnt = cnt - 1;
     }
+    return false;
 }
 
 // Performs key insertion and deletion in the BTree
@@ -1342,14 +1325,14 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
     case A01160: jump(a01160);
     }
   delkey:
-    // Was loc116 = curMetaBlock ^ (curMetaBlock + Cursor[idx])
+    // Was loc116 = curMetaBlock ^ (curMetaBlock + Cursor[idx+1])
     // using a 15-bit register to compute, which is effectively as good as ...
-    loc116 = (Cursor[idx] & 077777) ? ARBITRARY_NONZERO : 0;
+    loc116 = Cursor[idx/2].pos ? ARBITRARY_NONZERO : 0;
     len = block_len(curMetaBlock[-1]);
     if (len < 2)
         std::cerr << "len @ delkey < 2\n";
     // Removing the element pointed by the iterator from the metablock
-    for (size_t i = block_len(Cursor[idx]); i < block_len(curMetaBlock[-1]); ++i) {
+    for (size_t i = Cursor[idx/2].pos; i < block_len(curMetaBlock[-1]); ++i) {
         curMetaBlock[i] = curMetaBlock[i+2];
     }
     curMetaBlock[-1] -= 2;
@@ -1379,17 +1362,16 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
         }
         jump(a01160);
       a00731:
-        curMetaBlock[Cursor[idx] & BITS(15)] = key;
-        toAdd = Cursor[idx];
+        curMetaBlock[Cursor[idx/2].pos] = key;
     }
   addkey:
-    newkey = &curMetaBlock[(Cursor[idx] + 2) & BITS(15)];
+    newkey = &curMetaBlock[Cursor[idx/2].pos + 2];
     if (verbose) {
         size_t total = block_len(curMetaBlock[-1]);
-        size_t downto = block_len(Cursor[idx]) + 2;
+        size_t downto = Cursor[idx/2].pos + 2;
         std::cerr << std::format("Expanding {} elements\n", (total-downto)/2);
     }
-    for (size_t i = block_len(curMetaBlock[-1]); i != block_len(Cursor[idx]) + 2; i -= 2) {
+    for (int i = block_len(curMetaBlock[-1]); i != Cursor[idx/2].pos + 2; i -= 2) {
         curMetaBlock[i] = curMetaBlock[i-2];
         curMetaBlock[i+1] = curMetaBlock[i-1];
     }
@@ -1408,7 +1390,7 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
             RootBlock[0] = 2;
             mylen = META_SIZE;
         }
-        update(Cursor[-1], curMetaBlock - 1); // update the root metablock
+        update(Cursor[0].block_id, curMetaBlock - 1); // update the root metablock
         if (recurse) {
             recurse = false;
             if (pr12x2(false, chain, newHeader))
@@ -1431,7 +1413,7 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
     }
     need = (idx * 2) + META_SIZE;
     if (RootBlock[0] == 036) {
-        // The current metadata block is full, account for another one
+        // The root metadata block is full, account for potentially adding a level
         need = need + 044;
     }
     check_space(need);
@@ -1467,8 +1449,7 @@ void MarsImpl::setup() {
 
 static int to_lnuzzzz(int lun, int start, int len) {
     if (lun > 077 || start > 01777 || len > 01731)
-        std::cerr << std::oct << lun << ' ' << start << ' ' << len
-                  << "out of valid range, truncated\n";
+        std::cerr << std::format("{:o} {:o} {:o} out of valid range, truncated\n", lun, start, len);
     len = std::min(len, 01731);
     return ((lun & 077) << 12) | (start & 01777) | (len << 18);
 }
