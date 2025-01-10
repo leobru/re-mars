@@ -21,9 +21,9 @@ Below are micro-programs found in the binary code of a program which used the MA
 | :-----------: | --- |
 | FIND MATCH (COND FREE DELKEY NOP) INSERT ADDKEY | An alternative implementation of MODD,<br>deleting the key before inserting the new value |
 | ROOT FIND MATCH SETCTL OPEN AVAIL BEGIN | Open a container, compute available space,<br>position the iterator to the starting dummy entry |
-| FIND MATCH SETMETA | If the key-value pair exists, set the value as the main metablock, otherwise error out |
-| FIND NOMATCH INSMETA ADDKEY | If the key does not exist, add a key-metablock pair, otherwise error out |
-| BEGIN SETMETA | Reset the metablock to the root ??? |
+| FIND MATCH SETMETA | CHDIR: If the key-value pair exists, set the value as the main metablock , otherwise error out |
+| FIND NOMATCH INSMETA ADDKEY | MKDIR: If the key does not exist, add a key-metablock pair, otherwise error out |
+| BEGIN SETMETA | DOTDOT: CHDIR to the parent directory (no op if the current directory is the root) |
 | BEGIN NEXT | Position the iterator to the first real entry |
 | LAST NOMATCH (COND FREE DELKEY LOOP) DELKEY | Deletion in the loop (backwards, this is faster);<br>down to and including the entry with the specified key (must not be 0) |
 | ROOT FIND MATCH | Check that a file exists; do not open |
