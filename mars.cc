@@ -100,11 +100,11 @@ struct MarsImpl {
         struct { uint64_t len: 15, unknown: 18, timestamp: 15; };
     };
 
-    union Extent {        
-        uint64_t word;        
+    union Extent {
+        uint64_t word;
         struct { uint64_t start: 10, len: 10, next: 19, id: 9; };
     };
-    
+
     Mars & mars;
     word * const data;
     bool & verbose;
@@ -644,7 +644,7 @@ void MarsImpl::free(uint64_t arg) {
         int extCount = (curbuf[1] >> 10) & 077777;
         // position of the extent to be freed
         for (int i = handlePtr; i != extCount; ++i) {
-            // shrink the extent handle array        
+            // shrink the extent handle array
             curbuf[i+1] = curbuf[i+2];
         };
         free_extent(extCount);
@@ -764,7 +764,7 @@ bool MarsImpl::access_data(Ops op, uint64_t arg) {
     bool done;
     unsigned tail = arg;
     curPos = curPos + arg;
-    uint64_t * usrloc = &data[myloc].d;
+    uint64_t * usrloc = &data[myloc & BITS(15)].d;
     for (;;) {
         done = true;
         if (perform(op, done, tail, usrloc)) {
@@ -811,12 +811,12 @@ void MarsImpl::assign_and_incr(uint64_t dst) {
     ++abdv[src];
 }
 
-// Performs operations on upper bits in myloc
-// using value in curPos, assigning to offset and mylen.
+// Unpacks "myloc" (absolute offset, length, data address)
+// into offset to be skipped and mylen.
+// To be used with OP_SEEK and OP_READ/OP_WRITE.
 // Conditionally skips the next 4 instructions.
 // From the code is appears that the max expected
-// length of the datum was 017777.
-// Untested: usage unknown.
+// length of the datum segment was 017777.
 bool MarsImpl::unpack() {
     auto seekPos = (myloc >> 18) & BITS(15);
     offset = seekPos - curPos;
@@ -1255,7 +1255,7 @@ uint64_t MarsImpl::one_insn() {
     case Mars::OP_LOCK:
         lock();
         break;
-    case 046:
+    case Mars::OP_UNPACK:
         if (unpack())
             return cont;
         break;
@@ -1269,7 +1269,7 @@ uint64_t MarsImpl::one_insn() {
         // curcmd is ..... src 50
         assign_and_incr(3);     // offset of orgcmd within BDVECT
         return orgcmd;
-    case 051:                   // macro for ... src 13 52
+    case Mars::OP_SEGMENT:      // macro for ... src 13 52
         // myloc := mem[bdvect[src]++]
         // curcmd is ..... src 51
         assign_and_incr(013);   // offset of myloc within BDVECT

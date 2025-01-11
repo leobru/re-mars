@@ -72,10 +72,10 @@ The semantics of micro-instructions (with the range of possible valid codes 00-5
 |  43  |   READ   | Copy a word range of the current datum to the user area |
 |  44  |    ???   | bdvec[035] (address of descriptor) = bdvec[041] (first word of the copy of the descriptor) |
 |  45  |   LOCK   | Setting the flag "database is busy", unlocked at the end of execution of the microprogram |
-|  46  |    ???   | Non-writing |
+|  46  |  UNPACK  | Unpacks myloc into length and offset to be followed by SEEK and READ/WRITE for scatter/gather<br>Skips 4 following instructions of length == 0 |
 |  47  |   CALL   | Execute a callback ??? |
 |  50  |   CHAIN  | orgcmd := mem[bdvec[next_insn]++] (chaining) |
-|  51  |    ???   | myloc := mem[bdvec[next_insn]++] |
+|  51  |  SEGMENT | myloc := mem[bdvec[next_insn]++] for scatter/gather |
 |  52  |    ???   | bdvec[next_insn] := mem[bdvec[next_next_insn]++] |
 |  53  |  ASSIGN  | bdvec[next_insn] := bdvec[next_next_insn]  |
 |  54  |    ???   | mem[bdvec[next_insn]] := curDescr |

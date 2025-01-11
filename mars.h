@@ -66,8 +66,10 @@ class Mars {
         OP_WRITE = 042,
         OP_READ = 043,
         OP_LOCK = 045,
+        OP_UNPACK = 046,
         OP_CALL = 047,
         OP_CHAIN = 050,
+        OP_SEGMENT = 051,
         OP_ASSIGN = 053,
         OP_EXIT = 055
     };

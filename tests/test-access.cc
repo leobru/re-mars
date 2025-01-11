@@ -104,3 +104,28 @@ TEST(mars, compare_nomatch)
     // comparison failed -> the next op (OP_DELKEY) was not executed, getd will succeed
     ASSERT_EQ(mars.getd(key, base, 0), Mars::ERR_SUCCESS);
 }
+
+TEST(mars, scatter)
+{
+    Mars mars(false);
+    auto key = Mars::tobesm("foobar");
+    const int orig = 010000, base = 020000;
+    size_t len = 1024;
+    size_t offset = 1000;
+    setup(mars, key, len, offset);
+
+    Mars::Error e =
+      mars.eval(Mars::mcprog(Mars::OP_FIND, Mars::OP_LENGTH));
+    ASSERT_EQ(e, Mars::ERR_SUCCESS);
+    // Will be scattering 0 at mutiple-of-128 positions
+    mars.data[013777] = 0;
+    for (int i = 0; i < 8; ++i)
+        mars.data[014000 + i] = 013777 | ((i+1) * 128) << 18 | 1LL << 33;
+    mars.data[Mars::BDVECT+014] = 014000;
+    e = mars.eval(Mars::mcprog(Mars::OP_SEGMENT, Mars::Op(014), Mars::OP_UNPACK, Mars::OP_SEEK, Mars::OP_WRITE, Mars::OP_LOOP));
+    ASSERT_EQ(e, Mars::ERR_SUCCESS);
+    ASSERT_EQ(mars.getd(key, base, 0), Mars::ERR_SUCCESS);
+    auto expect = std::accumulate(&mars.data[orig].d, &mars.data[orig+len].d, 0) -
+             12345*8 - (1+2+3+4+5+6+7+8)*128 + 8;
+    EXPECT_EQ(std::accumulate(&mars.data[base].d, &mars.data[base+len].d, 0), expect);
+}
