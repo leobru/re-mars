@@ -74,6 +74,9 @@ struct MarsImpl {
         uint64_t word;
         uint64_t full: 19;
         struct { uint64_t zone: 10, ext: 9; };
+        Handle() = default;
+        Handle(uint64_t w) : word(w) { }
+        operator uint64_t() { return word; }
     };
     struct BlockElt {
         uint64_t key;
@@ -88,9 +91,11 @@ struct MarsImpl {
     struct Metablock {
         union Header {
             uint64_t word;
-            struct { uint64_t len: 10, next: 19, prev: 19; };
+            struct { uint64_t len: 10, next: 19, prev: 19, filler: 16; };
             Header() = default;
-            Header(int p, int n, int l) : len(l), next(n), prev(p) { }
+            Header(uint64_t w) : word(w) { }
+            Header(int p, int n, int l) : len(l), next(n), prev(p), filler(0) { }
+            operator uint64_t() { return word; }
         } header;
         BlockElt element[];
     };
@@ -98,11 +103,17 @@ struct MarsImpl {
     union ExtentHeader {
         uint64_t word;
         struct { uint64_t len: 15, unknown: 18, timestamp: 15; };
+        ExtentHeader() = default;
+        ExtentHeader(uint64_t w) : word(w) { }
+        operator uint64_t() { return word; }
     };
 
     union Extent {
         uint64_t word;
         struct { uint64_t start: 10, len: 10, next: 19, id: 9; };
+        Extent() = default;
+        Extent(uint64_t w) : word(w) { }
+        operator uint64_t() { return word; }
     };
 
     Mars & mars;
@@ -225,7 +236,7 @@ struct MarsImpl {
     bool perform(Ops, bool &, unsigned &, uint64_t* &);
     bool step(uint64_t), access_data(Ops, uint64_t);
     bool unpack();
-    void assign_and_incr(uint64_t);
+    void assign_and_incr(uint64_t&);
     void setup();
     Error eval();
     uint64_t one_insn();
@@ -277,30 +288,16 @@ Mars::~Mars() {
     delete &impl;
 }
 
-uint64_t prev_block(uint64_t x) {
-    MarsImpl::Metablock::Header h;
-    h.word = x;
-    return h.prev;
+inline uint64_t prev_block(uint64_t x) {
+    return MarsImpl::Metablock::Header(x).prev;
 }
 
-uint64_t next_block(uint64_t x) {
-    MarsImpl::Metablock::Header h;
-    h.word = x;
-    return h.next;
+inline uint64_t next_block(uint64_t x) {
+    return MarsImpl::Metablock::Header (x).next;
 }
 
-uint64_t block_len(uint64_t x) {
-    MarsImpl::Metablock::Header h;
-    h.word = x;
-    return h.len;
-}
-
-inline MarsImpl::Metablock::Header make_block_header(uint64_t prev, uint64_t next, uint64_t len) {
-    MarsImpl::Metablock::Header ret;
-    ret.prev = prev;
-    ret.next = next;
-    ret.len = len;
-    return ret;
+inline uint64_t block_len(uint64_t x) {
+    return MarsImpl::Metablock::Header(x).len;
 }
 
 const char * msg[] = {
@@ -458,8 +455,7 @@ uint64_t MarsImpl::usable_space() {
 // and by the number within the zone in bits 19-11
 // Sets 'extPtr', also returns the extent length in 'curExtLength'
 uint64_t MarsImpl::find_item(uint64_t arg) {
-    Handle h;
-    h.word = arg;
+    Handle h(arg);
     get_zone(h.zone);
     if (!h.ext)
         throw Mars::ERR_ZEROKEY;      // Attempting to find a placeholder?
@@ -473,7 +469,7 @@ uint64_t MarsImpl::find_item(uint64_t arg) {
         record = h.ext;
     handlePtr = record;
     for (;;) {
-        curExtent.word = curbuf[handlePtr + 1];
+        curExtent = curbuf[handlePtr + 1];
         if (curExtent.id == id) {
             break;
         }
@@ -560,7 +556,7 @@ void MarsImpl::lock() {
 // into memory pointed to by 'dest', if 'curBlockDescr' does
 // not have the same ID already.
 void MarsImpl::get_block(uint64_t descr, uint64_t* dest) {
-    Cursor[idx/2].block_id = descr;
+    Cursor[idx].block_id = descr;
     Handle needed;
     needed.full = descr;
     curMetaBlock = reinterpret_cast<Metablock*>(dest);
@@ -602,7 +598,7 @@ void MarsImpl::setctl(uint64_t location) {
     if (bdtab[0] != DBkey)
         throw Mars::ERR_BAD_CATALOG;
     idx = 0;
-    curBlockDescr.word = 0;
+    curBlockDescr = 0;
     curZone = 0;
     freeSpace = bdtab + (bdtab[3] & 01777) + 2;
     get_root_block();
@@ -721,21 +717,21 @@ bool MarsImpl::perform(Ops op, bool &done, unsigned &tail, uint64_t* &usrloc) {
 // Returns true if skipping of micro-instructions is needed.
 // dir == 0: forward, otherwise back.
 bool MarsImpl::step(uint64_t dir) {
-    CursorElt & cur = Cursor[idx/2];
+    CursorElt & cur = Cursor[idx];
     if (!cur.steps && !cur.pos)
         throw Mars::ERR_NO_CURR;
     int pos = cur.pos;
     if (!dir) {
         // Step forward
-        pos += 2;
-        if ((pos & 01777) == curMetaBlock->header.len) {
+        pos++;
+        if (pos == curMetaBlock->header.len/2) {
             auto next = curMetaBlock->header.next;
             if (!next) {
                 cont = skip(Mars::ERR_NO_NEXT);
                 return true;
             }
             get_secondary_block(next);
-            ++Cursor[idx/2-1].steps;
+            ++Cursor[idx-1].steps;
             pos = 0;
         }
     } else {
@@ -747,15 +743,15 @@ bool MarsImpl::step(uint64_t dir) {
                 return true;
             }
             get_secondary_block(prev);
-            --Cursor[idx/2-1].steps;
-            pos = block_len(Secondary[0]);
+            --Cursor[idx-1].steps;
+            pos = block_len(Secondary[0]) / 2;
         }
-        pos = pos - 2;
+        pos--;
     }
     cur.pos = pos;
     cur.steps = ONEBIT(16);
-    curkey = curMetaBlock->element[pos/2].key;
-    workHandle = curMetaBlock->element[pos/2].id;
+    curkey = curMetaBlock->element[pos].key;
+    workHandle = curMetaBlock->element[pos].id;
     return false;
 }
 
@@ -796,18 +792,16 @@ bool MarsImpl::access_data(Ops op, uint64_t arg) {
 
 // Reads word at offset 1 of the datum (i. e. the first payload word)
 auto MarsImpl::get_block_header(uint64_t arg) -> Metablock::Header {
-    Metablock::Header ret;
     find_item(arg);
     // Not expecting it to fail
     access_data(SEEK, 1);
-    ret.word = desc1;
-    return ret;
+    return Metablock::Header(desc1);
 }
 
-void MarsImpl::assign_and_incr(uint64_t dst) {
+void MarsImpl::assign_and_incr(uint64_t& dst) {
     auto src = (curcmd >> 6) & 077;
     curcmd = curcmd >> 6;
-    abdv[dst] = data[abdv[src] & 077777].d;
+    dst = data[abdv[src] & 077777].d;
     ++abdv[src];
 }
 
@@ -831,8 +825,7 @@ bool MarsImpl::unpack() {
 
 // Throws overflow after freeing pending extents.
 void MarsImpl::overflow(uint64_t word) {
-    Extent ext;
-    ext.word = word;
+    Extent ext(word);
     if (ext.next) {
         free(ext.next);
         throw Mars::ERR_OVERFLOW;
@@ -874,7 +867,7 @@ uint64_t MarsImpl::handle_chunk(int zone, uint64_t head) {
 }
 
 uint64_t MarsImpl::allocator(uint64_t *usrloc) {
-    return allocator1023(make_extent_header().word, usrloc);
+    return allocator1023(make_extent_header(), usrloc);
 }
 
 // The 2 allocator helpers are disambiguated by the original code addresses
@@ -990,7 +983,7 @@ void MarsImpl::update_by_reallocation(int limit, ExtentHeader extentHeader, uint
     curExtent.next = 0;
     free_from_current_extent(limit);
     ++mylen;
-    allocator1047(0, uint64_t(old.id) << 39, extentHeader.word, 0, usrloc);
+    allocator1047(0, uint64_t(old.id) << 39, extentHeader, 0, usrloc);
     auto next = old.next;
     if (next) {
         free(next);
@@ -1018,26 +1011,26 @@ void MarsImpl::find_end_word() {
 
 void MarsImpl::search_in_block(Metablock *block, uint64_t what) {
     bool indirect = block->element[0].indirect;
-    int i = block->header.len;
+    int i = block->header.len / 2;
     if (verbose)
-        std::cerr << std::format("Comparing {} elements\n", i/2);
-    for (; i; i -= 2) {
-        if (block->element[i/2-1].key <= what)
+        std::cerr << std::format("Comparing {} elements\n", i);
+    for (; i; i--) {
+        if (block->element[i-1].key <= what)
             break;
     }
-    i -= 2;
-    Cursor[idx/2].pos = i;
-    Cursor[idx/2].steps = ONEBIT(16);
+    i--;
+    Cursor[idx].pos = i;
+    Cursor[idx].steps = ONEBIT(16);
     if (!indirect) {
-        curkey = curMetaBlock->element[i/2].key;
-        workHandle = curMetaBlock->element[i/2].id;
+        curkey = curMetaBlock->element[i].key;
+        workHandle = curMetaBlock->element[i].id;
         return;
     }
-    idx += 2;
-    if (idx > 7) {
+    idx++;
+    if (idx > 3) {
         std::cerr << "Idx = " << idx << ": DB will be corrupted\n";
     }
-    get_secondary_block(block->element[i/2].id);
+    get_secondary_block(block->element[i].id);
     search_in_block(reinterpret_cast<Metablock*>(Secondary), what);
 }
 
@@ -1056,11 +1049,11 @@ void MarsImpl::update(uint64_t arg, uint64_t* usrloc) {
         // The new length of data matches the first extent length
         for (; len--;)
             extPtr[len+1] = usrloc[len];
-        *extPtr = make_extent_header().word;
+        *extPtr = make_extent_header(); // refresh the timestamp
         set_dirty_data();
         if (auto next = curExtent.next) {
             curExtent.next = 0;
-            curbuf[handlePtr+1] = curExtent.word; // dropping the extent chain
+            curbuf[handlePtr+1] = curExtent; // dropping the extent chain
             free(next);         // Free remaining extents
             set_dirty_tab();
         }
@@ -1090,7 +1083,7 @@ void MarsImpl::update(uint64_t arg, uint64_t* usrloc) {
     find_item(arg);
     // Chain the first extent and the tail
     curExtent.next = newDescr;
-    curbuf[handlePtr+1] = curExtent.word;
+    curbuf[handlePtr+1] = curExtent;
     set_dirty_both();
 }
 
@@ -1144,7 +1137,7 @@ uint64_t MarsImpl::one_insn() {
         if (step(0))
             return cont;
         break;
-    case Mars::OP_INSMETA:      // not yet covered by tests
+    case Mars::OP_INSMETA:
         allocHandle = allocator(make_metablock(0));
         break;
     case Mars::OP_SETMETA:
@@ -1231,7 +1224,7 @@ uint64_t MarsImpl::one_insn() {
         save();
         throw Mars::ERR_SUCCESS;
     case Mars::OP_ADDMETA:
-        curMetaBlock->element[Cursor[idx/2].pos/2].id = allocHandle;
+        curMetaBlock->element[Cursor[idx].pos].id = allocHandle;
         return key_manager(A01160);
     case Mars::OP_SKIP:
         return curcmd >> 12;
@@ -1267,19 +1260,19 @@ uint64_t MarsImpl::one_insn() {
     case Mars::OP_CHAIN:
         // orgcmd := mem[bdvect[src]++]
         // curcmd is ..... src 50
-        assign_and_incr(3);     // offset of orgcmd within BDVECT
+        assign_and_incr(orgcmd);
         return orgcmd;
     case Mars::OP_SEGMENT:      // macro for ... src 13 52
         // myloc := mem[bdvect[src]++]
         // curcmd is ..... src 51
-        assign_and_incr(013);   // offset of myloc within BDVECT
+        assign_and_incr(myloc);
         break;
     case Mars::OP_LDNEXT: {
         // bdvect[dst] := mem[bdvect[src]++]
         // curcmd is ..... src dst 52
         int dst = (curcmd >> 6) & 077;
         curcmd = curcmd >> 6;
-        assign_and_incr(dst);
+        assign_and_incr(data[BDVECT+dst].d);
     } break;
     case Mars::OP_ASSIGN: {
         // bdvect[dst] = bdvect[src]
@@ -1320,7 +1313,7 @@ bool MarsImpl::pr12x2(bool withHeader, uint64_t chain, uint64_t newHeader) {
         if (auto next = next_block(chain)) {
             auto head = get_block_header(next);
             head.prev = 0;
-            set_header(newHeader | head.word);
+            set_header(newHeader | head);
         }
     }
     curMetaBlock = reinterpret_cast<Metablock*>(RootBlock);
@@ -1329,11 +1322,11 @@ bool MarsImpl::pr12x2(bool withHeader, uint64_t chain, uint64_t newHeader) {
         cont = curcmd >> 6;
         return true;
     }
-    idx -= 2;
+    idx--;
     if (idx != 0) {
-        get_secondary_block(Cursor[idx/2].block_id);
+        get_secondary_block(Cursor[idx].block_id);
     }
-    uint64_t cnt = Cursor[idx/2].steps;
+    uint64_t cnt = Cursor[idx].steps;
     bool pos = cnt & ONEBIT(16);
     // The following code is triggered, e.g. by using DELKEY
     // after stepping backwards or forwards.
@@ -1361,27 +1354,27 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
     case A01160: jump(a01160);
     }
   delkey:
-    first = Cursor[idx/2].pos == 0;
+    first = Cursor[idx].pos == 0;
     len = curMetaBlock->header.len;
     if (len < 2)
         std::cerr << "len @ delkey < 2\n";
     // Removing the element pointed by the iterator from the metablock
-    for (size_t i = Cursor[idx/2].pos; i < curMetaBlock->header.len; ++i) {
-        curMetaBlock->element[i/2] = curMetaBlock->element[i/2+1];
+    for (size_t i = Cursor[idx].pos; i < curMetaBlock->header.len/2; ++i) {
+        curMetaBlock->element[i] = curMetaBlock->element[i+1];
     }
     curMetaBlock->header.len -= 2;
     if (curMetaBlock->header.len == 0) {
         // The current metablock became empty
         if (!idx)               // That was the root metablock?
             jump(a01160);       // Do not free it
-        free(curBlockDescr.word);
+        free(curBlockDescr);
         chain = Secondary[0];   // Save the block chain
-        newHeader = make_block_header(prev_block(Secondary[0]), 0, 0).word;
+        newHeader = Metablock::Header(prev_block(Secondary[0]), 0, 0);
         if (auto prev = prev_block(Secondary[0])) {
             auto head = get_block_header(prev);  // Read the previous block if it exists ?
-            Secondary[0] = make_block_header(head.prev, 0, head.len).word;
+            Secondary[0] = Metablock::Header(head.prev, 0, head.len);
             // Exclude the deleted block from the chain
-            set_header(make_block_header(head.prev, next_block(chain), head.len).word);
+            set_header(Metablock::Header(head.prev, next_block(chain), head.len));
         }
         pr12x2(true, chain, newHeader);
         jump(delkey);           // Do something and go to delkey again
@@ -1395,17 +1388,17 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
         recurse = true;
         jump(a01160);
       a00731:
-        curMetaBlock->element[Cursor[idx/2].pos/2].key = key;
+        curMetaBlock->element[Cursor[idx].pos].key = key;
     }
   addkey:
-    newelt = &curMetaBlock->element[Cursor[idx/2].pos/2 + 1];
+    newelt = &curMetaBlock->element[Cursor[idx].pos + 1];
     if (verbose) {
-        size_t total = curMetaBlock->header.len;
-        size_t downto = Cursor[idx/2].pos + 2;
-        std::cerr << std::format("Expanding {} elements\n", (total-downto)/2);
+        size_t total = curMetaBlock->header.len/2;
+        size_t downto = Cursor[idx].pos + 1;
+        std::cerr << std::format("Expanding {} elements\n", total-downto);
     }
-    for (int i = curMetaBlock->header.len; i != Cursor[idx/2].pos + 2; i -= 2) {
-        curMetaBlock->element[i/2] = curMetaBlock->element[i/2-1];
+    for (int i = curMetaBlock->header.len/2; i > Cursor[idx].pos; i--) {
+        curMetaBlock->element[i] = curMetaBlock->element[i-1];
     }
     newelt->key = key;
     newelt->id = toAdd;
@@ -1437,7 +1430,7 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
     if (curMetaBlock->header.len != 0100) {
         // The current metablock has not reached the max allowed length
         mylen = curMetaBlock->header.len + 1;
-        update(curBlockDescr.word, (uint64_t*)curMetaBlock);
+        update(curBlockDescr, (uint64_t*)curMetaBlock);
         if (recurse) {
             recurse = false;
             if (pr12x2(false, chain, newHeader))
@@ -1446,7 +1439,7 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
         }
         return curcmd >> 6;
     }
-    need = (idx * 2) + META_SIZE;
+    need = (idx * 4) + META_SIZE;
     if (RootBlock[0] == 036) {
         // The root metadata block is full, account for potentially adding a level
         need = need + 044;
@@ -1454,17 +1447,17 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
     check_space(need);
     // Split the block in two
     auto old = Secondary[040];
-    Secondary[040] = make_block_header(curBlockDescr.word, next_block(Secondary[0]), 040).word;
+    Secondary[040] = Metablock::Header(curBlockDescr, next_block(Secondary[0]), 040);
     mylen = META_SIZE;
     newDescr = allocator((uint64_t*)curMetaBlock + 040);
     Secondary[040] = old;
     key = Secondary[META_SIZE];
-    auto header = Secondary[0];
-    Secondary[0] = make_block_header(prev_block(header), newDescr, 040).word;
-    newHeader = make_block_header(newDescr, 0, 0).word;
+    auto origHeader = Secondary[0];
+    Secondary[0] = Metablock::Header(prev_block(origHeader), newDescr, 040);
+    newHeader = Metablock::Header(newDescr, 0, 0);
     mylen = block_len(Secondary[0]) + 1;
-    update(curBlockDescr.word, Secondary);
-    if (pr12x2(true, header, newHeader))
+    update(curBlockDescr, Secondary);
+    if (pr12x2(true, origHeader, newHeader))
         return cont;
     toAdd = newHeader >> 29;
     indirect = true;
