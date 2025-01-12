@@ -980,7 +980,7 @@ void MarsImpl::mkctl() {
     mylen = dblen;              // length of the free space array
     // This trick results in max possible DB length = 753 zones.
     // bdbuf[0] = 01731 - mylen;
-    // Invoking OP_INSERT for the freeSpace array
+    // Invoking OP_ALLOC for the freeSpace array
     allocHandle = allocator(&data[myloc].d);
     bdtab[01736-dblen] = 01731 - dblen; // This is the right way
 }
@@ -1188,7 +1188,7 @@ uint64_t MarsImpl::one_insn() {
     case Mars::OP_UPDATE:
         update(workHandle, &data[myloc].d);
         break;
-    case Mars::OP_INSERT:
+    case Mars::OP_ALLOC:
         allocHandle = allocator(&data[myloc].d);
         break;
     case Mars::OP_GET:
@@ -1217,7 +1217,7 @@ uint64_t MarsImpl::one_insn() {
         dbdesc = arch;
         setctl(dbdesc);
         break;
-    case 032:
+    case Mars::OP_INSERT:
         *extPtr = allocHandle;
         set_dirty_both();
         break;
@@ -1249,7 +1249,7 @@ uint64_t MarsImpl::one_insn() {
         if(access_data(FROMBASE, mylen))
             return cont;
         break;
-    case 044:                   // macro for OP_ASSIGN 35 41
+    case  Mars::OP_USE:         // macro for OP_ASSIGN 35 41
         workHandle = desc1;
         break;
     case Mars::OP_LOCK:
@@ -1274,7 +1274,7 @@ uint64_t MarsImpl::one_insn() {
         // curcmd is ..... src 51
         assign_and_incr(013);   // offset of myloc within BDVECT
         break;
-    case 052: {
+    case Mars::OP_LDNEXT: {
         // bdvect[dst] := mem[bdvect[src]++]
         // curcmd is ..... src dst 52
         int dst = (curcmd >> 6) & 077;
@@ -1289,7 +1289,7 @@ uint64_t MarsImpl::one_insn() {
         curcmd = curcmd >> 12;
         abdv[dst] = abdv[src];
     } break;
-    case 054: {
+    case Mars::OP_STALLOC: {
         // mem[bdvect[dst]] = bdvect[012]
         // curcmd is ..... dst 54
         int dst = (curcmd >> 6) & 077;
@@ -1514,7 +1514,7 @@ Error Mars::newd(const char * k, int lun, int start, int len) {
     data[077777] = (impl.key << 10) & BITS(48);
     impl.myloc = 077776;
     impl.mylen = 2;
-    impl.orgcmd = mcprog(OP_ROOT, OP_FIND, OP_NOMATCH, OP_INSERT, OP_ADDKEY);
+    impl.orgcmd = mcprog(OP_ROOT, OP_FIND, OP_NOMATCH, OP_ALLOC, OP_ADDKEY);
     impl.eval();
     // OP_FIND and OP_MATCH do not seem to be necessary
     impl.orgcmd = mcprog(OP_FIND, OP_MATCH, OP_SETCTL, OP_INIT);
@@ -1536,7 +1536,7 @@ Error Mars::putd(const char * k, int loc, int len) {
     impl.key = *reinterpret_cast<const uint64_t*>(k);
     impl.mylen = len;
     impl.myloc = loc;
-    impl.orgcmd = mcprog(OP_FIND, OP_NOMATCH, OP_INSERT, OP_ADDKEY);
+    impl.orgcmd = mcprog(OP_FIND, OP_NOMATCH, OP_ALLOC, OP_ADDKEY);
     return impl.eval();
 }
 
@@ -1547,7 +1547,7 @@ Error Mars::putd(uint64_t k, int loc, int len) {
     impl.key = k;
     impl.mylen = len;
     impl.myloc = loc;
-    impl.orgcmd = mcprog(OP_FIND, OP_NOMATCH, OP_INSERT, OP_ADDKEY);
+    impl.orgcmd = mcprog(OP_FIND, OP_NOMATCH, OP_ALLOC, OP_ADDKEY);
     return impl.eval();
 }
 
@@ -1559,7 +1559,7 @@ Error Mars::putd(const char * k, const char * v) {
     strcpy((char*)(data+RAM_LENGTH-len), v);
     impl.mylen = len;
     impl.myloc = RAM_LENGTH-len;
-    impl.orgcmd = mcprog(OP_FIND, OP_NOMATCH, OP_INSERT, OP_ADDKEY);
+    impl.orgcmd = mcprog(OP_FIND, OP_NOMATCH, OP_ALLOC, OP_ADDKEY);
     return impl.eval();
 }
 
@@ -1568,7 +1568,7 @@ Error Mars::modd(const char * k, int loc, int len) {
     impl.mylen = len;
     impl.myloc = loc;
     impl.orgcmd = mcprog(OP_FIND, OP_NOMATCH, OP_COND,
-                         OP_INSERT, OP_ADDKEY, OP_STOP,
+                         OP_ALLOC, OP_ADDKEY, OP_STOP,
                          OP_UPDATE);
     return impl.eval();
 }
@@ -1578,7 +1578,7 @@ Error Mars::modd(uint64_t k, int loc, int len) {
     impl.mylen = len;
     impl.myloc = loc;
     impl.orgcmd = mcprog(OP_FIND, OP_NOMATCH, OP_COND,
-                         OP_INSERT, OP_ADDKEY, OP_STOP,
+                         OP_ALLOC, OP_ADDKEY, OP_STOP,
                          OP_UPDATE);
     return impl.eval();
 }

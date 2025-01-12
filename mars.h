@@ -47,7 +47,7 @@ class Mars {
         OP_STRLEN = 016,
         OP_WORDLEN = 017,
         OP_UPDATE = 020,
-        OP_INSERT = 021,
+        OP_ALLOC = 021,
         OP_GET = 022,
         OP_FREE = 023,
         OP_PASSWD = 024,
@@ -56,6 +56,7 @@ class Mars {
         OP_DELKEY = 027,
         OP_LOOP = 030,
         OP_ROOT = 031,
+        OP_INSERT = 032,
         OP_LENGTH = 033,
         OP_DESCR = 034,
         OP_SAVE = 035,
@@ -65,12 +66,15 @@ class Mars {
         OP_IFEQ = 041,
         OP_WRITE = 042,
         OP_READ = 043,
+        OP_USE = 044,
         OP_LOCK = 045,
         OP_UNPACK = 046,
         OP_CALL = 047,
         OP_CHAIN = 050,
         OP_SEGMENT = 051,
+        OP_LDNEXT = 052,
         OP_ASSIGN = 053,
+        OP_STALLOC = 054,
         OP_EXIT = 055
     };
 
