@@ -245,8 +245,8 @@ struct MarsImpl {
     uint64_t handle_chunk(int zone, uint64_t head);
     uint64_t allocator(uint64_t *usrloc), allocator1023(uint64_t firstWord, uint64_t *usrloc);
     uint64_t allocator1047(int loc, uint64_t head, uint64_t firstWord, int remlen, uint64_t* &usrloc);
-    enum KeyOp { ADDKEY, DELKEY, A01160 };
-    uint64_t key_manager(KeyOp, uint64_t key = ARBITRARY_NONZERO);
+    enum KeyOp { DELKEY, A01160 };
+    uint64_t key_manager(KeyOp);
     void add_key(uint64_t key, uint64_t toAdd, bool indirect);
     bool pr12x2(bool withHeader, uint64_t chain, uint64_t newHeader);
     void check_space(unsigned need);
@@ -1200,7 +1200,8 @@ uint64_t MarsImpl::one_insn() {
         break;
     case Mars::OP_ADDKEY:
         workHandle = allocHandle;
-        return key_manager(ADDKEY, key);
+        add_key(key, workHandle, false);
+        return key_manager(A01160);
     case Mars::OP_DELKEY:
         newkey = 0;              // looks dead
         return key_manager(DELKEY);
@@ -1355,7 +1356,8 @@ void MarsImpl::add_key(uint64_t key, uint64_t toAdd, bool indirect) {
 }
 
 // Performs key insertion and deletion in the BTree
-uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
+uint64_t MarsImpl::key_manager(KeyOp op) {
+    uint64_t key;
     bool recurse = false;
     int len;
     bool first;
@@ -1363,7 +1365,6 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
     uint64_t chain, newHeader;
     uint64_t newDescr;
     switch (op) {
-    case ADDKEY: add_key(key, workHandle, false); jump(a01160);
     case DELKEY: jump(delkey);
     case A01160: jump(a01160);
     }
@@ -1393,7 +1394,6 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
         pr12x2(true, chain, newHeader);
         jump(delkey);           // Do something and go to delkey again
     }
-    assert(first == (Cursor[idx].pos == 0));
     if (first) {
         key = curMetaBlock->element[0].key; // the new key at position 0
         recurse = true;
