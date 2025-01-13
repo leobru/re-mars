@@ -1382,14 +1382,9 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
 
     if (!first)
         jump(a01160);
-    // The first entry in a metablock has been deleted
-    while (true) {
-        key = curMetaBlock->element[0].key; // the new key at position 0
-        recurse = true;
-        jump(a01160);
-      a00731:
-        curMetaBlock->element[Cursor[idx].pos].key = key;
-    }
+    key = curMetaBlock->element[0].key; // the new key at position 0
+    recurse = true;
+    jump(a01160);
   addkey:
     newelt = &curMetaBlock->element[Cursor[idx].pos + 1];
     if (verbose) {
@@ -1420,10 +1415,11 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
         }
         update(Cursor[0].block_id, (uint64_t*)curMetaBlock); // update the root metablock
         if (recurse) {
-            recurse = false;
             if (pr12x2(false, chain, newHeader))
                 return cont;
-            jump(a00731);
+            curMetaBlock->element[Cursor[idx].pos].key = key;
+            key = curMetaBlock->element[0].key; // the new key at position 0
+            jump(a01160);
         }
         return curcmd >> 6;
     }
@@ -1432,10 +1428,11 @@ uint64_t MarsImpl::key_manager(KeyOp op, uint64_t key) {
         mylen = curMetaBlock->header.len + 1;
         update(curBlockDescr, (uint64_t*)curMetaBlock);
         if (recurse) {
-            recurse = false;
             if (pr12x2(false, chain, newHeader))
                 return cont;
-            jump(a00731);
+            curMetaBlock->element[Cursor[idx].pos].key = key;
+            key = curMetaBlock->element[0].key; // the new key at position 0
+            jump(a01160);
         }
         return curcmd >> 6;
     }
