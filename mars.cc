@@ -64,6 +64,7 @@ struct MarsImpl {
     typedef uint64_t &uintref;
     typedef uint64_t* &puintref;
 
+    // Cursor is a non-persistent structure
     struct CursorElt {
         uint64_t block_id;
         unsigned pos: 15;
@@ -248,7 +249,7 @@ struct MarsImpl {
     enum KeyOp { DELKEY, A01160 };
     uint64_t key_manager(KeyOp);
     void add_key(uint64_t key, uint64_t toAdd, bool indirect);
-    bool pr12x2(bool withHeader, uint64_t chain, uint64_t newHeader);
+    bool propagate_steps(bool withHeader, uint64_t chain, uint64_t newHeader);
     void check_space(unsigned need);
     void mkctl(), find(uint64_t);
     void update_by_reallocation(int, ExtentHeader, uint64_t* &usrloc);
@@ -1310,11 +1311,11 @@ void MarsImpl::check_space(unsigned need) {
     }
 }
 
-bool MarsImpl::pr12x2(bool withHeader, uint64_t chain, uint64_t newHeader) {
+bool MarsImpl::propagate_steps(bool withHeader, uint64_t chain, uint64_t prev) {
     if (withHeader) {
         if (auto next = next_block(chain)) {
             auto head = get_block_header(next);
-            head.prev = prev_block(newHeader);
+            head.prev = prev;
             set_header(head);
         }
     }
@@ -1362,7 +1363,7 @@ uint64_t MarsImpl::key_manager(KeyOp op) {
     int len;
     bool first;
     unsigned need;
-    uint64_t chain, newHeader;
+    uint64_t chain, link;
     uint64_t newDescr;
     switch (op) {
     case DELKEY: jump(delkey);
@@ -1384,14 +1385,14 @@ uint64_t MarsImpl::key_manager(KeyOp op) {
             jump(a01160);       // Do not free it
         free(curBlockDescr);
         chain = Secondary[0];   // Save the block chain
-        newHeader = Metablock::Header(prev_block(Secondary[0]), 0, 0);
-        if (auto prev = prev_block(Secondary[0])) {
-            auto head = get_block_header(prev);  // Read the previous block if it exists ?
+        link = prev_block(Secondary[0]);
+        if (link) {
+            auto head = get_block_header(link);  // Read the previous block if it exists ?
             Secondary[0] = Metablock::Header(head.prev, 0, head.len);
             // Exclude the deleted block from the chain
             set_header(Metablock::Header(head.prev, next_block(chain), head.len));
         }
-        pr12x2(true, chain, newHeader);
+        propagate_steps(true, chain, link);
         jump(delkey);           // Do something and go to delkey again
     }
     if (first) {
@@ -1414,7 +1415,7 @@ uint64_t MarsImpl::key_manager(KeyOp op) {
         }
         update(Cursor[0].block_id, (uint64_t*)curMetaBlock); // update the root metablock
         if (recurse) {
-            if (pr12x2(false, chain, newHeader))
+            if (propagate_steps(false, chain, link))
                 return cont;
             curMetaBlock->element[Cursor[idx].pos].key = key;
             key = curMetaBlock->element[0].key; // the new key at position 0
@@ -1427,7 +1428,7 @@ uint64_t MarsImpl::key_manager(KeyOp op) {
         mylen = curMetaBlock->header.len + 1;
         update(curBlockDescr, (uint64_t*)curMetaBlock);
         if (recurse) {
-            if (pr12x2(false, chain, newHeader))
+            if (propagate_steps(false, chain, link))
                 return cont;
             curMetaBlock->element[Cursor[idx].pos].key = key;
             key = curMetaBlock->element[0].key; // the new key at position 0
@@ -1450,12 +1451,12 @@ uint64_t MarsImpl::key_manager(KeyOp op) {
     key = Secondary[META_SIZE];
     auto origHeader = Secondary[0];
     Secondary[0] = Metablock::Header(prev_block(origHeader), newDescr, 040);
-    newHeader = Metablock::Header(newDescr, 0, 0);
+    link = newDescr;
     mylen = block_len(Secondary[0]) + 1;
     update(curBlockDescr, Secondary);
-    if (pr12x2(true, origHeader, newHeader))
+    if (propagate_steps(true, origHeader, link))
         return cont;
-    add_key(key, prev_block(newHeader), true);
+    add_key(key, link, true);
     jump(a01160);
 }
 
