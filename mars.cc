@@ -75,7 +75,7 @@ struct MarsImpl {
         uint64_t word;
         uint64_t full: 19;
         struct { uint64_t zone: 10, ext: 9; };
-        Handle() = default;
+        Handle() : word(0) { }
         Handle(uint64_t w) : word(w) { }
         operator uint64_t() { return word; }
     };
@@ -93,7 +93,7 @@ struct MarsImpl {
         union Header {
             uint64_t word;
             struct { uint64_t len: 10, next: 19, prev: 19, filler: 16; };
-            Header() = default;
+            Header() : word(0) { }
             Header(uint64_t w) : word(w) { }
             Header(int p, int n, int l) : len(l), next(n), prev(p), filler(0) { }
             operator uint64_t() { return word; }
@@ -104,7 +104,7 @@ struct MarsImpl {
     union ExtentHeader {
         uint64_t word;
         struct { uint64_t len: 15, unknown: 18, timestamp: 15; };
-        ExtentHeader() = default;
+        ExtentHeader() : word(0) { }
         ExtentHeader(uint64_t w) : word(w) { }
         operator uint64_t() { return word; }
     };
@@ -112,7 +112,7 @@ struct MarsImpl {
     union Extent {
         uint64_t word;
         struct { uint64_t start: 10, len: 10, next: 19, id: 9; };
-        Extent() = default;
+        Extent() : word(0) { }
         Extent(uint64_t w) : word(w) { }
         operator uint64_t() { return word; }
     };
