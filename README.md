@@ -25,7 +25,7 @@ Below are micro-programs found in the binary code of a program which used the MA
 | FIND NOMATCH INSMETA ADDKEY | MKDIR: If the key does not exist, add a key-metablock pair, otherwise error out |
 | BEGIN SETMETA | DOTDOT: CHDIR to the parent directory (no op if the current directory is the root) |
 | BEGIN NEXT | Position the iterator to the first real entry |
-| LAST NOMATCH (COND FREE DELKEY LOOP) DELKEY | Deletion in the loop (backwards, this is faster);<br>down to and including the entry with the specified key (must not be 0) |
+| LAST NOMATCH (COND FREE DELKEY LOOP) DELKEY | CLEARDIR (needs key = 0): Delete all entries in a directory, including the .. link<br>Not for use in the root directory |
 | ROOT FIND MATCH | Check that a file exists; do not open |
 | LAST COND FREE DELKEY LOOP | Deletion in the loop; COND is useless, as LAST is not conditional;<br>will error out and potentially corrupt the DB |
 | FIND FREE DELKEY | Unconditional deletion |

@@ -253,7 +253,8 @@ struct MarsImpl {
     uint64_t update_btree(BtreeArgs = BtreeArgs());
     void add_key(uint64_t key, uint64_t toAdd, bool indirect);
     BtreeArgs del_key();
-    bool propagate_steps(bool withHeader, uint64_t chain = 0, uint64_t newHeader = 0);
+    void update_prev(uint64_t chain, uint64_t newHeader);
+    void propagate_steps();
     void check_space(unsigned need);
     void mkctl(), find(uint64_t);
     void update_by_reallocation(int, ExtentHeader, uint64_t* &usrloc);
@@ -1314,19 +1315,27 @@ void MarsImpl::check_space(unsigned need) {
     }
 }
 
-bool MarsImpl::propagate_steps(bool withHeader, uint64_t chain, uint64_t prev) {
-    if (withHeader) {
-        if (auto next = next_block(chain)) {
-            auto head = get_block_header(next);
-            head.prev = prev;
-            set_header(head);
-        }
+void MarsImpl::update_prev(uint64_t chain, uint64_t prev) {
+    if (auto next = next_block(chain)) {
+        auto head = get_block_header(next);
+        head.prev = prev;
+        set_header(head);
     }
+}
+
+#define parent_block                                    \
+    idx--;                                              \
+    if (idx != 0) {                                     \
+        get_secondary_block(Cursor[idx].block_id);      \
+    } else     curMetaBlock = RootBlock;
+
+
+void MarsImpl::propagate_steps() {
     curMetaBlock = RootBlock;
     if (idx == 0) {
         set_dirty_tab();
         cont = curcmd >> 6;
-        return true;
+        return;
     }
     idx--;
     if (idx != 0) {
@@ -1340,7 +1349,6 @@ bool MarsImpl::propagate_steps(bool withHeader, uint64_t chain, uint64_t prev) {
             throw Mars::ERR_INTERNAL;
         }
     }
-    return false;
 }
 
 void MarsImpl::add_key(uint64_t key, uint64_t toAdd, bool indirect) {
@@ -1365,14 +1373,15 @@ auto MarsImpl::del_key() -> BtreeArgs {
     bool &recurse = bta.recurse;
   delkey:
     bool first = Cursor[idx].pos == 0;
-    int len = curMetaBlock->header.len;
+    size_t len = curMetaBlock->header.len;
     if (len < 2)
         std::cerr << "len @ delkey < 2\n";
     // Removing the element pointed by the iterator from the metablock
-    for (size_t i = Cursor[idx].pos; i < curMetaBlock->header.len/2; ++i) {
+    // The off-by-1 error here prevents from clearing the root metablock properly
+    for (size_t i = Cursor[idx].pos; i < len/2; ++i) {
         curMetaBlock->element[i] = curMetaBlock->element[i+1];
     }
-    curMetaBlock->header.len -= 2;
+    curMetaBlock->header.len -= 2; // This should be before setting up len
     if (curMetaBlock->header.len == 0) {
         // The current metablock became empty
         if (!idx)               // That was the root metablock?
@@ -1386,7 +1395,8 @@ auto MarsImpl::del_key() -> BtreeArgs {
             // Exclude the deleted block from the chain
             set_header(Metablock::Header(head.prev, next_block(chain), head.len));
         }
-        propagate_steps(true, chain, link);
+        update_prev(chain, link);
+        propagate_steps();
         jump(delkey);           // Do something and go to delkey again
     }
     if (first) {
@@ -1416,13 +1426,7 @@ uint64_t MarsImpl::update_btree(BtreeArgs bta) {
             mylen = META_SIZE;
         }
         update(Cursor[0].block_id, (uint64_t*)curMetaBlock); // update the root metablock
-        if (recurse) {
-            if (propagate_steps(false))
-                return cont;
-            curMetaBlock->element[Cursor[idx].pos].key = key;
-            key = curMetaBlock->element[0].key; // the new key at position 0
-            jump(a01160);
-        }
+        set_dirty_tab();        // likely unnecessary, update() sets the flags
         return curcmd >> 6;
     }
     if (curMetaBlock->header.len != 0100) {
@@ -1430,8 +1434,7 @@ uint64_t MarsImpl::update_btree(BtreeArgs bta) {
         mylen = curMetaBlock->header.len + 1;
         update(curBlockDescr, (uint64_t*)curMetaBlock);
         if (recurse) {
-            if (propagate_steps(false))
-                return cont;
+            propagate_steps();
             curMetaBlock->element[Cursor[idx].pos].key = key;
             key = curMetaBlock->element[0].key; // the new key at position 0
             jump(a01160);
@@ -1456,8 +1459,8 @@ uint64_t MarsImpl::update_btree(BtreeArgs bta) {
     uint64_t link = newDescr;
     mylen = block_len(Secondary[0]) + 1;
     update(curBlockDescr, Secondary);
-    if (propagate_steps(true, origHeader, link))
-        return cont;
+    update_prev(origHeader, link);
+    propagate_steps();
     add_key(key, link, true);
     jump(a01160);
 }
