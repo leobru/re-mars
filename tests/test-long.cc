@@ -37,6 +37,32 @@ TEST(mars, maxsize)
     EXPECT_EQ(result, file_contents("test-maxsize.gold"));
 }
 
+TEST(mars, clear)
+{
+  Mars mars(false);
+    mars.InitDB(052, 0, 0427);
+    mars.SetDB(052, 0, 0427);
+    mars.root();
+    int before = mars.avail();
+    // One more element would cause a failure.
+    for (int i = 1; i < 65535; ++i) {
+        ASSERT_EQ (mars.putd(i, 0, 0), Mars::ERR_SUCCESS);
+    }
+    for (int i = 65534; i >= 1; --i) {
+        if (i % 4096 != 0) {
+            ASSERT_EQ (mars.deld(i), Mars::ERR_SUCCESS);
+        }
+    }
+    mars.first();
+    for (int i = 0; i < 8; ++i)
+        mars.next();
+    ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_FREE, Mars::OP_DELKEY)), Mars::ERR_SUCCESS);
+    EXPECT_EQ(mars.cleard(false), Mars::ERR_SUCCESS);
+    int after = mars.avail();
+    // Expect 3 sentinel blocks (extent descriptor + header, length, zero key, handle)
+    EXPECT_EQ(before - after, 15);
+}
+
 static void del_forward(Mars & mars, std::set<int> &gold) {
     mars.first();
     auto it = gold.begin();

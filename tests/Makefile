@@ -4,6 +4,7 @@
 #   brew install googletest         -- on MacOS
 #
 CXXFLAGS        ?= -std=c++20
+CXXFLAGS        += $(OPTS)
 #
 # Superseded by test-smoke
 # TESTS           = test-initdb test-coverage

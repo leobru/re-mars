@@ -67,7 +67,7 @@ struct MarsImpl {
     // Cursor is a non-persistent structure
     struct CursorElt {
         uint64_t block_id;
-        unsigned pos: 15;
+        int pos: 15;
         unsigned steps: 16;
     };
 
@@ -123,7 +123,7 @@ struct MarsImpl {
 
     // Fields of BDVECT
     // uintref outadr;
-    puintref bdbuf, bdtab, freeSpace, newkey, extPtr, curbuf;
+    puintref bdbuf, bdtab, freeSpace, extPtr, curbuf;
     Metablock * &curMetaBlock;
     uintref orgcmd, curcmd,
         disableSync, givenp, key, erhndl,
@@ -161,7 +161,6 @@ struct MarsImpl {
         bdbuf(data[BDVECT+016].u),
         bdtab(data[BDVECT+017].u),
         freeSpace(data[BDVECT+034].u),
-        newkey(data[BDVECT+036].u),
         extPtr(data[BDVECT+046].u),
         curbuf(data[BDVECT+0241].u),
 
@@ -246,10 +245,15 @@ struct MarsImpl {
     uint64_t handle_chunk(int zone, uint64_t head);
     uint64_t allocator(uint64_t *usrloc), allocator1023(uint64_t firstWord, uint64_t *usrloc);
     uint64_t allocator1047(int loc, uint64_t head, uint64_t firstWord, int remlen, uint64_t* &usrloc);
-    enum KeyOp { DELKEY, A01160 };
-    uint64_t key_manager(KeyOp);
+    struct BtreeArgs {
+        uint64_t key;
+        bool recurse;
+        BtreeArgs() : key(ARBITRARY_NONZERO), recurse(false) { }
+    };
+    uint64_t update_btree(BtreeArgs = BtreeArgs());
     void add_key(uint64_t key, uint64_t toAdd, bool indirect);
-    bool propagate_steps(bool withHeader, uint64_t chain, uint64_t newHeader);
+    BtreeArgs del_key();
+    bool propagate_steps(bool withHeader, uint64_t chain = 0, uint64_t newHeader = 0);
     void check_space(unsigned need);
     void mkctl(), find(uint64_t);
     void update_by_reallocation(int, ExtentHeader, uint64_t* &usrloc);
@@ -579,7 +583,7 @@ void MarsImpl::get_secondary_block(uint64_t descr) {
     get_block(descr, Secondary);
 }
 
-// If the micro-instruction after tue current one is OP_COND (00)
+// If the micro-instruction after the current one is OP_COND (00)
 // and there are instructions after it to be skipped, skip them;
 // otherwise, throw an error.
 uint64_t MarsImpl::skip(Error e) {
@@ -1202,10 +1206,9 @@ uint64_t MarsImpl::one_insn() {
     case Mars::OP_ADDKEY:
         workHandle = allocHandle;
         add_key(key, workHandle, false);
-        return key_manager(A01160);
+        return update_btree();
     case Mars::OP_DELKEY:
-        newkey = 0;              // looks dead
-        return key_manager(DELKEY);
+        return update_btree(del_key());
     case Mars::OP_LOOP:
         return orgcmd;
     case Mars::OP_ROOT:
@@ -1226,9 +1229,9 @@ uint64_t MarsImpl::one_insn() {
     case Mars::OP_SAVE:
         save();
         throw Mars::ERR_SUCCESS;
-    case Mars::OP_ADDMETA:
+    case Mars::OP_REPLACE:
         curMetaBlock->element[Cursor[idx].pos].id = allocHandle;
-        return key_manager(A01160);
+        return update_btree();
     case Mars::OP_SKIP:
         return curcmd >> 12;
     case Mars::OP_STOP:
@@ -1356,22 +1359,13 @@ void MarsImpl::add_key(uint64_t key, uint64_t toAdd, bool indirect) {
     curMetaBlock->header.len += 2;
 }
 
-// Performs key insertion and deletion in the BTree
-uint64_t MarsImpl::key_manager(KeyOp op) {
-    uint64_t key;
-    bool recurse = false;
-    int len;
-    bool first;
-    unsigned need;
-    uint64_t chain, link;
-    uint64_t newDescr;
-    switch (op) {
-    case DELKEY: jump(delkey);
-    case A01160: jump(a01160);
-    }
+auto MarsImpl::del_key() -> BtreeArgs {
+    BtreeArgs bta;
+    uint64_t chain, link, &key = bta.key;
+    bool &recurse = bta.recurse;
   delkey:
-    first = Cursor[idx].pos == 0;
-    len = curMetaBlock->header.len;
+    bool first = Cursor[idx].pos == 0;
+    int len = curMetaBlock->header.len;
     if (len < 2)
         std::cerr << "len @ delkey < 2\n";
     // Removing the element pointed by the iterator from the metablock
@@ -1382,7 +1376,7 @@ uint64_t MarsImpl::key_manager(KeyOp op) {
     if (curMetaBlock->header.len == 0) {
         // The current metablock became empty
         if (!idx)               // That was the root metablock?
-            jump(a01160);       // Do not free it
+            return bta;         // Do not free it
         free(curBlockDescr);
         chain = Secondary[0];   // Save the block chain
         link = prev_block(Secondary[0]);
@@ -1399,6 +1393,14 @@ uint64_t MarsImpl::key_manager(KeyOp op) {
         key = curMetaBlock->element[0].key; // the new key at position 0
         recurse = true;
     }
+    return bta;
+}
+
+// Updates the BTree after insertion or deletion.
+uint64_t MarsImpl::update_btree(BtreeArgs bta) {
+    uint64_t &key = bta.key;
+    bool &recurse = bta.recurse;
+    unsigned need;
   a01160:                       // generic metablock update ???
     if (idx == 0) {
         mylen = META_SIZE;
@@ -1415,7 +1417,7 @@ uint64_t MarsImpl::key_manager(KeyOp op) {
         }
         update(Cursor[0].block_id, (uint64_t*)curMetaBlock); // update the root metablock
         if (recurse) {
-            if (propagate_steps(false, chain, link))
+            if (propagate_steps(false))
                 return cont;
             curMetaBlock->element[Cursor[idx].pos].key = key;
             key = curMetaBlock->element[0].key; // the new key at position 0
@@ -1428,7 +1430,7 @@ uint64_t MarsImpl::key_manager(KeyOp op) {
         mylen = curMetaBlock->header.len + 1;
         update(curBlockDescr, (uint64_t*)curMetaBlock);
         if (recurse) {
-            if (propagate_steps(false, chain, link))
+            if (propagate_steps(false))
                 return cont;
             curMetaBlock->element[Cursor[idx].pos].key = key;
             key = curMetaBlock->element[0].key; // the new key at position 0
@@ -1446,12 +1448,12 @@ uint64_t MarsImpl::key_manager(KeyOp op) {
     auto old = Secondary[040];
     Secondary[040] = Metablock::Header(curBlockDescr, next_block(Secondary[0]), 040);
     mylen = META_SIZE;
-    newDescr = allocator((uint64_t*)curMetaBlock + 040);
+    uint64_t newDescr = allocator((uint64_t*)curMetaBlock + 040);
     Secondary[040] = old;
     key = Secondary[META_SIZE];
     auto origHeader = Secondary[0];
     Secondary[0] = Metablock::Header(prev_block(origHeader), newDescr, 040);
-    link = newDescr;
+    uint64_t link = newDescr;
     mylen = block_len(Secondary[0]) + 1;
     update(curBlockDescr, Secondary);
     if (propagate_steps(true, origHeader, link))

@@ -60,7 +60,7 @@ class Mars {
         OP_LENGTH = 033,
         OP_DESCR = 034,
         OP_SAVE = 035,
-        OP_ADDMETA = 036,
+        OP_REPLACE = 036,
         OP_SKIP = 037,
         OP_STOP = 040,
         OP_IFEQ = 041,
@@ -133,6 +133,7 @@ class Mars {
     wordref key = data[BDVECT+010];
     wordref myloc = data[BDVECT+013];
     wordref mylen = data[BDVECT+015];
+    wordref curkey = data[BDVECT+037];
     wordref offset = data[BDVECT+042];
     wordref datumLen = data[BDVECT+047];
 
