@@ -26,7 +26,6 @@ void usage() {
       "\t-c\tDo not clear the DB at the end\n"
       "\t-d\tInclude date stamps in descriptors\n"
       "\t-t\tDump zones in text format as well\n"
-      "\t-s\tTrace store operations\n"
       ;
 }
 
@@ -47,12 +46,13 @@ int main(int argc, char ** argv) {
     int numrec = 32768, maxsize = 1024, repeats = 1;
     bool clear = true;
     std::string fname;
+    uint64_t dummy[maxsize];
 
     Mars mars;
     mars.zero_date = true;
 
     for (;;) {
-        c = getopt (argc, argv, "inhVtsicdm:L:l:f:r:R:");
+        c = getopt (argc, argv, "inhVticdm:L:l:f:r:R:");
         if (c < 0)
             break;
         switch (c) {
@@ -71,9 +71,6 @@ int main(int argc, char ** argv) {
             break;
         case 't':
             mars.dump_txt_zones = true;
-            break;
-        case 's':
-            mars.trace_stores = true;
             break;
         case 'd':
             mars.zero_date = false;
@@ -140,7 +137,7 @@ int main(int argc, char ** argv) {
             if (mars.verbose)
                 std::cerr << std::format("Putting '{}' of size {}\n", k, size);
             // Memory location 010000 and up are not used, will be 0
-            if (mars.modd(k | 024LL << 42, 010000, size)) {
+            if (mars.modd(k | 024LL << 42, dummy, size)) {
                 // An overflow error is possible
                 std::cout << std::format("Overflow when attempting to put record #{}\n", i);
                 break;

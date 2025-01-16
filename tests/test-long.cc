@@ -27,7 +27,7 @@ TEST(mars, maxsize)
     for (int i = 1; i <= 65536; ++i) {
         if (mars.putd(i | 024LL << 42, 0, 0)) {
             // A DB corruption error is expected at the last iteration
-            ostr << "Error " << mars.data[7].d << " while putting " << i << '\n';
+            ostr << "Error " << mars.status << " while putting " << i << '\n';
             break;
         }
     }

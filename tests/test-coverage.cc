@@ -10,23 +10,23 @@
 
 #include "mars.h"
 
-void init(Mars & mars, int start, int len) {
+void init(uint64_t *start, int len) {
     for (int i = 0; i < len; ++i) {
-      mars.data[start+i] = (064LL << 42) + i;
+        start[i] = (064LL << 42) + i;
     }
 }
 
-bool compare(Mars & mars, int start1, int start2, int len) {
+bool compare(Mars & mars, uint64_t *start1, uint64_t *start2, int len) {
     bool match = true;
     for (int i = 0; i < len; ++i) {
-        if (mars.data[start1+i] != mars.data[start2+i]) {
+        if (start1[i] != start2[i]) {
             match = false;
             std::cerr << std::format("Element {} does not match ({:016o} vs {:016o})\n",
-                                     i, mars.data[start1+i].d, mars.data[start2+i].d);
+                                     i, start1[i], start2[i]);
         }
     }
     if (match && mars.verbose)
-        std::cerr << std::format("{} elements match between {:o} and {:o}\n", len, start1, start2);
+        std::cerr << std::format("{} elements match between {} and {}\n", len, (void*)start1, (void*)start2);
     return match;
 }
 
@@ -42,7 +42,6 @@ void usage() {
       "\t-l <n>\tFile length, octal (default 2)\n"
       "\t-d\tInclude date stamps in descriptors\n"
       "\t-t - dump zones in text format as well\n"
-      "\t-s\tTrace store operations\n"
       ;
 }
 
@@ -66,7 +65,7 @@ int main(int argc, char ** argv) {
     mars.zero_date = true;
 
     for (;;) {
-        c = getopt (argc, argv, "inhVtsidL:l:f:");
+        c = getopt (argc, argv, "inhVtidL:l:f:");
         if (c < 0)
             break;
         switch (c) {
@@ -85,9 +84,6 @@ int main(int argc, char ** argv) {
             break;
         case 't':
             mars.dump_txt_zones = true;
-            break;
-        case 's':
-            mars.trace_stores = true;
             break;
         case 'd':
             mars.zero_date = false;
@@ -130,10 +126,9 @@ int main(int argc, char ** argv) {
     // Opening it
     mars.opend(fname.c_str());
 
-    const int PAGE1 = 010000;
-    const int PAGE2 = 012000;
+    uint64_t PAGE1[1024], PAGE2[1024];
 
-    init(mars, PAGE1, 1024);
+    init(PAGE1, 1024);
 
     // Initializing an array of 1024 words
 

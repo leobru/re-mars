@@ -2,6 +2,9 @@
 #define MARS_H
 
 #include <cstdint>
+#include <string>
+#include <algorithm>
+#include <memory>
 
 class Mars {
     struct MarsImpl & impl;
@@ -97,6 +100,13 @@ class Mars {
         return *(uint64_t*)s.c_str();
     }
 
+    struct segment {
+        uint64_t *loc;
+        unsigned pos, len;
+        segment(uint64_t *l = nullptr, unsigned p = 0, unsigned s = 0) :
+            loc(l), pos(p), len(s) { }
+    };
+
     struct word {
         union { uint64_t d; uint64_t *u; };
         word(uint64_t x = 0) : d(x) { }
@@ -123,16 +133,21 @@ class Mars {
     // Locations of BDSYS, BDTAB and BDBUF match those
     // in a mid-sized test program on the BESM-6.
     static const int BDVECT = 01400;
-    static const int BDSYS = 02000;
     static const int BDTAB = 04000;
     static const int BDBUF = 06000;
 
+    static const Op ALLOC = Op(012);
+    static const Op HANDLE = Op(035);
+
     typedef word& wordref;
+    typedef uint64_t*& puintref;
     // BDVECT fields used by the API
+    puintref cont = data[BDVECT].u;
     wordref disableSync = data[BDVECT+6];
     wordref key = data[BDVECT+010];
-    wordref myloc = data[BDVECT+013];
+    puintref myloc = data[BDVECT+013].u;
     wordref mylen = data[BDVECT+015];
+    wordref handle = data[BDVECT+HANDLE];
     wordref curkey = data[BDVECT+037];
     wordref offset = data[BDVECT+042];
     wordref datumLen = data[BDVECT+047];
@@ -156,14 +171,14 @@ class Mars {
 
     Error opend(const char * k);
 
-    Error putd(uint64_t k, int loc, int len);
+    Error putd(uint64_t k, uint64_t *loc, int len);
     Error putd(const char * k, const char * v);
     Error putd(const char * k, int loc, int len);
 
-    Error modd(const char * k, int loc, int len);
-    Error modd(uint64_t k, int loc, int len);
-    Error getd(const char * k, int loc, int len);
-    Error getd(uint64_t k, int loc, int len);
+    Error modd(const char * k, uint64_t *loc, int len);
+    Error modd(uint64_t k, uint64_t *loc, int len);
+    Error getd(const char * k, uint64_t *loc, int len);
+    Error getd(uint64_t k, uint64_t *loc, int len);
 
     Error deld(const char * k);
     Error deld(uint64_t k);
@@ -178,17 +193,14 @@ class Mars {
 
     int getlen(), avail();
 
-    // Get result of store(), when flag memoize_stores is enabled.
-    uint64_t get_store(size_t index);
-
     bdvect_t & bdvect() { return *reinterpret_cast<bdvect_t*>(data+BDVECT); }
 
     bool dump_txt_zones = false;
     bool verbose = false;
-    bool trace_stores = false;
-    bool memoize_stores = false;
     bool zero_date = false;
     bool dump_diffs = false;
+    Error status;
+    const char * errmsg;        // nullptr when status is ERR_SUCCESS
 private:
     bool flush = true;
     bdvect_t sav;

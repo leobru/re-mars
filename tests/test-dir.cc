@@ -8,12 +8,12 @@
 #include "mars.h"
 
 static Mars::Error mkdir(Mars & mars, uint64_t dir) {
-    mars.data[Mars::BDVECT+010].d = dir;
+    mars.key = dir;
     return mars.eval(Mars::mcprog(Mars::OP_FIND, Mars::OP_NOMATCH, Mars::OP_INSMETA, Mars::OP_ADDKEY));
 }
 
 static Mars::Error chdir(Mars & mars, uint64_t dir) {
-    mars.data[Mars::BDVECT+010].d = dir;
+    mars.key = dir;
     return mars.eval(Mars::mcprog(Mars::OP_FIND, Mars::OP_MATCH, Mars::OP_SETMETA));
 }
 
@@ -46,18 +46,21 @@ TEST(mars, dir)
 
 // Before calling this rmdir, the directory to be removed must be the current directory
 static Mars::Error rmdir(Mars & mars, uint64_t dir) {
-    mars.data[Mars::BDVECT] = 077770;
+    uint64_t cont[] = {
+        Mars::mcprog(Mars::OP_LAST, Mars::OP_NOMATCH,
+                     Mars::OP_COND, Mars::OP_FREE, Mars::OP_DELKEY, Mars::OP_LOOP,
+                     Mars::OP_DELKEY, Mars::OP_CHAIN),
+        Mars::mcprog(Mars::OP_ASSIGN, Mars::Op(010), Mars::Op(2), Mars::OP_CHAIN),
+        Mars::mcprog(Mars::OP_ASSIGN, Mars::HANDLE, Mars::Op(014),
+                     Mars::OP_SETMETA,
+                     Mars::OP_FIND, Mars::OP_FREE, Mars::OP_DELKEY)
+    };
+    mars.cont = cont;
     mars.key = 0;
     mars.data[Mars::BDVECT+2] = dir;
-    mars.data[077770] = Mars::mcprog(Mars::OP_LAST, Mars::OP_NOMATCH,
-                                     Mars::OP_COND, Mars::OP_FREE, Mars::OP_DELKEY, Mars::OP_LOOP,
-                                     Mars::OP_DELKEY, Mars::OP_CHAIN);
-    mars.data[077771] = Mars::mcprog(Mars::OP_ASSIGN, Mars::Op(010), Mars::Op(2), Mars::OP_CHAIN);
-    mars.data[077772] = (Mars::mcprog(Mars::OP_ASSIGN, Mars::Op(035), Mars::Op(014),
-                                      Mars::OP_SETMETA,
-                                      Mars::OP_FIND, Mars::OP_FREE, Mars::OP_DELKEY));
-    return mars.eval(Mars::mcprog(Mars::OP_BEGIN, Mars::OP_ASSIGN,
-                                  Mars::Op(014), Mars::Op(035), Mars::OP_CHAIN));
+    return mars.eval(Mars::mcprog(Mars::OP_BEGIN,
+                                  Mars::OP_ASSIGN, Mars::Op(014), Mars::HANDLE,
+                                  Mars::OP_CHAIN));
 }
 
 TEST(mars, cleardir)
@@ -71,7 +74,7 @@ TEST(mars, cleardir)
     EXPECT_EQ(mkdir(mars, 12345), Mars::ERR_SUCCESS);
     EXPECT_EQ(chdir(mars, 12345), Mars::ERR_SUCCESS);
     // Results in secondary metablocks for the directory
-    for (int i = 1; i < 1000; ++i) 
+    for (int i = 1; i < 1000; ++i)
         ASSERT_EQ(mars.putd(i, 0, 0), Mars::ERR_SUCCESS);
     // This will not discard secondary metablocks
     EXPECT_EQ(mars.cleard(false), Mars::ERR_SUCCESS);
@@ -93,7 +96,7 @@ TEST(mars, rmdir)
     EXPECT_EQ(mkdir(mars, 12345), Mars::ERR_SUCCESS);
     EXPECT_EQ(chdir(mars, 12345), Mars::ERR_SUCCESS);
     // Results in secondary metablocks for the directory
-    for (int i = 1; i < 1000; ++i) 
+    for (int i = 1; i < 1000; ++i)
         ASSERT_EQ(mars.putd(i, 0, 0), Mars::ERR_SUCCESS);
     // This should discard all secondary metablocks
     EXPECT_EQ(rmdir(mars, 12345), Mars::ERR_SUCCESS);

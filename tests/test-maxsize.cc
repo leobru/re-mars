@@ -24,7 +24,6 @@ void usage() {
       "\t-r <n>\tEnd record number (default 65536)\n"
       "\t-d\tInclude date stamps in descriptors\n"
       "\t-t - dump zones in text format as well\n"
-      "\t-s\tTrace store operations\n"
       ;
 }
 
@@ -51,7 +50,7 @@ int main(int argc, char ** argv) {
     mars.zero_date = true;
 
     for (;;) {
-        c = getopt (argc, argv, "inhVtsiCcdL:l:f:R:r:");
+        c = getopt (argc, argv, "inhVtiCcdL:l:f:R:r:");
         if (c < 0)
             break;
         switch (c) {
@@ -70,9 +69,6 @@ int main(int argc, char ** argv) {
             break;
         case 't':
             mars.dump_txt_zones = true;
-            break;
-        case 's':
-            mars.trace_stores = true;
             break;
         case 'd':
             mars.zero_date = false;
@@ -125,23 +121,19 @@ int main(int argc, char ** argv) {
         mars.newd(fname.c_str(), 052, catalog_len, file_len);
     }
     // Opening it
-    // mars.trace_stores = true;
     mars.opend(fname.c_str());
-    mars.trace_stores = false;
     space = mars.avail();
     std::cout << std::format("Usable space in the file: {:o}\n", space);
 
     // Putting elements of size 0 until the DB overflows
     for (int i = startrec; i <= numrec; ++i) {
       // std::cerr << "Putting " << std::dec << i << '\n';
-      // if (i == numrec) mars_flags.trace_stores = true;
       if (mars.putd(i | 024LL << 42, 0, 0)) {
             // An overflow error is expected at the last iteration
             std::cerr << "\twhile putting " << i << '\n';
             break;
         }
     }
-    mars.trace_stores = false;
     space = mars.avail();
     std::cout << std::format("Remaining space in the file: {:o}\n", space);
 

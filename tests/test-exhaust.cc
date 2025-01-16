@@ -17,7 +17,6 @@ void usage() {
       "\t-r <n>\tEnd record number (default 200000)\n"
       "\t-d\tInclude date stamps in descriptors\n"
       "\t-t - dump zones in text format as well\n"
-      "\t-s\tTrace store operations\n"
       ;
 }
 
@@ -40,7 +39,7 @@ int main(int argc, char ** argv) {
     mars.zero_date = true;
 
     for (;;) {
-        c = getopt (argc, argv, "hVtsidr:n:N:");
+        c = getopt (argc, argv, "hVtidr:n:N:");
         if (c < 0)
             break;
         switch (c) {
@@ -53,9 +52,6 @@ int main(int argc, char ** argv) {
             break;
         case 't':
             mars.dump_txt_zones = true;
-            break;
-        case 's':
-            mars.trace_stores = true;
             break;
         case 'd':
             mars.zero_date = false;
@@ -92,7 +88,6 @@ int experiment(Mars & mars, int step, size_t numrec) {
     // Setting the root location
     mars.SetDB(052, 0, 01731);
 
-    mars.trace_stores = false;
     std::vector<int> a(numrec);
     srandom(step);
     for (size_t i = 0; i < a.size(); ++i)
@@ -105,7 +100,6 @@ int experiment(Mars & mars, int step, size_t numrec) {
     // Putting elements of size 0 until the DB overflows
     for (int i = 0; i < std::min(numrec, a.size()); ++i) {
       // std::cerr << "Putting " << std::dec << i << '\n';
-      // if (i == numrec) mars_flags.trace_stores = true;
       if (mars.putd(a[i] | 024LL << 42, 0, 0)) {
             // An overflow error is expected at the last iteration
           std::cerr << "Step " << step << "\twhile putting " << i << '\n';

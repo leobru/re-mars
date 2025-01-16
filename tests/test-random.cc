@@ -19,6 +19,7 @@ TEST(mars, thrash)
     mars.root();
     int space = mars.avail();
     result = std::format("Initially: {}\n", space);
+    uint64_t dummy[maxsize];
 
     for (int rep = 0; rep < repeats; rep++) {
         // Putting elements with random keys and arbitrary data, of random sizes,
@@ -26,7 +27,7 @@ TEST(mars, thrash)
         for (int i = 1; i <= numrec; ++i) {
             int k = (random() % numrec) + 1;
             int size = random() % maxsize;
-            if (mars.modd(k | 024LL << 42, 010000, size)) {
+            if (mars.modd(k | 024LL << 42, dummy, size)) {
                 // An overflow error is possible
                 result += std::format("Overflow when attempting to put record #{}\n", i);
                 break;

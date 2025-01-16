@@ -10,31 +10,34 @@ TEST(mars, diagnostics)
 {
     Mars mars(false);
     uint64_t zero = 0, one = 1;
+    uint64_t dummy[2];
     mars.SetDB(0, 0, 1);
-    ASSERT_EQ(mars.data[7], Mars::ERR_BAD_CATALOG);    
+    ASSERT_EQ(mars.status, Mars::ERR_BAD_CATALOG);
     mars.InitDB(0, 0, 1);
     mars.root();
     mars.next();
-    ASSERT_EQ(mars.data[7], Mars::ERR_NO_CURR);
+    ASSERT_EQ(mars.status, Mars::ERR_NO_CURR);
     ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_BEGIN, Mars::OP_PREV)),
               Mars::ERR_NO_PREV);
     ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_BEGIN, Mars::OP_NEXT)),
               Mars::ERR_NO_NEXT);
     ASSERT_EQ(mars.getd(zero, 0, 0), Mars::ERR_INV_NAME);
     ASSERT_EQ(mars.getd(one, 0, 0), Mars::ERR_NO_NAME);
-    ASSERT_EQ(mars.putd(one, 0, 2), Mars::ERR_SUCCESS);
+    ASSERT_EQ(mars.putd(one, dummy, 2), Mars::ERR_SUCCESS);
     ASSERT_EQ(mars.putd(one, 0, 0), Mars::ERR_EXISTS);
-    ASSERT_EQ(mars.getd(one, 0, 0), Mars::ERR_SUCCESS);
-    ASSERT_EQ(mars.getd(one, 0, 1), Mars::ERR_TOO_LONG);
+    ASSERT_EQ(mars.getd(one, dummy, 0), Mars::ERR_SUCCESS);
+    ASSERT_EQ(mars.getd(one, dummy, 1), Mars::ERR_TOO_LONG);
     mars.offset = 2;            // within the datum of length 2
     ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_SEEK)), Mars::ERR_SUCCESS);
     mars.offset = 5;            // outside of datum
     ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_SEEK)), Mars::ERR_SEEK);
     // The deld(one); operation is implemented using micro-instruction word chaining
-    mars.data[Mars::BDVECT] = 077770;
-    mars.data[077770] = Mars::mcprog(Mars::OP_MATCH, Mars::OP_CHAIN);
-    mars.data[077771] = Mars::mcprog(Mars::OP_FREE, Mars::OP_CHAIN);
-    mars.data[077772] = Mars::mcprog(Mars::OP_DELKEY);
+    uint64_t cont[] = {
+        Mars::mcprog(Mars::OP_MATCH, Mars::OP_CHAIN),
+        Mars::mcprog(Mars::OP_FREE, Mars::OP_CHAIN),
+        Mars::mcprog(Mars::OP_DELKEY)
+    };
+    mars.cont = cont;
     ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_FIND, Mars::OP_CHAIN)), Mars::ERR_SUCCESS);
     ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_BEGIN, Mars::OP_FREE, Mars::OP_DELKEY)),
               Mars::ERR_NO_RECORD);
@@ -43,15 +46,15 @@ TEST(mars, diagnostics)
     ASSERT_EQ(mars.eval(Mars::mcprog(Mars::OP_LOCK, Mars::OP_LOCK)), Mars::ERR_LOCKED);
 }
 
-static void init(Mars & mars, int start, int len) {
+static void init(Mars & mars, uint64_t *start, int len) {
     for (int i = 0; i < len; ++i) {
-      mars.data[start+i] = (064LL << 42) + i;
+      start[i] = (064LL << 42) + i;
     }
 }
 
-static bool compare(const Mars & mars, int start1, int start2, int len) {
+static bool compare(uint64_t *start1, uint64_t *start2, int len) {
     for (int i = 0; i < len; ++i) {
-        if (mars.data[start1+i] != mars.data[start2+i]) {
+        if (start1[i] != start2[i]) {
             return false;
         }
     }
@@ -89,8 +92,8 @@ TEST(mars, coverage)
     ASSERT_EQ(mars.opend(fname.c_str()), Mars::ERR_SUCCESS);
     mars.disableSync = 3;
 
-    const int PAGE1 = 010000;
-    const int PAGE2 = 012000;
+    uint64_t PAGE1[1024];
+    uint64_t PAGE2[1024];
 
     // Initializing an array of 1024 words
     init(mars, PAGE1, 1024);
@@ -107,7 +110,7 @@ TEST(mars, coverage)
     ASSERT_EQ(mars.modd(elt.c_str(), PAGE1+1, 1023), Mars::ERR_SUCCESS);
     // Getting back
     ASSERT_EQ(mars.getd(elt.c_str(), PAGE2, 1023), Mars::ERR_SUCCESS);
-    EXPECT_TRUE(compare(mars, PAGE2, PAGE1+1, 1023));
+    EXPECT_TRUE(compare(PAGE2, PAGE1+1, 1023));
     EXPECT_EQ(mars.cleard(true), Mars::ERR_SUCCESS);
 
     // Putting 59 elements of varying sizes with numerical keys (key 0 is invalid)
@@ -121,7 +124,7 @@ TEST(mars, coverage)
     while (k) {
         int len = mars.getlen();
         EXPECT_EQ(mars.getd(k, PAGE2, 100), Mars::ERR_SUCCESS);
-        EXPECT_TRUE(compare(mars, PAGE2, PAGE1+1, len));
+        EXPECT_TRUE(compare(PAGE2, PAGE1+1, len));
         k = mars.prev();
     }
 
