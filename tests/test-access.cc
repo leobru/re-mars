@@ -129,3 +129,43 @@ TEST(mars, scatter)
              12345*8 - (1+2+3+4+5+6+7+8)*128 + 8;
     EXPECT_EQ(std::accumulate(&mars.data[base].d, &mars.data[base+len].d, 0), expect);
 }
+
+static std::string lengths(Mars & mars) {
+    std::string ret;
+    mars.find(12345);
+    ret += "Length of 12345 = ";
+    ret += std::to_string(mars.getlen());
+    ret += '\n';
+    mars.find(23456);
+    ret += "Length of 23456 = ";
+    ret += std::to_string(mars.getlen());
+    ret += '\n';
+    return ret;
+}
+
+TEST(mars, exchange)
+{
+    Mars mars(false);
+    std::string result;
+    mars.InitDB(0, 0, 20);
+    mars.SetDB(0, 0, 20);
+    mars.root();
+    mars.putd(12345, 0, 1);
+    mars.putd(23456, 0, 2);
+    result = lengths(mars);
+    mars.find(12345);
+    mars.eval(Mars::mcprog(Mars::OP_ASSIGN, Mars::Op(014), Mars::Op(035)));
+    mars.find(23456);
+    mars.eval(Mars::mcprog(Mars::OP_ASSIGN, Mars::Op(02), Mars::Op(035)));
+    mars.eval(Mars::mcprog(Mars::OP_ASSIGN, Mars::Op(012), Mars::Op(014)));
+    mars.eval(Mars::mcprog(Mars::OP_REPLACE));    
+    mars.find(12345);
+    mars.eval(Mars::mcprog(Mars::OP_ASSIGN, Mars::Op(012), Mars::Op(02)));
+    mars.eval(Mars::mcprog(Mars::OP_REPLACE));
+    result += lengths(mars);
+    const std::string expect = R"(Length of 12345 = 1
+Length of 23456 = 2
+Length of 12345 = 2
+Length of 23456 = 1
+)";
+}
