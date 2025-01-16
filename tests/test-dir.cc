@@ -89,7 +89,7 @@ TEST(mars, rmdir)
     mars.InitDB(0, 0, 20);
     mars.SetDB(0, 0, 20);
     mars.root();
-    std::cerr << before << '\n';
+    int before = mars.avail();
     EXPECT_EQ(mkdir(mars, 12345), Mars::ERR_SUCCESS);
     EXPECT_EQ(chdir(mars, 12345), Mars::ERR_SUCCESS);
     // Results in secondary metablocks for the directory
