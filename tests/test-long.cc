@@ -33,8 +33,7 @@ TEST(mars, maxsize)
     }
     delete &mars;
     EXPECT_EQ(ostr.str(), "Error 2 while putting 65536\n");
-    run_command(result, "sha1sum 520[0-4]??");
-    EXPECT_EQ(result, file_contents("test-maxsize.gold"));
+    run_command(result, "sha1sum --quiet -c test-maxsize.gold");
 }
 
 TEST(mars, clear)
