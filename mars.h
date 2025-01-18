@@ -119,38 +119,80 @@ class Mars {
         bool operator!=(const word & x) const { return d != x.d; }
     };
 
-    struct bdvect_t {
+    union bdvect_t {
         static const size_t SIZE = 168;
-        word w[SIZE];
+        uint64_t w[SIZE];
+        uint64_t *u[SIZE];
+        struct {                // offset(8)
+            uint64_t *ip;       // 0
+            void     (*call)(); // 1
+            uint64_t *loc2;     // 2
+            uint64_t orgcmd;    // 3
+            uint64_t loc4;      // 4
+            uint64_t curcmd;    // 5
+            uint64_t disableSync; // 6
+            uint64_t givenp;      // 7
+            uint64_t key;         // 10
+            void     (*erhndl)(); // 11
+            uint64_t allocHandle; // 12
+            uint64_t *myloc;      // 13
+            uint64_t loc14;       // 14
+            uint64_t mylen;       // 15
+            uint64_t *bdbuf;      // 16
+            uint64_t *bdtab;      // 17
+            uint64_t Cursor[8];   // 20-27
+            uint64_t dbdesc;      // 30
+            uint64_t DBkey;       // 31
+            uint64_t savedp;      // 32
+            uint64_t doNotUse1;   // 33
+            uint64_t *freeSpace;  // 34
+            uint64_t workHandle;  // 35
+            uint64_t doNotUse2;   // 36
+            uint64_t curkey;      // 37
+            uint64_t endmrk;      // 40
+            uint64_t curWord;     // 41
+            uint64_t offset;      // 42
+            uint64_t loc43;       // 43
+            uint64_t IOpat;       // 44
+            uint64_t extLength;   // 45
+            uint64_t *extPtr;     // 46
+            uint64_t datumLen;    // 47
+            uint64_t curMetaBlock; // 50
+            uint64_t dblen;        // 51
+            uint64_t loc52;        // 52
+            uint64_t curPos;       // 53
+            uint64_t RootBlk[042]; // 54-115
+            uint64_t SecBlk[0102]; // 116-217
+            uint64_t curExtent;    // 220
+            uint64_t unknown[020]; // 221-240
+            uint64_t *curbuf;      // 241
+            uint64_t idx;          // 242
+            uint64_t loc243;       // 243
+            uint64_t curZone;      // 244
+            uint64_t loc245;       // 245
+            uint64_t blockHandle;  // 246
+            uint64_t dirty;        // 247
+        };
+        bdvect_t() : w{} { }
     };
 
-    // The user-accessible memory size of the BESM-6 is 32K 48-bit words.
-    static const int RAM_LENGTH = 32768;
-
-    // Addresses above 010000 can be used for user data.
-    word data[RAM_LENGTH];
-
-    // Locations of BDSYS, BDTAB and BDBUF match those
-    // in a mid-sized test program on the BESM-6.
-    static const int BDVECT = 01400;
-    static const int BDTAB = 04000;
-    static const int BDBUF = 06000;
-
+    static const Op KEY = Op(010);
     static const Op ALLOC = Op(012);
     static const Op HANDLE = Op(035);
 
+    typedef uint64_t& uintref;
     typedef word& wordref;
     typedef uint64_t*& puintref;
     // BDVECT fields used by the API
-    puintref cont = data[BDVECT].u;
-    wordref disableSync = data[BDVECT+6];
-    wordref key = data[BDVECT+010];
-    puintref myloc = data[BDVECT+013].u;
-    wordref mylen = data[BDVECT+015];
-    wordref handle = data[BDVECT+HANDLE];
-    wordref curkey = data[BDVECT+037];
-    wordref offset = data[BDVECT+042];
-    wordref datumLen = data[BDVECT+047];
+    puintref cont = bdv.ip;
+    uintref disableSync = bdv.disableSync;
+    uintref key = bdv.key;
+    puintref myloc = bdv.myloc;
+    uintref mylen = bdv.mylen;
+    uintref handle = bdv.workHandle;
+    uintref curkey = bdv.curkey;
+    uintref offset = bdv.offset;
+    uintref datumLen = bdv.datumLen;
 
     // Page size (02000 words) minus 3.
     static const int MAXCHUNK = 01775;
@@ -167,9 +209,9 @@ class Mars {
     // must be given when opening the database.
     Error SetDB(int lun, int start_zone, int length);
 
-    Error newd(const char * k, int lun, int start_zone, int len);
+    Error newd(const char * k, int lun, int start_zone, int len, uint64_t passwd = 0);
 
-    Error opend(const char * k);
+    Error opend(const char * k, uint64_t passwd = 0);
 
     Error putd(uint64_t k, uint64_t *loc, int len);
     Error putd(const char * k, const char * v);
@@ -193,7 +235,7 @@ class Mars {
 
     int getlen(), avail();
 
-    bdvect_t & bdvect() { return *reinterpret_cast<bdvect_t*>(data+BDVECT); }
+    bdvect_t & bdvect() { return bdv; }
 
     bool dump_txt_zones = false;
     bool verbose = false;
@@ -203,7 +245,7 @@ class Mars {
     const char * errmsg;        // nullptr when status is ERR_SUCCESS
 private:
     bool flush = true;
-    bdvect_t sav;
+    bdvect_t bdv, sav;
     void dump();
 };
 

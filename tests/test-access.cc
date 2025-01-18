@@ -44,7 +44,7 @@ TEST(mars, read)
     Mars::Error e =
         mars.eval(Mars::mcprog(Mars::OP_FIND, Mars::OP_LENGTH, Mars::OP_SEEK, Mars::OP_READ));
     ASSERT_EQ(e, Mars::ERR_SUCCESS);
-    EXPECT_EQ(mars.datumLen.d, len);
+    EXPECT_EQ(mars.datumLen, len);
     EXPECT_TRUE(compare(base, orig + offset - 1, 3));
 }
 
@@ -62,7 +62,7 @@ TEST(mars, write)
     Mars::Error e =
         mars.eval(Mars::mcprog(Mars::OP_FIND, Mars::OP_LENGTH, Mars::OP_SEEK, Mars::OP_WRITE));
     ASSERT_EQ(e, Mars::ERR_SUCCESS);
-    EXPECT_EQ(mars.datumLen.d, len);
+    EXPECT_EQ(mars.datumLen, len);
     ASSERT_EQ(mars.getd(key, base, 0), Mars::ERR_SUCCESS);
     auto expect = std::accumulate(orig, orig+len, 0) -
         12345*3 - 999 - 1000 - 1001 + 3;
@@ -83,7 +83,7 @@ TEST(mars, compare_match)
     Mars::Error e =
         mars.eval(Mars::mcprog(Mars::OP_FIND, Mars::OP_LENGTH, Mars::OP_SEEK, Mars::OP_IFEQ, Mars::OP_DELKEY));
     ASSERT_EQ(e, Mars::ERR_SUCCESS);
-    EXPECT_EQ(mars.datumLen.d, len);
+    EXPECT_EQ(mars.datumLen, len);
     // comparison succeeded -> the next op (OP_DELKEY) has been executed, getd will fail
     ASSERT_EQ(mars.getd(key, base, 0), Mars::ERR_NO_NAME);
 }
@@ -102,9 +102,34 @@ TEST(mars, compare_nomatch)
     Mars::Error e =
         mars.eval(Mars::mcprog(Mars::OP_FIND, Mars::OP_LENGTH, Mars::OP_SEEK, Mars::OP_IFEQ, Mars::OP_DELKEY));
     ASSERT_EQ(e, Mars::ERR_SUCCESS);
-    EXPECT_EQ(mars.datumLen.d, len);
+    EXPECT_EQ(mars.datumLen, len);
     // comparison failed -> the next op (OP_DELKEY) was not executed, getd will succeed
     ASSERT_EQ(mars.getd(key, base, 0), Mars::ERR_SUCCESS);
+}
+
+TEST(mars, skip)
+{
+    Mars mars(false);
+    auto key = Mars::tobesm("foobar");
+    uint64_t orig[1024], base[1024];
+    size_t len = 1024;
+    size_t offset = 1000;
+    setup(mars, orig, base, key, len, offset);
+    base[0] = 12345+999;
+    base[1] = 12345+1000;
+    base[2] = 12345+1001;
+    Mars::Error e =
+        mars.eval(Mars::mcprog(Mars::OP_FIND, Mars::OP_LENGTH, Mars::OP_SEEK, Mars::OP_IFEQ,
+                               Mars::OP_SKIP, Mars::OP_DELKEY));
+    ASSERT_EQ(e, Mars::ERR_SUCCESS);
+    EXPECT_EQ(mars.datumLen, len);
+    // comparison succeeded -> the next op (OP_DELKEY) has been skipped, getd will succeed
+    EXPECT_EQ(mars.getd(key, base, 0), Mars::ERR_SUCCESS);
+    e = mars.eval(Mars::mcprog(Mars::OP_FIND, Mars::OP_LENGTH, Mars::OP_SEEK, Mars::OP_IFEQ,
+                               Mars::OP_SKIP, Mars::OP_DELKEY, Mars::OP_DELKEY));
+    ASSERT_EQ(e, Mars::ERR_SUCCESS);
+    // check that exactly one instruction is skipped: the second OP_DELKEY must have executed, getd will fail
+    EXPECT_EQ(mars.getd(key, base, 0), Mars::ERR_NO_NAME);
 }
 
 TEST(mars, scatter)
@@ -125,7 +150,7 @@ TEST(mars, scatter)
         scatter[i] = std::make_unique<Mars::segment>(&zero, (i+1)*128, 1);
     }
     scatter[8] = std::make_unique<Mars::segment>(nullptr);
-    mars.data[Mars::BDVECT+014].u = reinterpret_cast<uint64_t*>(&scatter[0]);
+    mars.bdvect().loc14 = reinterpret_cast<uint64_t>(&scatter[0]);
     e = mars.eval(Mars::mcprog(Mars::OP_SEGMENT, Mars::Op(014), Mars::OP_UNPACK, Mars::OP_SEEK, Mars::OP_WRITE, Mars::OP_LOOP));
     ASSERT_EQ(e, Mars::ERR_SUCCESS);
     ASSERT_EQ(mars.getd(key, base, 0), Mars::ERR_SUCCESS);
@@ -158,19 +183,32 @@ TEST(mars, exchange)
     mars.putd(12345, dummy, 1);
     mars.putd(23456, dummy, 2);
     result = lengths(mars);
-    mars.find(12345);
-    mars.eval(Mars::mcprog(Mars::OP_ASSIGN, Mars::Op(014), Mars::HANDLE));
-    mars.find(23456);
-    mars.eval(Mars::mcprog(Mars::OP_ASSIGN, Mars::Op(02), Mars::HANDLE));
-    mars.eval(Mars::mcprog(Mars::OP_ASSIGN, Mars::ALLOC, Mars::Op(014)));
-    mars.eval(Mars::mcprog(Mars::OP_REPLACE));
-    mars.find(12345);
-    mars.eval(Mars::mcprog(Mars::OP_ASSIGN, Mars::ALLOC, Mars::Op(02)));
-    mars.eval(Mars::mcprog(Mars::OP_REPLACE));
+    uint64_t prog[]{
+        Mars::mcprog(Mars::OP_LDNEXT, Mars::KEY, Mars::Op(0), Mars::OP_FIND, Mars::OP_ASSIGN, Mars::Op(014), Mars::HANDLE, Mars::OP_CHAIN),
+        12345,
+        Mars::mcprog(Mars::OP_LDNEXT, Mars::KEY, Mars::Op(0), Mars::OP_FIND, Mars::OP_ASSIGN, Mars::Op(002), Mars::HANDLE, Mars::OP_CHAIN),
+        23456,
+        Mars::mcprog(Mars::OP_ASSIGN, Mars::ALLOC, Mars::Op(014), Mars::OP_REPLACE, Mars::OP_CHAIN),
+        Mars::mcprog(Mars::OP_LDNEXT, Mars::KEY, Mars::Op(0), Mars::OP_FIND, Mars::OP_ASSIGN, Mars::ALLOC, Mars::Op(002), Mars::OP_REPLACE),
+        12345
+    };
+    mars.bdvect().ip = prog;
+    mars.eval(Mars::OP_CHAIN);
     result += lengths(mars);
     const std::string expect = R"(Length of 12345 = 1
 Length of 23456 = 2
 Length of 12345 = 2
 Length of 23456 = 1
 )";
+}
+
+TEST(mars, passwd)
+{
+    Mars mars(false);
+    mars.InitDB(052, 0, 1);
+    mars.SetDB(052, 0, 1);
+    auto passwd = Mars::tobesm("passwd");
+    ASSERT_EQ(mars.newd("foobar", 052, 1, 2, passwd), Mars::ERR_SUCCESS);
+    EXPECT_EQ(mars.opend("foobar"), Mars::ERR_WRONG_PASSWORD);
+    EXPECT_EQ(mars.opend("foobar", passwd), Mars::ERR_SUCCESS);
 }

@@ -50,14 +50,14 @@ static Mars::Error rmdir(Mars & mars, uint64_t dir) {
         Mars::mcprog(Mars::OP_LAST, Mars::OP_NOMATCH,
                      Mars::OP_COND, Mars::OP_FREE, Mars::OP_DELKEY, Mars::OP_LOOP,
                      Mars::OP_DELKEY, Mars::OP_CHAIN),
-        Mars::mcprog(Mars::OP_ASSIGN, Mars::Op(010), Mars::Op(2), Mars::OP_CHAIN),
+        Mars::mcprog(Mars::OP_ASSIGN, Mars::Op(010), Mars::Op(4), Mars::OP_CHAIN),
         Mars::mcprog(Mars::OP_ASSIGN, Mars::HANDLE, Mars::Op(014),
                      Mars::OP_SETMETA,
                      Mars::OP_FIND, Mars::OP_FREE, Mars::OP_DELKEY)
     };
     mars.cont = cont;
     mars.key = 0;
-    mars.data[Mars::BDVECT+2] = dir;
+    mars.bdvect().loc4 = dir;
     return mars.eval(Mars::mcprog(Mars::OP_BEGIN,
                                   Mars::OP_ASSIGN, Mars::Op(014), Mars::HANDLE,
                                   Mars::OP_CHAIN));

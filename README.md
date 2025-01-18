@@ -1,7 +1,7 @@
 # MARS-6 archive system
 
 MARS-6 was an implementation of an external sorted key-value container.
-The API mechanism was in form of a micro-program.
+The API mechanism was in the form of a micro-program.
 
 Pascal compilers for the BESM-6 included a few MARS-6 operations as part ot the standard library, encoded as micro-programs.
 They are:
@@ -64,7 +64,7 @@ The semantics of micro-instructions (with the range of possible valid codes 00-5
 |  33  |  LENGTH  | Compute length of the object pointed to by the descriptor |
 |  34  |   DESCR  | Converts a block descriptor to a text format (length, date) |
 |  35  |   SAVE   | Save dirty buffers and exit |
-|  36  |  ADDMETA | Adds the current descriptor to the current metablock position,<br>updates the metablock tree |
+|  36  |  REPLACE | Puts the current descriptor into the current metablock position,<br>updates the metablock tree |
 |  37  |   SKIP   | Skip the next instruction |
 |  40  |   STOP   | Stops the execution of the micro-program |
 |  41  |   IFEQ   | Compare the user data to the current entry and skip next 2 instructions if no match |
@@ -83,51 +83,51 @@ The semantics of micro-instructions (with the range of possible valid codes 00-5
 
 BDVECT inferface structure:
 
-| Offset |                      Meaning                 |
-| :----: | -------------------------------------------- |
-|   0    | Address of the next instruction word         |
-|   1    | Function pointer for CALL                    |
-|   2    |                                              |
-|   3    | Initial instruction word                     |
-|   4    |                                              |
-|   5    | Current instruction word                     |
-|   6    | DB sync disable flags                        |
-|   7    | Password to be checked by PASSWD             |
-|  10    | Key for FIND                                 |
-|  11    | Error handler function pointer               |
-|  12    | Datum handle returned by ALLOC               |
-|  13    | Pointer to user data, etc. (used by UNPACK)  |
-|  14    | Extra field for datum header                 |
-|  15    | Length of user data                          |
-|  16    | Pointer to the BDBUF page                    |
-|  17    | Pointer to the BDTAB page                    |
-|  20-27 | Cursor                                       |
-|  30-32 | DB file descriptor (location, key, password) |
-|  33    | (BESM-6 relocation register to be restored)  |
-|  34    | Pointer to the free space array within BDTAB |
-|  35    | Datum handle operated upon (set by FIND, etc)|
-|  36    | (Temp. variable for ADDKEY)                  |
-|  37    | Key of the entry pointed by the cursor       |
-|  40    | End marker for STRLEN and WORDLEN            |
-|  41    | Current datum word (set by SEEK), etc.       |
-|  42    | Offset for SEEK, etc.                        |
-|  43    |                                              |
-|  44    | (Temp. variable for I/O sys calls)           |
-|  45    | Length of the current extent                 |
-|  46    | Pointer to the current datum word            |
-|  47    | Length of the current datum (set by LENGTH)  |
-|  50    | Pointer to the current metablock             |
-|  51    | DB length in zones                           |
-|  52    |                                              |
-|  53    | Current position within the datum            |
-|  54-115| Root metablock                               |
-| 116-217| Secondary metablock; 116 also used as temp.  |
-| 220    | Current extent                               |
-| 221-240|                                              |
-|  241   | Pointer to the current buffer (BDTAB/BDBUF)  |
-|  242   | Index into the cursor                        |
-|  243   |                                              |
-|  244   | Current zone number                          |
-|  245   |                                              |
-|  246   | Handle of the current metablock              |
-|  247   | Dirty buffer flags                           |
+| Offset | Temp. use |                      Meaning                 |
+| :----: | :-------: | -------------------------------------------- |
+|   0    |           | Address of the next instruction word         |
+|   1    | w/o CALL  | Function pointer for CALL                    |
+|   2    |  always?  |                                              |
+|   3    |           | Initial instruction word                     |
+|   4    |  always?  |                                              |
+|   5    |           | Current instruction word                     |
+|   6    |           | DB sync disable flags                        |
+|   7    |w/o PASSWD | Password to be checked by PASSWD             |
+|  10    |           | Key for FIND                                 |
+|  11    |           | Error handler function pointer               |
+|  12    |can be set | Datum handle returned by ALLOC               |
+|  13    |           | Pointer to user data, etc. (used by UNPACK)  |
+|  14    |can be used| Extra field for datum header (ALLOC)         |
+|  15    |           | Length of user data                          |
+|  16    |           | Pointer to the BDBUF page                    |
+|  17    |           | Pointer to the BDTAB page                    |
+|  20-27 |           | Cursor                                       |
+|  30-32 |           | DB file descriptor (location, key, password) |
+|  33    |           | (BESM-6 relocation register to be restored)  |
+|  34    |           | Pointer to the free space array within BDTAB |
+|  35    |           | Datum handle operated upon (set by FIND, etc)|
+|  36    |w/o ADDKEY | (Temp. variable for ADDKEY)                  |
+|  37    |           | Key of the entry pointed by the cursor       |
+|  40    |w/o *LEN   | End marker for STRLEN and WORDLEN            |
+|  41    |           | Current datum word (set by SEEK), etc.       |
+|  42    |           | Offset for SEEK, etc.                        |
+|  43    | always?   |                                              |
+|  44    |           | (Temp. variable for I/O sys calls)           |
+|  45    |           | Length of the current extent                 |
+|  46    |           | Pointer to the current datum word            |
+|  47    |           | Length of the current datum (set by LENGTH)  |
+|  50    |           | Pointer to the current metablock             |
+|  51    |           | DB length in zones                           |
+|  52    | always?   | Perhaps matches STALLOC for a reason         |
+|  53    |           | Current position within the datum            |
+|  54-115|           | Root metablock                               |
+| 116-217|           | Secondary metablock; 116 also used as temp.  |
+| 220    |           | Current extent                               |
+| 221-240|           |                                              |
+|  241   |           | Pointer to the current buffer (BDTAB/BDBUF)  |
+|  242   |           | Index into the cursor                        |
+|  243   |           |                                              |
+|  244   |           | Current zone number                          |
+|  245   |           |                                              |
+|  246   |           | Handle of the current metablock              |
+|  247   |           | Dirty buffer flags                           |

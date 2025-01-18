@@ -70,12 +70,13 @@ TEST(mars, initdb)
     mars.zero_date = true;
     mars.InitDB(052, 0, 3);
     delete &mars;
-    run_command(result, "sha1sum 52000[0-2]");
-    const std::string expect = R"(76948c7d9cf5a68f7ba3b9c804c317d2ce904424  520000
+    run_command(result, R"(sha1sum --quiet -c - 2>&1 << EOF
+76948c7d9cf5a68f7ba3b9c804c317d2ce904424  520000
 3ada2ada7dc333451e34e7641d8190d55bbcca46  520001
 2ec94808d03eea091b0548f4f42b85ad1a734814  520002
-)";
-    EXPECT_EQ(result, expect);
+EOF
+)");
+    EXPECT_TRUE(result.empty());
 }
 
 TEST(mars, coverage)
@@ -132,11 +133,9 @@ TEST(mars, coverage)
     mars.eval(Mars::OP_SAVE);
     delete &mars;
 
-    run_command(result, "sha1sum 52000[0-2]");
-    const std::string expect =
-        R"(484f08dd503bb5a4a2757ce6be3e18dfdb23ca99  520000
+    run_command(result, R"(sha1sum --quiet -c - 2>&1 << EOF
+484f08dd503bb5a4a2757ce6be3e18dfdb23ca99  520000
 038c042a23b75e82e659ab806b4f92089a7b6991  520001
 0ab4c4f30aae195bc33691b6465dd3f2f9ddce61  520002
-)";
-    EXPECT_EQ(result, expect);
+)");
 }
