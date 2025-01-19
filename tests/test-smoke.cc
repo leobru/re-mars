@@ -139,3 +139,36 @@ TEST(mars, coverage)
 0ab4c4f30aae195bc33691b6465dd3f2f9ddce61  520002
 )");
 }
+
+TEST(mars, conditional)
+{
+    Mars mars(false);
+    mars.SetDB(0, 0, 1);
+    mars.InitDB(0, 0, 1);
+    mars.root();
+    mars.putd(12345, 0, 0);
+    static uint64_t prog[]{
+        // Read the next word as the target address for the match condition
+        Mars::mcprog(Mars::OP_LDNEXT, Mars::Op(1), Mars::Op(0), Mars::OP_CHAIN),
+        reinterpret_cast<uint64_t>(prog + 7),
+        Mars::mcprog(Mars::OP_LDNEXT, Mars::KEY, Mars::Op(0), Mars::OP_CHAIN),
+        0,                      // key
+        Mars::mcprog(Mars::OP_FIND, Mars::OP_MATCH, Mars::OP_NOP,
+                     Mars::OP_ASSIGN, Mars::Op(0), Mars::Op(1), Mars::OP_CHAIN),
+        // Fall through (no match)
+        Mars::mcprog(Mars::OP_LDNEXT, Mars::Op(4)),
+        0xBAD,
+        // Branch target (match)
+        Mars::mcprog(Mars::OP_LDNEXT, Mars::Op(4)),
+        0x600D
+    };
+    prog[3] = 12345;
+    mars.cont = prog;
+    EXPECT_EQ(mars.eval(Mars::OP_CHAIN), Mars::ERR_SUCCESS);
+    EXPECT_EQ(mars.bdvect().loc4, 0x600Dul);
+
+    prog[3] = 23456;
+    mars.cont = prog;
+    EXPECT_EQ(mars.eval(Mars::OP_CHAIN), Mars::ERR_SUCCESS);
+    EXPECT_EQ(mars.bdvect().loc4, 0xBADul);
+}

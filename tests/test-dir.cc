@@ -26,6 +26,7 @@ TEST(mars, dir)
     Mars mars(false);
     std::string result;
     mars.InitDB(0, 0, 1);
+    mars.SetDB(0, 0, 1);
     mars.root();
     EXPECT_EQ(mkdir(mars, 12345), Mars::ERR_SUCCESS);
     ASSERT_EQ(mars.putd(1, 0, 0), Mars::ERR_SUCCESS); // adding 1 to root dir
